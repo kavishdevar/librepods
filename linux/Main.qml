@@ -127,6 +127,7 @@ ApplicationWindow {
                 }
 
                 Switch {
+                    visible: airPodsTrayApp.airpodsConnected
                     text: "Conversational Awareness"
                     checked: airPodsTrayApp.conversationalAwareness
                     onCheckedChanged: airPodsTrayApp.conversationalAwareness = checked
@@ -185,6 +186,12 @@ ApplicationWindow {
                         onCheckedChanged: {
                             airPodsTrayApp.setCrossDeviceEnabled(checked)
                         }
+                    }
+
+                    Switch {
+                        text: "Auto-Start on Login"
+                        checked: airPodsTrayApp.autoStartManager.autoStartEnabled
+                        onCheckedChanged: airPodsTrayApp.autoStartManager.autoStartEnabled = checked
                     }
 
                     Row {

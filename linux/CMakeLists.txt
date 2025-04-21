@@ -21,6 +21,7 @@ qt_add_executable(applinux
     battery.hpp
     BluetoothMonitor.cpp
     BluetoothMonitor.h
+    autostartmanager.hpp
 )
 
 qt_add_qml_module(applinux

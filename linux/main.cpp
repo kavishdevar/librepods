@@ -8,6 +8,7 @@
 #include "enums.h"
 #include "battery.hpp"
 #include "BluetoothMonitor.h"
+#include "autostartmanager.hpp"
 
 using namespace AirpodsTrayApp::Enums;
 
@@ -31,13 +32,17 @@ class AirPodsTrayApp : public QObject {
     Q_PROPERTY(bool airpodsConnected READ areAirpodsConnected NOTIFY airPodsStatusChanged)
     Q_PROPERTY(int earDetectionBehavior READ earDetectionBehavior WRITE setEarDetectionBehavior NOTIFY earDetectionBehaviorChanged)
     Q_PROPERTY(bool crossDeviceEnabled READ crossDeviceEnabled WRITE setCrossDeviceEnabled NOTIFY crossDeviceEnabledChanged)
+    Q_PROPERTY(AutoStartManager *autoStartManager READ autoStartManager CONSTANT)
 
 public:
-    AirPodsTrayApp(bool debugMode) 
-      : debugMode(debugMode)
+    AirPodsTrayApp(bool debugMode, QObject *parent = nullptr)
+      : QObject(parent)
+      , debugMode(debugMode)
       , m_battery(new Battery(this)) 
       , monitor(new BluetoothMonitor(this))
-      , m_settings(new QSettings("AirPodsTrayApp", "AirPodsTrayApp")){
+      , m_settings(new QSettings("AirPodsTrayApp", "AirPodsTrayApp"))
+      , m_autoStartManager(new AutoStartManager(this))
+      {
         if (debugMode) {
             QLoggingCategory::setFilterRules("airpodsApp.debug=true");
         } else {
@@ -92,8 +97,6 @@ public:
         saveCrossDeviceEnabled();
         saveEarDetectionSettings();
 
-        delete trayIcon;
-        delete trayMenu;
         delete socket;
         delete phoneSocket;
     }
@@ -126,6 +129,7 @@ public:
     bool areAirpodsConnected() const { return socket && socket->isOpen() && socket->state() == QBluetoothSocket::SocketState::ConnectedState; }
     int earDetectionBehavior() const { return mediaController->getEarDetectionBehavior(); }
     bool crossDeviceEnabled() const { return CrossDevice.isEnabled; }
+    AutoStartManager *autoStartManager() const { return m_autoStartManager; }
 
 private:
     bool debugMode;
@@ -853,8 +857,7 @@ signals:
     void earDetectionBehaviorChanged(int behavior);
     void crossDeviceEnabledChanged(bool enabled);
 
-    private : QSystemTrayIcon *trayIcon;
-    QMenu *trayMenu;
+private:
     QBluetoothSocket *socket = nullptr;
     QBluetoothSocket *phoneSocket = nullptr;
     QString connectedDeviceMacAddress;
@@ -864,6 +867,7 @@ signals:
     TrayIconManager *trayManager;
     BluetoothMonitor *monitor;
     QSettings *m_settings;
+    AutoStartManager *m_autoStartManager;
 
     QString m_batteryStatus;
     QString m_earDetectionStatus;
@@ -893,10 +897,9 @@ int main(int argc, char *argv[]) {
 
     QQmlApplicationEngine engine;
     qmlRegisterType<Battery>("me.kavishdevar.Battery", 1, 0, "Battery");
-    AirPodsTrayApp trayApp(debugMode);
-    engine.rootContext()->setContextProperty("airPodsTrayApp", &trayApp);
+    AirPodsTrayApp *trayApp = new AirPodsTrayApp(debugMode, &engine);
+    engine.rootContext()->setContextProperty("airPodsTrayApp", trayApp);
     engine.loadFromModule("linux", "Main");
-
     return app.exec();
 }
 
