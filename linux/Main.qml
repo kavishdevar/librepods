@@ -148,13 +148,15 @@ ApplicationWindow {
 
     Component {
         id: settingsPage
-        Item {
+        Page {
+            id: settingsPageItem
+            title: "Settings"
+
             ScrollView {
                 anchors.fill: parent
-                contentWidth: parent.width
-                contentHeight: parent.height
 
                 Column {
+                    width: parent.width
                     spacing: 20
                     padding: 20
 
