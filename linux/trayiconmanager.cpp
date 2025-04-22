@@ -29,6 +29,8 @@ TrayIconManager::TrayIconManager(QObject *parent) : QObject(parent)
 
 void TrayIconManager::showNotification(const QString &title, const QString &message)
 {
+    if (!m_notificationsEnabled)
+        return;
     trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 3000);
 }
 

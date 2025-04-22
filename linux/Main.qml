@@ -194,8 +194,15 @@ ApplicationWindow {
                         onCheckedChanged: airPodsTrayApp.autoStartManager.autoStartEnabled = checked
                     }
 
+                    Switch {
+                        text: "Enable System Notifications"
+                        checked: airPodsTrayApp.notificationsEnabled
+                        onCheckedChanged: airPodsTrayApp.notificationsEnabled = checked
+                    }
+
                     Row {
                         spacing: 10
+                        visible: airPodsTrayApp.airpodsConnected
 
                         TextField {
                             id: newNameField

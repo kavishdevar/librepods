@@ -33,6 +33,7 @@ class AirPodsTrayApp : public QObject {
     Q_PROPERTY(int earDetectionBehavior READ earDetectionBehavior WRITE setEarDetectionBehavior NOTIFY earDetectionBehaviorChanged)
     Q_PROPERTY(bool crossDeviceEnabled READ crossDeviceEnabled WRITE setCrossDeviceEnabled NOTIFY crossDeviceEnabledChanged)
     Q_PROPERTY(AutoStartManager *autoStartManager READ autoStartManager CONSTANT)
+    Q_PROPERTY(bool notificationsEnabled READ notificationsEnabled WRITE setNotificationsEnabled NOTIFY notificationsEnabledChanged)
 
 public:
     AirPodsTrayApp(bool debugMode, QObject *parent = nullptr)
@@ -52,12 +53,15 @@ public:
 
         // Initialize tray icon and connect signals
         trayManager = new TrayIconManager(this);
+        trayManager->setNotificationsEnabled(loadNotificationsEnabled());
         connect(trayManager, &TrayIconManager::trayClicked, this, &AirPodsTrayApp::onTrayIconActivated);
         connect(trayManager, &TrayIconManager::noiseControlChanged, this, qOverload<NoiseControlMode>(&AirPodsTrayApp::setNoiseControlMode));
         connect(trayManager, &TrayIconManager::conversationalAwarenessToggled, this, &AirPodsTrayApp::setConversationalAwareness);
         connect(this, &AirPodsTrayApp::batteryStatusChanged, trayManager, &TrayIconManager::updateBatteryStatus);
         connect(this, &AirPodsTrayApp::noiseControlModeChanged, trayManager, &TrayIconManager::updateNoiseControlState);
         connect(this, &AirPodsTrayApp::conversationalAwarenessChanged, trayManager, &TrayIconManager::updateConversationalAwareness);
+        connect(trayManager, &TrayIconManager::notificationsEnabledChanged, this, &AirPodsTrayApp::saveNotificationsEnabled);
+        connect(trayManager, &TrayIconManager::notificationsEnabledChanged, this, &AirPodsTrayApp::notificationsEnabledChanged);
 
         // Initialize MediaController and connect signals
         mediaController = new MediaController(this);
@@ -130,6 +134,8 @@ public:
     int earDetectionBehavior() const { return mediaController->getEarDetectionBehavior(); }
     bool crossDeviceEnabled() const { return CrossDevice.isEnabled; }
     AutoStartManager *autoStartManager() const { return m_autoStartManager; }
+    bool notificationsEnabled() const { return trayManager->notificationsEnabled(); }
+    void setNotificationsEnabled(bool enabled) { trayManager->setNotificationsEnabled(enabled); }
 
 private:
     bool debugMode;
@@ -309,6 +315,9 @@ public slots:
 
     int loadEarDetectionSettings() { return m_settings->value("earDetection/setting", MediaController::EarDetectionBehavior::PauseWhenOneRemoved).toInt(); }
     void saveEarDetectionSettings() { m_settings->setValue("earDetection/setting", mediaController->getEarDetectionBehavior()); }
+
+    bool loadNotificationsEnabled() const { return m_settings->value("notifications/enabled", true).toBool(); }
+    void saveNotificationsEnabled(bool enabled) { m_settings->setValue("notifications/enabled", enabled); }
 
 private slots:
     void onTrayIconActivated()
@@ -856,6 +865,7 @@ signals:
     void airPodsStatusChanged();
     void earDetectionBehaviorChanged(int behavior);
     void crossDeviceEnabledChanged(bool enabled);
+    void notificationsEnabledChanged(bool enabled);
 
 private:
     QBluetoothSocket *socket = nullptr;

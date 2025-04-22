@@ -10,6 +10,7 @@ class QActionGroup;
 class TrayIconManager : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool notificationsEnabled READ notificationsEnabled WRITE setNotificationsEnabled NOTIFY notificationsEnabledChanged)
 
 public:
     explicit TrayIconManager(QObject *parent = nullptr);
@@ -22,6 +23,19 @@ public:
 
     void showNotification(const QString &title, const QString &message);
 
+    bool notificationsEnabled() const { return m_notificationsEnabled; }
+    void setNotificationsEnabled(bool enabled)
+    {
+        if (m_notificationsEnabled != enabled)
+        {
+            m_notificationsEnabled = enabled;
+            emit notificationsEnabledChanged(enabled);
+        }
+    }
+
+signals:
+    void notificationsEnabledChanged(bool enabled);
+
 private slots:
     void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
 
@@ -30,6 +44,7 @@ private:
     QMenu *trayMenu;
     QAction *caToggleAction;
     QActionGroup *noiseControlGroup;
+    bool m_notificationsEnabled = true;
 
     void setupMenuActions();
 
