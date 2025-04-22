@@ -34,6 +34,7 @@ class AirPodsTrayApp : public QObject {
     Q_PROPERTY(bool crossDeviceEnabled READ crossDeviceEnabled WRITE setCrossDeviceEnabled NOTIFY crossDeviceEnabledChanged)
     Q_PROPERTY(AutoStartManager *autoStartManager READ autoStartManager CONSTANT)
     Q_PROPERTY(bool notificationsEnabled READ notificationsEnabled WRITE setNotificationsEnabled NOTIFY notificationsEnabledChanged)
+    Q_PROPERTY(int retryAttempts READ retryAttempts WRITE setRetryAttempts NOTIFY retryAttemptsChanged)
 
 public:
     AirPodsTrayApp(bool debugMode, QObject *parent = nullptr)
@@ -78,6 +79,7 @@ public:
         // Load settings
         CrossDevice.isEnabled = loadCrossDeviceEnabled();
         setEarDetectionBehavior(loadEarDetectionSettings());
+        setRetryAttempts(loadRetryAttempts());
 
         monitor->checkAlreadyConnectedDevices();
         LOG_INFO("AirPodsTrayApp initialized");
@@ -136,6 +138,7 @@ public:
     AutoStartManager *autoStartManager() const { return m_autoStartManager; }
     bool notificationsEnabled() const { return trayManager->notificationsEnabled(); }
     void setNotificationsEnabled(bool enabled) { trayManager->setNotificationsEnabled(enabled); }
+    int retryAttempts() const { return m_retryAttempts; }
 
 private:
     bool debugMode;
@@ -212,6 +215,17 @@ public slots:
         writePacketToSocket(packet, "Conversational awareness packet written: ");
         m_conversationalAwareness = enabled;
         emit conversationalAwarenessChanged(enabled);
+    }
+
+    void setRetryAttempts(int attempts)
+    {
+        if (m_retryAttempts != attempts)
+        {
+            LOG_DEBUG("Setting retry attempts to: " << attempts);
+            m_retryAttempts = attempts;
+            emit retryAttemptsChanged(attempts);
+            saveRetryAttempts(attempts);
+        }
     }
 
     void initiateMagicPairing()
@@ -318,6 +332,9 @@ public slots:
 
     bool loadNotificationsEnabled() const { return m_settings->value("notifications/enabled", true).toBool(); }
     void saveNotificationsEnabled(bool enabled) { m_settings->setValue("notifications/enabled", enabled); }
+
+    int loadRetryAttempts() const { return m_settings->value("bluetooth/retryAttempts", 3).toInt(); }
+    void saveRetryAttempts(int attempts) { m_settings->setValue("bluetooth/retryAttempts", attempts); }
 
 private slots:
     void onTrayIconActivated()
@@ -522,7 +539,7 @@ private slots:
             LOG_ERROR("Socket error: " << error << ", " << localSocket->errorString());
 
             static int retryCount = 0;
-            if (retryCount < 3)
+            if (retryCount < m_retryAttempts)
             {
                 retryCount++;
                 LOG_INFO("Retrying connection (attempt " << retryCount << ")");
@@ -866,6 +883,7 @@ signals:
     void earDetectionBehaviorChanged(int behavior);
     void crossDeviceEnabledChanged(bool enabled);
     void notificationsEnabledChanged(bool enabled);
+    void retryAttemptsChanged(int attempts);
 
 private:
     QBluetoothSocket *socket = nullptr;
@@ -878,6 +896,7 @@ private:
     BluetoothMonitor *monitor;
     QSettings *m_settings;
     AutoStartManager *m_autoStartManager;
+    int m_retryAttempts = 3;
 
     QString m_batteryStatus;
     QString m_earDetectionStatus;

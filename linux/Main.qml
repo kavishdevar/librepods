@@ -201,6 +201,20 @@ ApplicationWindow {
                     }
 
                     Row {
+                        spacing: 5
+                        Label {
+                            text: "Bluetooth Retry Attempts:"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        SpinBox {
+                            from: 1
+                            to: 10
+                            value: airPodsTrayApp.retryAttempts
+                            onValueChanged: airPodsTrayApp.retryAttempts = value
+                        }
+                    }
+
+                    Row {
                         spacing: 10
                         visible: airPodsTrayApp.airpodsConnected
 
