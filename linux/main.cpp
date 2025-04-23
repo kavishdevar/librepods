@@ -35,15 +35,17 @@ class AirPodsTrayApp : public QObject {
     Q_PROPERTY(AutoStartManager *autoStartManager READ autoStartManager CONSTANT)
     Q_PROPERTY(bool notificationsEnabled READ notificationsEnabled WRITE setNotificationsEnabled NOTIFY notificationsEnabledChanged)
     Q_PROPERTY(int retryAttempts READ retryAttempts WRITE setRetryAttempts NOTIFY retryAttemptsChanged)
+    Q_PROPERTY(bool hideOnStart READ hideOnStart CONSTANT)
 
 public:
-    AirPodsTrayApp(bool debugMode, QObject *parent = nullptr)
+    AirPodsTrayApp(bool debugMode, bool hideOnStart, QObject *parent = nullptr)
       : QObject(parent)
       , debugMode(debugMode)
       , m_battery(new Battery(this)) 
       , monitor(new BluetoothMonitor(this))
       , m_settings(new QSettings("AirPodsTrayApp", "AirPodsTrayApp"))
       , m_autoStartManager(new AutoStartManager(this))
+      , m_hideOnStart(hideOnStart)
       {
         if (debugMode) {
             QLoggingCategory::setFilterRules("airpodsApp.debug=true");
@@ -139,6 +141,7 @@ public:
     bool notificationsEnabled() const { return trayManager->notificationsEnabled(); }
     void setNotificationsEnabled(bool enabled) { trayManager->setNotificationsEnabled(enabled); }
     int retryAttempts() const { return m_retryAttempts; }
+    bool hideOnStart() const { return m_hideOnStart; }
 
 private:
     bool debugMode;
@@ -897,6 +900,7 @@ private:
     QSettings *m_settings;
     AutoStartManager *m_autoStartManager;
     int m_retryAttempts = 3;
+    bool m_hideOnStart = false;
 
     QString m_batteryStatus;
     QString m_earDetectionStatus;
@@ -917,16 +921,18 @@ int main(int argc, char *argv[]) {
     app.setQuitOnLastWindowClosed(false);
 
     bool debugMode = false;
+    bool hideOnStart = false;
     for (int i = 1; i < argc; ++i) {
-        if (QString(argv[i]) == "--debug") {
+        if (QString(argv[i]) == "--debug")
             debugMode = true;
-            break;
-        }
+
+        if (QString(argv[i]) == "--hide")
+            hideOnStart = true;
     }
 
     QQmlApplicationEngine engine;
     qmlRegisterType<Battery>("me.kavishdevar.Battery", 1, 0, "Battery");
-    AirPodsTrayApp *trayApp = new AirPodsTrayApp(debugMode, &engine);
+    AirPodsTrayApp *trayApp = new AirPodsTrayApp(debugMode, hideOnStart, &engine);
     engine.rootContext()->setContextProperty("airPodsTrayApp", trayApp);
     engine.loadFromModule("linux", "Main");
     return app.exec();

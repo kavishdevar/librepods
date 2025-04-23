@@ -5,7 +5,7 @@ import QtQuick.Controls 2.15
 
 ApplicationWindow {
     id: mainWindow
-    visible: true
+    visible: !airPodsTrayApp.hideOnStart
     width: 400
     height: 300
     title: "AirPods Settings"
