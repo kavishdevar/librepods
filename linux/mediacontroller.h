@@ -47,6 +47,7 @@ Q_SIGNALS:
 
 private:
   MediaState mediaStateFromPlayerctlOutput(const QString &output);
+  QString getAudioDeviceName();
 
   QDBusInterface *mprisInterface = nullptr;
   QProcess *playerctlProcess = nullptr;
@@ -54,6 +55,7 @@ private:
   int initialVolume = -1;
   QString connectedDeviceMacAddress;
   EarDetectionBehavior earDetectionBehavior = PauseWhenOneRemoved;
+  QString m_deviceOutputName;
 };
 
 #endif // MEDIACONTROLLER_H

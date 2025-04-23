@@ -184,8 +184,8 @@ void MediaController::handleConversationalAwareness(const QByteArray &data) {
 }
 
 void MediaController::activateA2dpProfile() {
-  if (connectedDeviceMacAddress.isEmpty()) {
-    LOG_WARN("Connected device MAC address is empty, cannot activate A2DP profile");
+  if (connectedDeviceMacAddress.isEmpty() || m_deviceOutputName.isEmpty()) {
+    LOG_WARN("Connected device MAC address or output name is empty, cannot activate A2DP profile");
     return;
   }
 
@@ -193,15 +193,15 @@ void MediaController::activateA2dpProfile() {
   int result = QProcess::execute(
       "pactl", QStringList()
                    << "set-card-profile"
-                   << "bluez_card." + connectedDeviceMacAddress << "a2dp-sink");
+                   << m_deviceOutputName << "a2dp-sink");
   if (result != 0) {
     LOG_ERROR("Failed to activate A2DP profile");
   }
 }
 
 void MediaController::removeAudioOutputDevice() {
-  if (connectedDeviceMacAddress.isEmpty()) {
-    LOG_WARN("Connected device MAC address is empty, cannot remove audio output device");
+  if (connectedDeviceMacAddress.isEmpty() || m_deviceOutputName.isEmpty()) {
+    LOG_WARN("Connected device MAC address or output name is empty, cannot remove audio output device");
     return;
   }
   
@@ -209,7 +209,7 @@ void MediaController::removeAudioOutputDevice() {
   int result = QProcess::execute(
       "pactl", QStringList()
                    << "set-card-profile"
-                   << "bluez_card." + connectedDeviceMacAddress << "off");
+                   << m_deviceOutputName << "off");
   if (result != 0) {
     LOG_ERROR("Failed to remove AirPods as audio output device");
   }
@@ -217,6 +217,7 @@ void MediaController::removeAudioOutputDevice() {
 
 void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
   connectedDeviceMacAddress = macAddress;
+  m_deviceOutputName = getAudioDeviceName();
 }
 
 MediaController::MediaState MediaController::mediaStateFromPlayerctlOutput(
@@ -252,4 +253,51 @@ MediaController::~MediaController() {
       playerctlProcess->waitForFinished(1000);
     }
   }
+}
+
+QString MediaController::getAudioDeviceName()
+{
+  if (connectedDeviceMacAddress.isEmpty()) { return QString(); }
+
+  // Use a cleaner MAC address format for PulseAudio matching
+  QProcess process;
+  process.start("pactl", QStringList() << "list" << "sinks");
+  process.waitForFinished();
+
+  QString output = process.readAllStandardOutput();
+  if (output.isEmpty())
+  {
+    QProcess process;
+    process.start("pactl", QStringList() << "list" << "sinks");
+    process.waitForFinished();
+    output = process.readAllStandardOutput();
+
+    if (output.isEmpty())
+    {
+      LOG_ERROR("Failed to get PulseAudio and PipeWire sink list");
+      return QString();
+    }
+  }
+
+  QStringList lines = output.split("\n");
+
+  QString currentSinkName;
+  bool foundDevice = false;
+
+  for (const QString &line : lines)
+  {
+    if (line.contains("device.name"))
+    {
+      currentSinkName = line.mid(line.indexOf(u'"') + 1).trimmed().removeLast();
+    }
+
+    // Look for Bluetooth MAC address in various formats
+    if (currentSinkName.contains(connectedDeviceMacAddress, Qt::CaseInsensitive))
+    {
+      foundDevice = true;
+      return currentSinkName;
+    }
+  }
+
+  return QString();
 }
