@@ -218,6 +218,7 @@ void MediaController::removeAudioOutputDevice() {
 void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
   connectedDeviceMacAddress = macAddress;
   m_deviceOutputName = getAudioDeviceName();
+  LOG_INFO("Device output name set to: " << m_deviceOutputName);
 }
 
 MediaController::MediaState MediaController::mediaStateFromPlayerctlOutput(
