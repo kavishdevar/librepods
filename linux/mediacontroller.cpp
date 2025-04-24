@@ -260,45 +260,40 @@ QString MediaController::getAudioDeviceName()
 {
   if (connectedDeviceMacAddress.isEmpty()) { return QString(); }
 
-  // Use a cleaner MAC address format for PulseAudio matching
+  // Set up QProcess to run pactl directly
   QProcess process;
-  process.start("pactl", QStringList() << "list" << "sinks");
-  process.waitForFinished();
-
-  QString output = process.readAllStandardOutput();
-  if (output.isEmpty())
+  process.start("pactl", QStringList() << "list" << "sinks" << "short");
+  if (!process.waitForFinished(3000)) // Timeout after 3 seconds
   {
-    QProcess process;
-    process.start("pactl", QStringList() << "list" << "sinks");
-    process.waitForFinished();
-    output = process.readAllStandardOutput();
-
-    if (output.isEmpty())
-    {
-      LOG_ERROR("Failed to get PulseAudio and PipeWire sink list");
-      return QString();
-    }
+    LOG_ERROR("pactl command failed or timed out: " << process.errorString());
+    return QString();
   }
 
-  QStringList lines = output.split("\n");
+  // Check for execution errors
+  if (process.exitCode() != 0)
+  {
+    LOG_ERROR("pactl exited with error code: " << process.exitCode());
+    return QString();
+  }
 
-  QString currentSinkName;
-  bool foundDevice = false;
+  // Read and parse the command output
+  QString output = process.readAllStandardOutput();
+  QStringList lines = output.split("\n", Qt::SkipEmptyParts);
 
+  // Iterate through each line to find a matching Bluetooth sink
   for (const QString &line : lines)
   {
-    if (line.contains("device.name"))
-    {
-      currentSinkName = line.mid(line.indexOf(u'"') + 1).trimmed().removeLast();
-    }
+    QStringList fields = line.split("\t", Qt::SkipEmptyParts);
+    if (fields.size() < 2) { continue; }
 
-    // Look for Bluetooth MAC address in various formats
-    if (currentSinkName.contains(connectedDeviceMacAddress, Qt::CaseInsensitive))
+    QString sinkName = fields[1].trimmed();
+    if (sinkName.startsWith("bluez") && sinkName.contains(connectedDeviceMacAddress))
     {
-      foundDevice = true;
-      return currentSinkName;
+      return sinkName;
     }
   }
 
+  // No matching sink found
+  LOG_ERROR("No matching Bluetooth sink found for MAC address: " << connectedDeviceMacAddress);
   return QString();
 }
