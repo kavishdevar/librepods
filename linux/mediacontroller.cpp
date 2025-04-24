@@ -262,7 +262,7 @@ QString MediaController::getAudioDeviceName()
 
   // Set up QProcess to run pactl directly
   QProcess process;
-  process.start("pactl", QStringList() << "list" << "sinks" << "short");
+  process.start("pactl", QStringList() << "list" << "cards" << "short");
   if (!process.waitForFinished(3000)) // Timeout after 3 seconds
   {
     LOG_ERROR("pactl command failed or timed out: " << process.errorString());
