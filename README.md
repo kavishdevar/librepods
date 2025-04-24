@@ -29,16 +29,11 @@ Check out the demo below!
 https://github.com/user-attachments/assets/d08f8a51-cd52-458b-8e55-9b44f4d5f3ab
 
 
-## Linux — Deprecated, rewrite WIP!
+## Linux
 
-> No support will be provided for the old version of the Linux app. The new version is still in development and might not work as expected. No support is provided for the new version either.
+The Linux version is a simple tray-app, with a modern and adaptive ui. Still WIP, but most things work (battery, ear-detection, auto-pause, rename, etc.)
 
-Check out the README file in [linux](/linux.old) folder for more info.
-
-This tray app communicates with a daemon with the help of a UNIX socket. The daemon is responsible for the actual communication with the AirPods. The tray app is just a frontend for the daemon, that does ear-detection, conversational awareness, setting the noise-cancellation mode, and more.
-
-![Tray Battery App](/linux.old/imgs/tray-icon-hover.png)
-![Tray Noise Control Mode Menu](/linux.old/imgs/tray-icon-menu.png)
+Check out the README file in [linux](/linux) folder for more info.
 
 ## Android
 
