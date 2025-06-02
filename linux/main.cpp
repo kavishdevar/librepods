@@ -654,28 +654,21 @@ private slots:
         }
         // Get CA state
         else if (data.startsWith(AirPodsPackets::ConversationalAwareness::HEADER)) {
-            auto result = AirPodsPackets::ConversationalAwareness::parseState(data);
-            if (result.has_value()) {
+            if (auto result = AirPodsPackets::ConversationalAwareness::parseState(data))
+            {
                 m_conversationalAwareness = result.value();
                 LOG_INFO("Conversational awareness state received: " << m_conversationalAwareness);
                 emit conversationalAwarenessChanged(m_conversationalAwareness);
-            } else {
-                LOG_ERROR("Failed to parse conversational awareness state");
             }
         }
         // Noise Control Mode
         else if (data.size() == 11 && data.startsWith(AirPodsPackets::NoiseControl::HEADER))
         {
-            quint8 rawMode = data[7] - 1; // Offset still needed due to protocol
-            if (rawMode >= (int)NoiseControlMode::MinValue && rawMode <= (int)NoiseControlMode::MaxValue)
+            if (auto value = AirPodsPackets::NoiseControl::parseMode(data))
             {
-                m_noiseControlMode = static_cast<NoiseControlMode>(rawMode);
-                LOG_INFO("Noise control mode: " << rawMode);
+                m_noiseControlMode = value.value();
+                LOG_INFO("Noise control mode received: " << m_noiseControlMode);
                 emit noiseControlModeChanged(m_noiseControlMode);
-            }
-            else
-            {
-                LOG_ERROR("Invalid noise control mode value received: " << rawMode);
             }
         }
         // Ear Detection
@@ -724,16 +717,11 @@ private slots:
             emit airPodsStatusChanged();
         }
         else if (data.startsWith(AirPodsPackets::OneBudANCMode::HEADER)) {
-            auto result = AirPodsPackets::OneBudANCMode::parseState(data);
-            if (result.has_value())
+            if (auto value = AirPodsPackets::OneBudANCMode::parseState(data))
             {
-                m_oneBudANCMode = result.value();
+                m_oneBudANCMode = value.value();
                 LOG_INFO("One Bud ANC mode received: " << m_conversationalAwareness);
                 emit oneBudANCModeChanged(m_conversationalAwareness);
-            }
-            else
-            {
-                LOG_ERROR("Failed to parse One Bud ANC mode");
             }
         }
         else

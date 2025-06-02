@@ -13,6 +13,7 @@ namespace AirPodsPackets
     // Noise Control Mode Packets
     namespace NoiseControl
     {
+        using NoiseControlMode = AirpodsTrayApp::Enums::NoiseControlMode;
         static const QByteArray HEADER = ControlCommand::HEADER + 0x0D;
         static const QByteArray OFF = ControlCommand::createCommand(0x0D, 0x01);
         static const QByteArray NOISE_CANCELLATION = ControlCommand::createCommand(0x0D, 0x02);
@@ -21,7 +22,6 @@ namespace AirPodsPackets
 
         static const QByteArray getPacketForMode(AirpodsTrayApp::Enums::NoiseControlMode mode)
         {
-            using NoiseControlMode = AirpodsTrayApp::Enums::NoiseControlMode;
             switch (mode)
             {
             case NoiseControlMode::Off:
@@ -35,6 +35,17 @@ namespace AirPodsPackets
             default:
                 return QByteArray();
             }
+        }
+
+        inline std::optional<NoiseControlMode> parseMode(const QByteArray &data)
+        {
+            char mode = ControlCommand::parseActive(data).value_or(CHAR_MAX);
+            if (mode < static_cast<quint8>(NoiseControlMode::MinValue) ||
+                mode > static_cast<quint8>(NoiseControlMode::MaxValue))
+            {
+                return std::nullopt;
+            }
+            return static_cast<NoiseControlMode>(mode);
         }
     }
 

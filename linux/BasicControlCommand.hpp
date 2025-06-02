@@ -19,21 +19,12 @@ namespace ControlCommand
     }
 
     // Parse activated/not activated
-    inline std::optional<bool> parseActive(const QByteArray &data)
+    inline std::optional<char> parseActive(const QByteArray &data)
     {
         if (!data.startsWith(ControlCommand::HEADER))
             return std::nullopt;
 
-        quint8 statusByte = static_cast<quint8>(data.at(7));
-        switch (statusByte)
-        {
-        case 0x01: // Enabled
-            return true;
-        case 0x02: // Disabled
-            return false;
-        default:
-            return std::nullopt;
-        }
+        return static_cast<quint8>(data.at(7));
     }
 }
 
@@ -54,6 +45,19 @@ struct BasicControlCommand
 
     // Basically returns the byte at the index 7
     static std::optional<bool> parseState(const QByteArray &data)
+    {
+        switch (ControlCommand::parseActive(data))
+        {
+        case 0x01: // Enabled
+            return true;
+        case 0x02: // Disabled
+            return false;
+        default:
+            return std::nullopt;
+        }
+    }
+
+    static std::optional<bool> getValue(const QByteArray &data)
     {
         return ControlCommand::parseActive(data);
     }
