@@ -94,46 +94,46 @@ ApplicationWindow {
                     spacing: 8
 
                     PodColumn {
-                        isVisible: airPodsTrayApp.battery.leftPodAvailable
-                        inEar: airPodsTrayApp.leftPodInEar
-                        iconSource: "qrc:/icons/assets/" + airPodsTrayApp.podIcon
-                        batteryLevel: airPodsTrayApp.battery.leftPodLevel
-                        isCharging: airPodsTrayApp.battery.leftPodCharging
+                        isVisible: airPodsTrayApp.deviceInfo.battery.leftPodAvailable
+                        inEar: airPodsTrayApp.deviceInfo.leftPodInEar
+                        iconSource: "qrc:/icons/assets/" + airPodsTrayApp.deviceInfo.podIcon
+                        batteryLevel: airPodsTrayApp.deviceInfo.battery.leftPodLevel
+                        isCharging: airPodsTrayApp.deviceInfo.battery.leftPodCharging
                         indicator: "L"
                     }
 
                     PodColumn {
-                        isVisible: airPodsTrayApp.battery.rightPodAvailable
-                        inEar: airPodsTrayApp.rightPodInEar
-                        iconSource: "qrc:/icons/assets/" + airPodsTrayApp.podIcon
-                        batteryLevel: airPodsTrayApp.battery.rightPodLevel
-                        isCharging: airPodsTrayApp.battery.rightPodCharging
+                        isVisible: airPodsTrayApp.deviceInfo.battery.rightPodAvailable
+                        inEar: airPodsTrayApp.deviceInfo.rightPodInEar
+                        iconSource: "qrc:/icons/assets/" + airPodsTrayApp.deviceInfo.podIcon
+                        batteryLevel: airPodsTrayApp.deviceInfo.battery.rightPodLevel
+                        isCharging: airPodsTrayApp.deviceInfo.battery.rightPodCharging
                         indicator: "R"
                     }
 
                     PodColumn {
-                        isVisible: airPodsTrayApp.battery.caseAvailable
+                        isVisible: airPodsTrayApp.deviceInfo.battery.caseAvailable
                         inEar: true
-                        iconSource: "qrc:/icons/assets/" + airPodsTrayApp.caseIcon
-                        batteryLevel: airPodsTrayApp.battery.caseLevel
-                        isCharging: airPodsTrayApp.battery.caseCharging
+                        iconSource: "qrc:/icons/assets/" + airPodsTrayApp.deviceInfo.caseIcon
+                        batteryLevel: airPodsTrayApp.deviceInfo.battery.caseLevel
+                        isCharging: airPodsTrayApp.deviceInfo.battery.caseCharging
                     }
                 }
 
                 SegmentedControl {
                     anchors.horizontalCenter: parent.horizontalCenter
                     model: ["Off", "Noise Cancellation", "Transparency", "Adaptive"]
-                    currentIndex: airPodsTrayApp.noiseControlMode
-                    onCurrentIndexChanged: airPodsTrayApp.noiseControlMode = currentIndex
+                    currentIndex: airPodsTrayApp.deviceInfo.noiseControlMode
+                    onCurrentIndexChanged: airPodsTrayApp.setNoiseControlModeInt(currentIndex)
                     visible: airPodsTrayApp.airpodsConnected
                 }
 
                 Slider {
-                    visible: airPodsTrayApp.adaptiveModeActive
+                    visible: airPodsTrayApp.deviceInfo.adaptiveModeActive
                     from: 0
                     to: 100
                     stepSize: 1
-                    value: airPodsTrayApp.adaptiveNoiseLevel
+                    value: airPodsTrayApp.deviceInfo.adaptiveNoiseLevel
 
                     Timer {
                         id: debounceTimer
@@ -153,8 +153,8 @@ ApplicationWindow {
                 Switch {
                     visible: airPodsTrayApp.airpodsConnected
                     text: "Conversational Awareness"
-                    checked: airPodsTrayApp.conversationalAwareness
-                    onCheckedChanged: airPodsTrayApp.conversationalAwareness = checked
+                    checked: airPodsTrayApp.deviceInfo.conversationalAwareness
+                    onCheckedChanged: airPodsTrayApp.setConversationalAwareness(checked)
                 }
             }
 
@@ -229,8 +229,8 @@ ApplicationWindow {
                     Switch {
                         visible: airPodsTrayApp.airpodsConnected
                         text: "One Bud ANC Mode"
-                        checked: airPodsTrayApp.oneBudANCMode
-                        onCheckedChanged: airPodsTrayApp.oneBudANCMode = checked
+                        checked: airPodsTrayApp.deviceInfo.oneBudANCMode
+                        onCheckedChanged: airPodsTrayApp.deviceInfo.oneBudANCMode = checked
 
                         ToolTip {
                             visible: parent.hovered
@@ -259,13 +259,13 @@ ApplicationWindow {
 
                         TextField {
                             id: newNameField
-                            placeholderText: airPodsTrayApp.deviceName
+                            placeholderText: airPodsTrayApp.deviceInfo.deviceName
                             maximumLength: 32
                         }
 
                         Button {
                             text: "Rename"
-                            onClicked: airPodsTrayApp.renameAirPods(newNameField.text)
+                            onClicked: airPodsTrayApp.deviceInfo.renameAirPods(newNameField.text)
                         }
                     }
                 }
