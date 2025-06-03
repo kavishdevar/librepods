@@ -45,7 +45,7 @@ namespace AirPodsPackets
             {
                 return std::nullopt;
             }
-            return static_cast<NoiseControlMode>(mode);
+            return static_cast<NoiseControlMode>(mode - 1);
         }
     }
 

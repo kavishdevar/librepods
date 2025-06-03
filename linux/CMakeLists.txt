@@ -23,6 +23,7 @@ qt_add_executable(applinux
     BluetoothMonitor.h
     autostartmanager.hpp
     BasicControlCommand.hpp
+    deviceinfo.hpp
 )
 
 qt_add_qml_module(applinux

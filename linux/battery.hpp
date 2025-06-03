@@ -1,3 +1,5 @@
+#pragma once
+
 #include <QByteArray>
 #include <QMap>
 #include <QString>
