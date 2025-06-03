@@ -16,11 +16,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.receivers
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import kotlin.io.encoding.ExperimentalEncodingApi
 import me.kavishdevar.librepods.services.AirPodsService
 
 class BootReceiver: BroadcastReceiver() {

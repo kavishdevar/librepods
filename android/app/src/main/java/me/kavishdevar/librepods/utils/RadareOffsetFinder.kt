@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.utils
 
 import android.content.Context
@@ -32,6 +34,7 @@ import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @NoLiveLiterals
 class RadareOffsetFinder(context: Context) {

@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.utils
 
 import android.os.Build
@@ -13,6 +15,7 @@ import me.kavishdevar.librepods.services.AirPodsService
 import me.kavishdevar.librepods.services.ServiceManager
 import java.util.Collections
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -20,13 +23,10 @@ import kotlin.math.pow
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class GestureDetector(
-    private val airPodsService: AirPodsService,
+    private val airPodsService: AirPodsService
 ) {
     companion object {
         private const val TAG = "GestureDetector"
-
-        private const val START_CMD = "04 00 04 00 17 00 00 00 10 00 10 00 08 A1 02 42 0B 08 0E 10 02 1A 05 01 40 9C 00 00"
-        private const val STOP_CMD = "04 00 04 00 17 00 00 00 10 00 11 00 08 7E 10 02 42 0B 08 4E 10 02 1A 05 01 00 00 00 00"
 
         private const val IMMEDIATE_FEEDBACK_THRESHOLD = 600
         private const val DIRECTION_CHANGE_SENSITIVITY = 150
@@ -34,7 +34,7 @@ class GestureDetector(
         private const val FAST_MOVEMENT_THRESHOLD = 300.0
         private const val MIN_REQUIRED_EXTREMES = 3
         private const val MAX_REQUIRED_EXTREMES = 4
-        
+
         private const val MAX_VALID_ORIENTATION_VALUE = 6000
     }
 
@@ -87,12 +87,12 @@ fun startDetection(doNotStop: Boolean = false, onGestureDetected: (Boolean) -> U
         isRunning = true
         gestureDetectedCallback = onGestureDetected
 
+        Log.d(TAG, "started: ${airPodsService.startHeadTracking()}")
+
         clearData()
 
         prevHorizontal = 0.0
         prevVertical = 0.0
-
-        airPodsService.sendPacket(START_CMD)
 
         detectionJob = CoroutineScope(Dispatchers.Default).launch {
             while (isRunning) {
@@ -117,7 +117,7 @@ fun startDetection(doNotStop: Boolean = false, onGestureDetected: (Boolean) -> U
         Log.d(TAG, "Stopping gesture detection")
         isRunning = false
 
-        if (!doNotStop) airPodsService.sendPacket(STOP_CMD)
+        if (!doNotStop) airPodsService.stopHeadTracking()
 
         detectionJob?.cancel()
         detectionJob = null
@@ -187,7 +187,7 @@ fun startDetection(doNotStop: Boolean = false, onGestureDetected: (Boolean) -> U
         }
     }
 
- 
+
     private fun detectPeaksAndTroughs() {
         if (horizontalBuffer.size < 4 || verticalBuffer.size < 4) return
 

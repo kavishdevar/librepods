@@ -1,25 +1,25 @@
 /*
  * LibrePods - AirPods liberated from Apple’s ecosystem
- * 
+ *
  * Copyright (C) 2025 LibrePods contributors
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
  * by the Free Software Foundation, either version 3 of the License.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.composables
 
-import android.content.Context
-import android.content.SharedPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -44,26 +44,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.services.ServiceManager
+import me.kavishdevar.librepods.utils.AACPManager
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdaptiveStrengthSlider(service: AirPodsService, sharedPreferences: SharedPreferences) {
+fun AdaptiveStrengthSlider() {
     val sliderValue = remember { mutableFloatStateOf(0f) }
+    val service = ServiceManager.getService()!!
     LaunchedEffect(sliderValue) {
-        if (sharedPreferences.contains("adaptive_strength")) {
-            sliderValue.floatValue = sharedPreferences.getInt("adaptive_strength", 0).toFloat()
-        }
-    }
-    LaunchedEffect(sliderValue.floatValue) {
-        sharedPreferences.edit().putInt("adaptive_strength", sliderValue.floatValue.toInt()).apply()
+        val sliderValueFromAACP = service.aacpManager.controlCommandStatusList.find {
+            it.identifier == AACPManager.Companion.ControlCommandIdentifiers.AUTO_ANC_STRENGTH
+        }?.value?.takeIf { it.isNotEmpty() }?.get(0)
+        sliderValueFromAACP?.toFloat()?.let { sliderValue.floatValue = (100 - it) }
     }
 
     val isDarkTheme = isSystemInDarkTheme()
@@ -86,7 +86,10 @@ fun AdaptiveStrengthSlider(service: AirPodsService, sharedPreferences: SharedPre
             valueRange = 0f..100f,
             onValueChangeFinished = {
                 sliderValue.floatValue = sliderValue.floatValue.roundToInt().toFloat()
-                service.setAdaptiveStrength(100 - sliderValue.floatValue.toInt())
+                service.aacpManager.sendControlCommand(
+                    identifier = AACPManager.Companion.ControlCommandIdentifiers.AUTO_ANC_STRENGTH.value,
+                    value = (100 - sliderValue.floatValue).toInt()
+                )
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -151,5 +154,5 @@ fun AdaptiveStrengthSlider(service: AirPodsService, sharedPreferences: SharedPre
 @Preview
 @Composable
 fun AdaptiveStrengthSliderPreview() {
-    AdaptiveStrengthSlider(service = AirPodsService(), sharedPreferences = LocalContext.current.getSharedPreferences("preview", Context.MODE_PRIVATE))
+    AdaptiveStrengthSlider()
 }

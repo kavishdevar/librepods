@@ -60,7 +60,6 @@ object HeadTracking {
     private fun calculateOrientation(o1: Int, o2: Int, o3: Int): Orientation {
         if (!isCalibrated) return Orientation()
 
-        // Add offset before normalizationval
         val o1Norm = (o1 + ORIENTATION_OFFSET) - o1Neutral
         val o2Norm = (o2 + ORIENTATION_OFFSET) - o2Neutral
         val o3Norm = (o3 + ORIENTATION_OFFSET) - o3Neutral

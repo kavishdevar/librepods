@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods
 
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -72,15 +75,11 @@ import me.kavishdevar.librepods.composables.ControlCenterNoiseControlSegmentedBu
 import me.kavishdevar.librepods.composables.VerticalVolumeSlider
 import me.kavishdevar.librepods.services.AirPodsService
 import me.kavishdevar.librepods.ui.theme.LibrePodsTheme
+import me.kavishdevar.librepods.utils.AACPManager
 import me.kavishdevar.librepods.utils.AirPodsNotifications
 import me.kavishdevar.librepods.utils.NoiseControlMode
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.abs
-
-data class DismissAnimationValues(
-    val offsetY: Dp = 0.dp,
-    val scale: Float = 1f,
-    val alpha: Float = 1f
-)
 
 class QuickSettingsDialogActivity : ComponentActivity() {
 
@@ -114,7 +113,6 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                                 isNoiseControlExpanded = isNoiseControlExpandedState,
                                 onNoiseControlExpandedChange = { isNoiseControlExpandedState = it }
                             )
-                        } else {
                         }
                     }
                 }
@@ -159,7 +157,6 @@ class QuickSettingsDialogActivity : ComponentActivity() {
                             isNoiseControlExpanded = isNoiseControlExpandedState,
                             onNoiseControlExpandedChange = { isNoiseControlExpandedState = it }
                         )
-                    } else {
                     }
                 }
             }
@@ -182,7 +179,6 @@ fun DraggableDismissBox(
     content: @Composable () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val density = LocalDensity.current
 
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
@@ -218,7 +214,6 @@ fun DraggableDismissBox(
 
     LaunchedEffect(dragOffset, isDragging) {
         if (isDragging) {
-            val dragDirection = if (dragOffset > 0) 1f else -1f
             val dragProgress = (abs(dragOffset) / 1000f).coerceIn(0f, 0.5f)
 
             animatedOffset.snapTo(dragOffset)
@@ -285,6 +280,7 @@ fun DraggableDismissBox(
     }
 }
 
+@SuppressLint("UnspecifiedRegisterReceiverFlag")
 @Composable
 fun NewControlCenterDialogContent(
     service: AirPodsService?,
@@ -353,7 +349,7 @@ fun NewControlCenterDialogContent(
         }
 
         service?.let {
-            val initialModeOrdinal = it.getANC().minus(1) ?: NoiseControlMode.TRANSPARENCY.ordinal
+            val initialModeOrdinal = it.getANC().minus(1)
             var initialMode = NoiseControlMode.entries.getOrElse(initialModeOrdinal) { NoiseControlMode.TRANSPARENCY }
             if (!availableModes.contains(initialMode)) {
                 initialMode = NoiseControlMode.TRANSPARENCY
@@ -482,7 +478,10 @@ fun NewControlCenterDialogContent(
                             availableModes = availableModes,
                             selectedMode = currentAncMode,
                             onModeSelected = { newMode ->
-                                service.setANCMode(newMode.ordinal + 1)
+                                service.aacpManager.sendControlCommand(
+                                    identifier = AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
+                                    value = newMode.ordinal + 1
+                                )
                                 currentAncMode = newMode
                             },
                             modifier = Modifier.fillMaxWidth(0.8f)
@@ -560,7 +559,10 @@ fun NewControlCenterDialogContent(
                                         .clickable(
                                             onClick = {
                                                 val newState = !isConvAwarenessEnabled
-                                                service.setCAEnabled(newState)
+                                                service.aacpManager.sendControlCommand(
+                                                    identifier = AACPManager.Companion.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG.value,
+                                                    value = newState
+                                                )
                                                 isConvAwarenessEnabled = newState
                                             },
                                             indication = null,

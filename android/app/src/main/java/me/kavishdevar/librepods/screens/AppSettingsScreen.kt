@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -49,11 +50,15 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,6 +81,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -88,10 +95,13 @@ import dev.chrisbanes.haze.materials.CupertinoMaterials
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.composables.StyledSwitch
+import me.kavishdevar.librepods.utils.AACPManager
 import me.kavishdevar.librepods.utils.RadareOffsetFinder
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalHazeMaterialsApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalHazeMaterialsApi::class, ExperimentalEncodingApi::class)
 @Composable
 fun AppSettingsScreen(navController: NavController) {
     val sharedPreferences = LocalContext.current.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -103,6 +113,35 @@ fun AppSettingsScreen(navController: NavController) {
     val hazeState = remember { HazeState() }
 
     var showResetDialog by remember { mutableStateOf(false) }
+    var showIrkDialog by remember { mutableStateOf(false) }
+    var showEncKeyDialog by remember { mutableStateOf(false) }
+    var irkValue by remember { mutableStateOf("") }
+    var encKeyValue by remember { mutableStateOf("") }
+    var irkError by remember { mutableStateOf<String?>(null) }
+    var encKeyError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        val savedIrk = sharedPreferences.getString(AACPManager.Companion.ProximityKeyType.IRK.name, null)
+        val savedEncKey = sharedPreferences.getString(AACPManager.Companion.ProximityKeyType.ENC_KEY.name, null)
+
+        if (savedIrk != null) {
+            try {
+                val decoded = Base64.decode(savedIrk)
+                irkValue = decoded.joinToString("") { "%02x".format(it) }
+            } catch (e: Exception) {
+                irkValue = ""
+            }
+        }
+
+        if (savedEncKey != null) {
+            try {
+                val decoded = Base64.decode(savedEncKey)
+                encKeyValue = decoded.joinToString("") { "%02x".format(it) }
+            } catch (e: Exception) {
+                encKeyValue = ""
+            }
+        }
+    }
 
     var showPhoneBatteryInWidget by remember {
         mutableStateOf(sharedPreferences.getBoolean("show_phone_battery_in_widget", true))
@@ -119,7 +158,34 @@ fun AppSettingsScreen(navController: NavController) {
     var disconnectWhenNotWearing by remember {
         mutableStateOf(sharedPreferences.getBoolean("disconnect_when_not_wearing", false))
     }
+
+    var takeoverWhenDisconnected by remember {
+        mutableStateOf(sharedPreferences.getBoolean("takeover_when_disconnected", true))
+    }
+    var takeoverWhenIdle by remember {
+        mutableStateOf(sharedPreferences.getBoolean("takeover_when_idle", true))
+    }
+    var takeoverWhenMusic by remember {
+        mutableStateOf(sharedPreferences.getBoolean("takeover_when_music", false))
+    }
+    var takeoverWhenCall by remember {
+        mutableStateOf(sharedPreferences.getBoolean("takeover_when_call", true))
+    }
+
+    var takeoverWhenRingingCall by remember {
+        mutableStateOf(sharedPreferences.getBoolean("takeover_when_ringing_call", true))
+    }
+    var takeoverWhenMediaStart by remember {
+        mutableStateOf(sharedPreferences.getBoolean("takeover_when_media_start", true))
+    }
+
     var mDensity by remember { mutableFloatStateOf(0f) }
+
+    fun validateHexInput(input: String): Boolean {
+        val hexPattern = Regex("^[0-9a-fA-F]{32}$")
+        return hexPattern.matches(input)
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -608,6 +674,293 @@ fun AppSettingsScreen(navController: NavController) {
             }
 
             Text(
+                text = stringResource(R.string.takeover_header).uppercase(),
+                style = TextStyle(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Light,
+                    color = textColor.copy(alpha = 0.6f),
+                    fontFamily = FontFamily(Font(R.font.sf_pro))
+                ),
+                modifier = Modifier.padding(8.dp, bottom = 2.dp, top = 24.dp)
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        backgroundColor,
+                        RoundedCornerShape(14.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.takeover_airpods_state),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = textColor,
+                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            takeoverWhenDisconnected = !takeoverWhenDisconnected
+                            sharedPreferences.edit().putBoolean("takeover_when_disconnected", takeoverWhenDisconnected).apply()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.takeover_disconnected),
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.takeover_disconnected_desc),
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+
+                    StyledSwitch(
+                        checked = takeoverWhenDisconnected,
+                        onCheckedChange = {
+                            takeoverWhenDisconnected = it
+                            sharedPreferences.edit().putBoolean("takeover_when_disconnected", it).apply()
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            takeoverWhenIdle = !takeoverWhenIdle
+                            sharedPreferences.edit().putBoolean("takeover_when_idle", takeoverWhenIdle).apply()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.takeover_idle),
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.takeover_idle_desc),
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+
+                    StyledSwitch(
+                        checked = takeoverWhenIdle,
+                        onCheckedChange = {
+                            takeoverWhenIdle = it
+                            sharedPreferences.edit().putBoolean("takeover_when_idle", it).apply()
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            takeoverWhenMusic = !takeoverWhenMusic
+                            sharedPreferences.edit().putBoolean("takeover_when_music", takeoverWhenMusic).apply()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.takeover_music),
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.takeover_music_desc),
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+
+                    StyledSwitch(
+                        checked = takeoverWhenMusic,
+                        onCheckedChange = {
+                            takeoverWhenMusic = it
+                            sharedPreferences.edit().putBoolean("takeover_when_music", it).apply()
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            takeoverWhenCall = !takeoverWhenCall
+                            sharedPreferences.edit().putBoolean("takeover_when_call", takeoverWhenCall).apply()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.takeover_call),
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.takeover_call_desc),
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+
+                    StyledSwitch(
+                        checked = takeoverWhenCall,
+                        onCheckedChange = {
+                            takeoverWhenCall = it
+                            sharedPreferences.edit().putBoolean("takeover_when_call", it).apply()
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = stringResource(R.string.takeover_phone_state),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = textColor,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            takeoverWhenRingingCall = !takeoverWhenRingingCall
+                            sharedPreferences.edit().putBoolean("takeover_when_ringing_call", takeoverWhenRingingCall).apply()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.takeover_ringing_call),
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.takeover_ringing_call_desc),
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+
+                    StyledSwitch(
+                        checked = takeoverWhenRingingCall,
+                        onCheckedChange = {
+                            takeoverWhenRingingCall = it
+                            sharedPreferences.edit().putBoolean("takeover_when_ringing_call", it).apply()
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            takeoverWhenMediaStart = !takeoverWhenMediaStart
+                            sharedPreferences.edit().putBoolean("takeover_when_media_start", takeoverWhenMediaStart).apply()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.takeover_media_start),
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.takeover_media_start_desc),
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+
+                    StyledSwitch(
+                        checked = takeoverWhenMediaStart,
+                        onCheckedChange = {
+                            takeoverWhenMediaStart = it
+                            sharedPreferences.edit().putBoolean("takeover_when_media_start", it).apply()
+                        }
+                    )
+                }
+            }
+
+            Text(
                 text = "Advanced Options".uppercase(),
                 style = TextStyle(
                     fontSize = 14.sp,
@@ -629,6 +982,64 @@ fun AppSettingsScreen(navController: NavController) {
                     )
                     .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showIrkDialog = true
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = "Set Identity Resolving Key (IRK)",
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Manually set the IRK value used for resolving BLE random addresses",
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showEncKeyDialog = true
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(vertical = 8.dp)
+                            .padding(end = 4.dp)
+                    ) {
+                        Text(
+                            text = "Set Encryption Key",
+                            fontSize = 16.sp,
+                            color = textColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Manually set the ENC_KEY value used for decrypting BLE advertisements",
+                            fontSize = 14.sp,
+                            color = textColor.copy(0.6f),
+                            lineHeight = 16.sp,
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -748,6 +1159,184 @@ fun AppSettingsScreen(navController: NavController) {
                     dismissButton = {
                         TextButton(
                             onClick = { showResetDialog = false }
+                        ) {
+                            Text(
+                                "Cancel",
+                                fontFamily = FontFamily(Font(R.font.sf_pro)),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                )
+            }
+
+            if (showIrkDialog) {
+                AlertDialog(
+                    onDismissRequest = { showIrkDialog = false },
+                    title = {
+                        Text(
+                            "Set Identity Resolving Key (IRK)",
+                            fontFamily = FontFamily(Font(R.font.sf_pro)),
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "Enter 16-byte IRK as hex string (32 characters):",
+                                fontFamily = FontFamily(Font(R.font.sf_pro)),
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+
+                            OutlinedTextField(
+                                value = irkValue,
+                                onValueChange = {
+                                    irkValue = it.lowercase().filter { char -> char.isDigit() || char in 'a'..'f' }
+                                    irkError = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                isError = irkError != null,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Ascii,
+                                    capitalization = KeyboardCapitalization.None
+                                ),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = if (isDarkTheme) Color(0xFF007AFF) else Color(0xFF3C6DF5),
+                                    unfocusedBorderColor = if (isDarkTheme) Color.Gray else Color.LightGray
+                                ),
+                                supportingText = {
+                                    if (irkError != null) {
+                                        Text(irkError!!, color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                label = { Text("IRK Hex Value") }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (!validateHexInput(irkValue)) {
+                                    irkError = "Must be exactly 32 hex characters"
+                                    return@TextButton
+                                }
+
+                                try {
+                                    val hexBytes = ByteArray(16)
+                                    for (i in 0 until 16) {
+                                        val hexByte = irkValue.substring(i * 2, i * 2 + 2)
+                                        hexBytes[i] = hexByte.toInt(16).toByte()
+                                    }
+
+                                    val base64Value = Base64.encode(hexBytes)
+                                    sharedPreferences.edit().putString(AACPManager.Companion.ProximityKeyType.IRK.name, base64Value).apply()
+
+                                    Toast.makeText(context, "IRK has been set successfully", Toast.LENGTH_SHORT).show()
+                                    showIrkDialog = false
+                                } catch (e: Exception) {
+                                    irkError = "Error converting hex: ${e.message}"
+                                }
+                            }
+                        ) {
+                            Text(
+                                "Save",
+                                fontFamily = FontFamily(Font(R.font.sf_pro)),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showIrkDialog = false }
+                        ) {
+                            Text(
+                                "Cancel",
+                                fontFamily = FontFamily(Font(R.font.sf_pro)),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                )
+            }
+
+            if (showEncKeyDialog) {
+                AlertDialog(
+                    onDismissRequest = { showEncKeyDialog = false },
+                    title = {
+                        Text(
+                            "Set Encryption Key",
+                            fontFamily = FontFamily(Font(R.font.sf_pro)),
+                            fontWeight = FontWeight.Medium
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                "Enter 16-byte ENC_KEY as hex string (32 characters):",
+                                fontFamily = FontFamily(Font(R.font.sf_pro)),
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+
+                            OutlinedTextField(
+                                value = encKeyValue,
+                                onValueChange = {
+                                    encKeyValue = it.lowercase().filter { char -> char.isDigit() || char in 'a'..'f' }
+                                    encKeyError = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                isError = encKeyError != null,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Ascii,
+                                    capitalization = KeyboardCapitalization.None
+                                ),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = if (isDarkTheme) Color(0xFF007AFF) else Color(0xFF3C6DF5),
+                                    unfocusedBorderColor = if (isDarkTheme) Color.Gray else Color.LightGray
+                                ),
+                                supportingText = {
+                                    if (encKeyError != null) {
+                                        Text(encKeyError!!, color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                label = { Text("ENC_KEY Hex Value") }
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (!validateHexInput(encKeyValue)) {
+                                    encKeyError = "Must be exactly 32 hex characters"
+                                    return@TextButton
+                                }
+
+                                try {
+                                    val hexBytes = ByteArray(16)
+                                    for (i in 0 until 16) {
+                                        val hexByte = encKeyValue.substring(i * 2, i * 2 + 2)
+                                        hexBytes[i] = hexByte.toInt(16).toByte()
+                                    }
+
+                                    val base64Value = Base64.encode(hexBytes)
+                                    sharedPreferences.edit().putString(AACPManager.Companion.ProximityKeyType.ENC_KEY.name, base64Value).apply()
+
+                                    Toast.makeText(context, "Encryption key has been set successfully", Toast.LENGTH_SHORT).show()
+                                    showEncKeyDialog = false
+                                } catch (e: Exception) {
+                                    encKeyError = "Error converting hex: ${e.message}"
+                                }
+                            }
+                        ) {
+                            Text(
+                                "Save",
+                                fontFamily = FontFamily(Font(R.font.sf_pro)),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = { showEncKeyDialog = false }
                         ) {
                             Text(
                                 "Cancel",

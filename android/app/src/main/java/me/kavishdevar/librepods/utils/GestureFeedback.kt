@@ -4,9 +4,6 @@ package me.kavishdevar.librepods.utils
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioDeviceInfo
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.media.SoundPool
 import android.os.Build
 import android.os.SystemClock
@@ -21,44 +18,6 @@ class GestureFeedback(private val context: Context) {
     private val TAG = "GestureFeedback"
 
     private val soundsLoaded = AtomicBoolean(false)
-
-    private fun forceBluetoothRouting(audioManager: AudioManager) {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-                val bluetoothDevice = devices.find {
-                    it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                        it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                }
-
-                bluetoothDevice?.let { device ->
-                    val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
-                        .setAudioAttributes(AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build())
-                        .build()
-
-                    audioManager.requestAudioFocus(focusRequest)
-
-                    if (!audioManager.isBluetoothScoOn) {
-                        audioManager.isBluetoothScoOn = true
-                        audioManager.startBluetoothSco()
-                    }
-
-                    Log.d(TAG, "Forced audio routing to Bluetooth device")
-                }
-            } else {
-                if (!audioManager.isBluetoothScoOn) {
-                    audioManager.isBluetoothScoOn = true
-                    audioManager.startBluetoothSco()
-                    Log.d(TAG, "Started Bluetooth SCO")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to force Bluetooth routing", e)
-        }
-    }
 
     private val soundPool = SoundPool.Builder()
         .setMaxStreams(3)
@@ -199,14 +158,6 @@ class GestureFeedback(private val context: Context) {
         if (soundId != 0 && soundsLoaded.get()) {
             val streamId = soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
             Log.d(TAG, "Playing ${if (isYes) "YES" else "NO"} confirmation - streamID=$streamId")
-        }
-    }
-
-    fun release() {
-        try {
-            soundPool.release()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing resources", e)
         }
     }
 }

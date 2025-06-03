@@ -15,7 +15,9 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.services
 
 import android.annotation.SuppressLint
@@ -31,12 +33,12 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
 import androidx.annotation.RequiresApi
-import androidx.compose.material3.ExperimentalMaterial3Api
-import me.kavishdevar.librepods.MainActivity
 import me.kavishdevar.librepods.QuickSettingsDialogActivity
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.utils.AACPManager
 import me.kavishdevar.librepods.utils.AirPodsNotifications
 import me.kavishdevar.librepods.utils.NoiseControlMode
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @RequiresApi(Build.VERSION_CODES.Q)
 class AirPodsQSService : TileService() {
@@ -171,10 +173,11 @@ class AirPodsQSService : TileService() {
                 )
                 startActivityAndCollapse(pendingIntent)
             } else {
-                @Suppress("DEPRECATION")
                 val intent = Intent(this, QuickSettingsDialogActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                 }
+                @Suppress("DEPRECATION")
+                @SuppressLint("StartActivityAndCollapseDeprecated")
                 startActivityAndCollapse(intent)
             }
             Log.d("AirPodsQSService", "Called startActivityAndCollapse for QuickSettingsDialogActivity")
@@ -191,14 +194,17 @@ class AirPodsQSService : TileService() {
         }
         val nextMode = getNextAncMode()
         Log.d("AirPodsQSService", "Cycling ANC mode to: $nextMode")
-        service.setANCMode(nextMode)
+        service.aacpManager.sendControlCommand(
+            AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
+            nextMode
+        )
     }
 
     private fun updateTile() {
         val tile = qsTile ?: return
         Log.d("AirPodsQSService", "updateTile - Connected: $isAirPodsConnected, Mode: $currentAncMode")
 
-        val deviceName = sharedPreferences.getString("name", "AirPods") ?: "AirPods" 
+        val deviceName = sharedPreferences.getString("name", "AirPods") ?: "AirPods"
 
         if (isAirPodsConnected) {
             tile.state = Tile.STATE_ACTIVE
@@ -262,42 +268,9 @@ class AirPodsQSService : TileService() {
              else -> R.drawable.airpods
          }
      }
-     
-    @ExperimentalMaterial3Api
+
     override fun onTileAdded() {
         super.onTileAdded()
         Log.d("AirPodsQSService", "Tile added")
-        
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-    }
-
-    @ExperimentalMaterial3Api
-    fun openMainActivity() {
-        Log.d("AirPodsQSService", "Opening MainActivity")
-        
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                val pendingIntent = PendingIntent.getActivity(
-                    this,
-                    0,
-                    Intent(this, MainActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    },
-                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-                )
-                startActivityAndCollapse(pendingIntent)
-            } else {
-                @Suppress("DEPRECATION")
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                startActivityAndCollapse(intent)
-            }
-            Log.d("AirPodsQSService", "Called startActivityAndCollapse for MainActivity")
-        } catch (e: Exception) {
-            Log.e("AirPodsQSService", "Error launching MainActivity: $e")
-        }
     }
 }

@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.screens
 
 import android.annotation.SuppressLint
@@ -36,7 +38,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -84,7 +85,6 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import dev.chrisbanes.haze.HazeEffectScope
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.materials.CupertinoMaterials
@@ -101,7 +101,9 @@ import me.kavishdevar.librepods.composables.NoiseControlSettings
 import me.kavishdevar.librepods.composables.PressAndHoldSettings
 import me.kavishdevar.librepods.services.AirPodsService
 import me.kavishdevar.librepods.ui.theme.LibrePodsTheme
+import me.kavishdevar.librepods.utils.AACPManager
 import me.kavishdevar.librepods.utils.AirPodsNotifications
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalHazeMaterialsApi::class)
 @SuppressLint("MissingPermission", "UnspecifiedRegisterReceiverFlag")
@@ -355,7 +357,7 @@ fun AirPodsSettingsScreen(dev: BluetoothDevice?, service: AirPodsService,
                 PressAndHoldSettings(navController = navController)
 
                 Spacer(modifier = Modifier.height(16.dp))
-                AudioSettings(service = service, sharedPreferences = sharedPreferences)
+                AudioSettings()
 
                 Spacer(modifier = Modifier.height(16.dp))
                 IndependentToggle(
@@ -363,20 +365,20 @@ fun AirPodsSettingsScreen(dev: BluetoothDevice?, service: AirPodsService,
                     service = service,
                     functionName = "setEarDetection",
                     sharedPreferences = sharedPreferences,
-                    true
+                    default = true
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
                 IndependentToggle(
                     name = "Off Listening Mode",
                     service = service,
-                    functionName = "setOffListeningMode",
                     sharedPreferences = sharedPreferences,
-                    false
+                    default = false,
+                    controlCommandIdentifier = AACPManager.Companion.ControlCommandIdentifiers.ALLOW_OFF_OPTION
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
-                AccessibilitySettings(service = service, sharedPreferences = sharedPreferences)
+                AccessibilitySettings()
 
                 Spacer(modifier = Modifier.height(16.dp))
                 NavigationButton("debug", "Debug", navController)

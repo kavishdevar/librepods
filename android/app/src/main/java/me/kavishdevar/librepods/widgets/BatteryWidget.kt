@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
 
 package me.kavishdevar.librepods.widgets
 
@@ -23,6 +24,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import me.kavishdevar.librepods.services.ServiceManager
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 class BatteryWidget : AppWidgetProvider() {
     override fun onUpdate(

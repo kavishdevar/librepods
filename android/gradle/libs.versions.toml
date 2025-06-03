@@ -15,6 +15,7 @@ hazeMaterials = "1.5.3"
 sliceBuilders = "1.1.0-alpha02"
 sliceCore = "1.1.0-alpha02"
 sliceView = "1.1.0-alpha02"
+dynamicanimation = "1.1.0"
 
 [libraries]
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanistPermissions" }
@@ -35,6 +36,7 @@ haze-materials = { group = "dev.chrisbanes.haze", name = "haze-materials", versi
 androidx-slice-builders = { group = "androidx.slice", name = "slice-builders", version.ref = "sliceBuilders" }
 androidx-slice-core = { group = "androidx.slice", name = "slice-core", version.ref = "sliceCore" }
 androidx-slice-view = { group = "androidx.slice", name = "slice-view", version.ref = "sliceView" }
+androidx-dynamicanimation = { group = "androidx.dynamicanimation", name = "dynamicanimation", version.ref = "dynamicanimation" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

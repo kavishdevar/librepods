@@ -1,20 +1,22 @@
 /*
  * LibrePods - AirPods liberated from Apple’s ecosystem
- * 
+ *
  * Copyright (C) 2025 LibrePods contributors
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
  * by the Free Software Foundation, either version 3 of the License.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+
+@file:OptIn(ExperimentalEncodingApi::class)
 
 package me.kavishdevar.librepods.composables
 
@@ -23,7 +25,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.SharedPreferences
 import android.os.Build
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring
@@ -50,7 +51,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -74,34 +74,33 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.utils.AACPManager
 import me.kavishdevar.librepods.utils.AirPodsNotifications
 import me.kavishdevar.librepods.utils.NoiseControlMode
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.roundToInt
 
 @SuppressLint("UnspecifiedRegisterReceiverFlag", "UnusedBoxWithConstraintsScope")
 @Composable
 fun NoiseControlSettings(
     service: AirPodsService,
-    onModeSelectedCallback: () -> Unit = {} // Callback parameter remains, but won't finish activity
 ) {
     val context = LocalContext.current
-    val sharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    val offListeningMode = remember { mutableStateOf(sharedPreferences.getBoolean("off_listening_mode", true)) }
-   
-    val preferenceChangeListener = remember {
-        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "off_listening_mode") {
-                offListeningMode.value = sharedPreferences.getBoolean("off_listening_mode", true)
-            }
+    val offListeningModeConfigValue = service.aacpManager.controlCommandStatusList.find {
+        it.identifier == AACPManager.Companion.ControlCommandIdentifiers.ALLOW_OFF_OPTION
+    }?.value?.takeIf { it.isNotEmpty() }?.get(0) == 1.toByte()
+    val offListeningMode = remember { mutableStateOf(offListeningModeConfigValue) }
+
+    val offListeningModeListener = object: AACPManager.ControlCommandListener {
+        override fun onControlCommandReceived(controlCommand: AACPManager.ControlCommand) {
+            offListeningMode.value = controlCommand.value[0] == 1.toByte()
         }
     }
-    
-    DisposableEffect(Unit) {
-        sharedPreferences.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
-        onDispose {
-            sharedPreferences.unregisterOnSharedPreferenceChangeListener(preferenceChangeListener)
-        }
-    }
+
+    service.aacpManager.registerControlCommandListener(
+        AACPManager.Companion.ControlCommandIdentifiers.ALLOW_OFF_OPTION,
+        offListeningModeListener
+    )
 
     val isDarkTheme = isSystemInDarkTheme()
     val backgroundColor = if (isDarkTheme) Color(0xFF1C1C1E) else Color(0xFFE3E3E8)
@@ -116,27 +115,21 @@ fun NoiseControlSettings(
     val d3a = remember { mutableFloatStateOf(0f) }
 
     fun onModeSelected(mode: NoiseControlMode, received: Boolean = false) {
-        val previousMode = noiseControlMode.value // Store previous mode
+        val previousMode = noiseControlMode.value
 
-        // Ensure the mode is valid if 'Off' is disabled
         val targetMode = if (!offListeningMode.value && mode == NoiseControlMode.OFF) {
-             // If trying to select OFF but it's disabled, default to Transparency or Adaptive
-             NoiseControlMode.TRANSPARENCY // Or ADAPTIVE, based on preference
+             NoiseControlMode.TRANSPARENCY
         } else {
             mode
         }
 
-        noiseControlMode.value = targetMode // Update internal state immediately
+        noiseControlMode.value = targetMode
 
-        // Only call service if the mode was manually selected (!received)
-        // and the target mode is actually different from the previous mode
         if (!received && targetMode != previousMode) {
-            service.setANCMode(targetMode.ordinal + 1)
-            // onModeSelectedCallback() // REMOVE this call to keep dialog open
+            service.aacpManager.sendControlCommand(identifier = AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value, value = targetMode.ordinal + 1)
         }
 
-        // Update divider alphas based on the *new* mode
-        when (noiseControlMode.value) { // Use the updated noiseControlMode.value
+        when (noiseControlMode.value) {
             NoiseControlMode.NOISE_CANCELLATION -> {
                 d1a.floatValue = 1f
                 d2a.floatValue = 1f
@@ -447,5 +440,5 @@ fun NoiseControlSettings(
 @Preview()
 @Composable
 fun NoiseControlSettingsPreview() {
-    NoiseControlSettings(AirPodsService()) {}
+    NoiseControlSettings(AirPodsService())
 }

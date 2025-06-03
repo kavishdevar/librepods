@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods
 
 import android.annotation.SuppressLint
@@ -114,6 +116,7 @@ import me.kavishdevar.librepods.ui.theme.LibrePodsTheme
 import me.kavishdevar.librepods.utils.AirPodsNotifications
 import me.kavishdevar.librepods.utils.CrossDevice
 import me.kavishdevar.librepods.utils.RadareOffsetFinder
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 lateinit var serviceConnection: ServiceConnection
 lateinit var connectionStatusReceiver: BroadcastReceiver
@@ -205,7 +208,7 @@ fun Main() {
         "android.permission.ANSWER_PHONE_CALLS"
     )
     val allPermissions = bluetoothPermissions + otherPermissions
-    
+
     val permissionState = rememberMultiplePermissionsState(
         permissions = allPermissions
     )

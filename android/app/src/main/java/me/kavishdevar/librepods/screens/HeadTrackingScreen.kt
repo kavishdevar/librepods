@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.screens
 
 import android.content.Context
@@ -115,6 +117,7 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.composables.IndependentToggle
 import me.kavishdevar.librepods.services.ServiceManager
 import me.kavishdevar.librepods.utils.HeadTracking
+import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin

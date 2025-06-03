@@ -1,24 +1,25 @@
 /*
  * LibrePods - AirPods liberated from Apple’s ecosystem
- * 
+ *
  * Copyright (C) 2025 LibrePods contributors
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
  * by the Free Software Foundation, either version 3 of the License.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU Affero General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.composables
 
-import android.content.SharedPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -41,23 +42,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.services.ServiceManager
+import me.kavishdevar.librepods.utils.AACPManager
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Composable
-fun VolumeControlSwitch(service: AirPodsService, sharedPreferences: SharedPreferences) {
+fun VolumeControlSwitch() {
+    val service = ServiceManager.getService()!!
+    val volumeControlEnabledValue = service.aacpManager.controlCommandStatusList.find {
+        it.identifier == AACPManager.Companion.ControlCommandIdentifiers.VOLUME_SWIPE_MODE
+    }?.value?.takeIf { it.isNotEmpty() }?.get(0)
     var volumeControlEnabled by remember {
         mutableStateOf(
-            sharedPreferences.getBoolean("volume_control", true)
+            volumeControlEnabledValue == 1.toByte()
         )
     }
     fun updateVolumeControlEnabled(enabled: Boolean) {
         volumeControlEnabled = enabled
-        sharedPreferences.edit().putBoolean("volume_control", enabled).apply()
-        service.setVolumeControl(enabled)
+        service.aacpManager.sendControlCommand(
+            AACPManager.Companion.ControlCommandIdentifiers.VOLUME_SWIPE_MODE.value,
+            enabled
+        )
     }
 
     val isDarkTheme = isSystemInDarkTheme()
@@ -120,5 +128,5 @@ fun VolumeControlSwitch(service: AirPodsService, sharedPreferences: SharedPrefer
 @Preview
 @Composable
 fun VolumeControlSwitchPreview() {
-    VolumeControlSwitch(service = AirPodsService(), sharedPreferences = LocalContext.current.getSharedPreferences("preview", 0))
+    VolumeControlSwitch()
 }

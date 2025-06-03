@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.composables
 
 import android.content.SharedPreferences
@@ -46,16 +48,39 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.utils.AACPManager
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Composable
-fun IndependentToggle(name: String, service: AirPodsService? = null, functionName: String? = null, sharedPreferences: SharedPreferences, default: Boolean = false) {
+fun IndependentToggle(name: String, service: AirPodsService? = null, functionName: String? = null, sharedPreferences: SharedPreferences, default: Boolean = false, controlCommandIdentifier: AACPManager.Companion.ControlCommandIdentifiers? = null) {
     val isDarkTheme = isSystemInDarkTheme()
     val textColor = if (isDarkTheme) Color.White else Color.Black
-
-    val snakeCasedName = name.replace(Regex("[\\W\\s]+"), "_").lowercase()
+    val snakeCasedName =
+        controlCommandIdentifier?.name ?: name.replace(Regex("[\\W\\s]+"), "_").lowercase()
     var checked by remember { mutableStateOf(default) }
+
+    if (controlCommandIdentifier != null) {
+        checked = service!!.aacpManager.controlCommandStatusList.find {
+            it.identifier == controlCommandIdentifier
+        }?.value?.takeIf { it.isNotEmpty() }?.get(0) == 1.toByte()
+    }
+
     var backgroundColor by remember { mutableStateOf(if (isDarkTheme) Color(0xFF1C1C1E) else Color(0xFFFFFFFF)) }
     val animatedBackgroundColor by animateColorAsState(targetValue = backgroundColor, animationSpec = tween(durationMillis = 500))
+
+    fun cb() {
+        if (controlCommandIdentifier == null) {
+            sharedPreferences.edit().putBoolean(snakeCasedName, checked).apply()
+        }
+        if (functionName != null && service != null) {
+            val method =
+                service::class.java.getMethod(functionName, Boolean::class.java)
+            method.invoke(service, checked)
+        }
+        if (controlCommandIdentifier != null) {
+            service?.aacpManager?.sendControlCommand(identifier = controlCommandIdentifier.value, value = checked)
+        }
+    }
 
     LaunchedEffect(sharedPreferences) {
         checked = sharedPreferences.getBoolean(snakeCasedName, true)
@@ -73,14 +98,7 @@ fun IndependentToggle(name: String, service: AirPodsService? = null, functionNam
                     },
                     onTap = {
                         checked = !checked
-                        sharedPreferences
-                            .edit()
-                            .putBoolean(snakeCasedName, checked)
-                            .apply()
-                        if (functionName != null && service != null) {
-                            val method = service::class.java.getMethod(functionName, Boolean::class.java)
-                            method.invoke(service, checked)
-                        }
+                        cb()
                     }
                 )
             },
@@ -98,12 +116,7 @@ fun IndependentToggle(name: String, service: AirPodsService? = null, functionNam
                 checked = checked,
                 onCheckedChange = {
                     checked = it
-                    sharedPreferences.edit().putBoolean(snakeCasedName, it).apply()
-                    if (functionName != null && service != null) {
-                        val method =
-                            service::class.java.getMethod(functionName, Boolean::class.java)
-                        method.invoke(service, it)
-                    }
+                    cb()
                 },
             )
         }

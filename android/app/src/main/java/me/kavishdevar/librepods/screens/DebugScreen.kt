@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-@file:OptIn(ExperimentalHazeMaterialsApi::class)
+@file:OptIn(ExperimentalHazeMaterialsApi::class, ExperimentalEncodingApi::class)
 
 package me.kavishdevar.librepods.screens
 
@@ -103,6 +103,7 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.services.ServiceManager
 import me.kavishdevar.librepods.utils.BatteryStatus
 import me.kavishdevar.librepods.utils.isHeadTrackingData
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 data class PacketInfo(
     val type: String,
@@ -616,7 +617,12 @@ fun DebugScreen(navController: NavController) {
                         IconButton(
                             onClick = {
                                 if (packet.value.text.isNotBlank()) {
-                                    airPodsService?.value?.sendPacket(packet.value.text)
+                                    airPodsService?.value?.aacpManager?.sendPacket(
+                                        packet.value.text
+                                            .split(" ")
+                                            .map { it.toInt(16).toByte() }
+                                            .toByteArray()
+                                    )
                                     packet.value = TextFieldValue("")
                                     focusManager.clearFocus()
 

@@ -64,4 +64,19 @@
     <string name="collect_logs">Collect Logs</string>
     <string name="saved_logs">Saved Logs</string>
     <string name="no_logs_found">No saved logs found</string>
+    <string name="takeover_header">Auto-Connect preferences</string>
+    <string name="takeover_airpods_state">Connect to your AirPods when its status is:</string>
+    <string name="takeover_disconnected">Disconnected</string>
+    <string name="takeover_disconnected_desc">AirPods are not connected to a device</string>
+    <string name="takeover_idle">Idle</string>
+    <string name="takeover_idle_desc">A device is connected to your AirPods, but not playing media or on a call</string>
+    <string name="takeover_music">Playing media</string>
+    <string name="takeover_music_desc">A device is playing media on your AirPods</string>
+    <string name="takeover_call">On call</string>
+    <string name="takeover_call_desc">A device is on a call with your AirPods</string>
+    <string name="takeover_phone_state">Connect to AirPods when your phone is:</string>
+    <string name="takeover_ringing_call">Receiving a call</string>
+    <string name="takeover_ringing_call_desc">Your phone starts ringing</string>
+    <string name="takeover_media_start">Starting media playback</string>
+    <string name="takeover_media_start_desc">Your phone starts playing media</string>
 </resources>

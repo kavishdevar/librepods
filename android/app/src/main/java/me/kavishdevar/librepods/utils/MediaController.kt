@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.utils
 
 import android.content.SharedPreferences
@@ -28,6 +30,7 @@ import android.util.Log
 import android.view.KeyEvent
 import androidx.annotation.RequiresApi
 import me.kavishdevar.librepods.services.ServiceManager
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 object MediaController {
     private var initialVolume: Int? = null
@@ -85,14 +88,16 @@ object MediaController {
                     userPlayedTheMedia = audioManager.isMusicActive
                 }, 7) // i have no idea why android sends an event a hundred times after the user does something.
             }
-            Log.d("MediaController", "pausedforcrossdevice: $pausedForCrossDevice Ear detection status: ${ServiceManager.getService()?.earDetectionNotification?.status}, music active: ${audioManager.isMusicActive} and cross device available: ${CrossDevice.isAvailable}")
-            if (!pausedForCrossDevice && CrossDevice.isAvailable && ServiceManager.getService()?.earDetectionNotification?.status?.contains(0x00) == true && audioManager.isMusicActive) {
-                Log.d("MediaController", "Pausing for cross device and taking over.")
-                sendPause(true)
-                pausedForCrossDevice = true
-                ServiceManager.getService()?.takeOver()
+            Log.d("MediaController", "pausedforcrossdevice: $pausedForCrossDevice")
+            if (!pausedForCrossDevice && audioManager.isMusicActive) {
+                ServiceManager.getService()?.takeOver("music")
             }
         }
+    }
+
+    @Synchronized
+    fun getMusicActive(): Boolean {
+        return audioManager.isMusicActive
     }
 
     @Synchronized
@@ -134,6 +139,14 @@ object MediaController {
                     KeyEvent.KEYCODE_MEDIA_PLAY
                 )
             )
+        }
+        if (!audioManager.isMusicActive) {
+            Log.d("MediaController", "Setting iPausedTheMedia to false")
+            iPausedTheMedia = false
+        }
+        if (pausedForCrossDevice) {
+            Log.d("MediaController", "Setting pausedForCrossDevice to false")
+            pausedForCrossDevice = false
         }
     }
 

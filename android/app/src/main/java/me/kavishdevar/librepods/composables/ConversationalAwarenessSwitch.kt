@@ -16,9 +16,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.composables
 
-import android.content.SharedPreferences
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -41,24 +42,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.services.ServiceManager
+import me.kavishdevar.librepods.utils.AACPManager
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Composable
-fun ConversationalAwarenessSwitch(service: AirPodsService, sharedPreferences: SharedPreferences) {
+fun ConversationalAwarenessSwitch() {
+    val service = ServiceManager.getService()!!
+    val conversationEnabledValue = service.aacpManager.controlCommandStatusList.find {
+        it.identifier == AACPManager.Companion.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG
+    }?.value?.takeIf { it.isNotEmpty() }?.get(0)
     var conversationalAwarenessEnabled by remember {
         mutableStateOf(
-            sharedPreferences.getBoolean("conversational_awareness", true)
+            conversationEnabledValue == 1.toByte()
         )
     }
 
     fun updateConversationalAwareness(enabled: Boolean) {
         conversationalAwarenessEnabled = enabled
-        sharedPreferences.edit().putBoolean("conversational_awareness", enabled).apply()
-        service.setCAEnabled(enabled)
+        service.aacpManager.sendControlCommand(
+            AACPManager.Companion.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG.value,
+            enabled
+        )
     }
 
     val isDarkTheme = isSystemInDarkTheme()
@@ -121,5 +129,5 @@ fun ConversationalAwarenessSwitch(service: AirPodsService, sharedPreferences: Sh
 @Preview
 @Composable
 fun ConversationalAwarenessSwitchPreview() {
-    ConversationalAwarenessSwitch(AirPodsService(), LocalContext.current.getSharedPreferences("preview", 0))
+    ConversationalAwarenessSwitch()
 }

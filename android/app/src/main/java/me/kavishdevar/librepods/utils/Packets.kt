@@ -136,10 +136,23 @@ class AirPodsNotifications {
         }
 
         fun setStatus(data: ByteArray) {
-            if (data.size != 11) {
-                return
+            when (data.size) {
+                // if the whole packet is given
+                11 -> {
+                    status = data[7].toInt()
+                }
+                // if only the data is given
+                1 -> {
+                    status = data[0].toInt()
+                }
+                // if the value of control command is given
+                4 -> {
+                    status = data[0].toInt()
+                }
+                else -> {
+                    Log.d("ANC", "Invalid ANC data size: ${data.size}")
+                }
             }
-            status = data[7].toInt()
         }
 
         val name: String =
@@ -170,6 +183,19 @@ class AirPodsNotifications {
             }
             Log.d("BatteryNotification", data.joinToString("") { "%02x".format(it) }.startsWith("040004000400").toString())
             return data.joinToString("") { "%02x".format(it) }.startsWith("040004000400")
+        }
+
+        fun setBatteryDirect(
+            leftLevel: Int,
+            leftCharging: Boolean,
+            rightLevel: Int,
+            rightCharging: Boolean,
+            caseLevel: Int,
+            caseCharging: Boolean
+        ) {
+            first = Battery(BatteryComponent.LEFT, leftLevel, if (leftCharging) BatteryStatus.CHARGING else BatteryStatus.NOT_CHARGING)
+            second = Battery(BatteryComponent.RIGHT, rightLevel, if (rightCharging) BatteryStatus.CHARGING else BatteryStatus.NOT_CHARGING)
+            case = Battery(BatteryComponent.CASE, caseLevel, if (caseCharging) BatteryStatus.CHARGING else BatteryStatus.NOT_CHARGING)
         }
 
         fun setBattery(data: ByteArray) {

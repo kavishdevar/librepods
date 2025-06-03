@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalStdlibApi::class, ExperimentalEncodingApi::class)
+
 package me.kavishdevar.librepods.screens
 
 import android.content.Context
@@ -47,7 +49,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +70,9 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.services.ServiceManager
+import me.kavishdevar.librepods.utils.AACPManager
+import kotlin.experimental.and
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Composable()
 fun RightDivider() {
@@ -83,15 +87,23 @@ fun RightDivider() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LongPress(navController: NavController, name: String) {
-    val sharedPreferences = LocalContext.current.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    val offChecked = remember { mutableStateOf(sharedPreferences.getBoolean("long_press_off", false)) }
-    val ncChecked = remember { mutableStateOf(sharedPreferences.getBoolean("long_press_nc", false)) }
-    val transparencyChecked = remember { mutableStateOf(sharedPreferences.getBoolean("long_press_transparency", false)) }
-    val adaptiveChecked = remember { mutableStateOf(sharedPreferences.getBoolean("long_press_adaptive", false)) }
-    Log.d("LongPress", "offChecked: ${offChecked.value}, ncChecked: ${ncChecked.value}, transparencyChecked: ${transparencyChecked.value}, adaptiveChecked: ${adaptiveChecked.value}")
     val isDarkTheme = isSystemInDarkTheme()
     val textColor = if (isDarkTheme) Color.White else Color.Black
 
+    val modesByte = ServiceManager.getService()!!.aacpManager.controlCommandStatusList.find {
+        it.identifier == AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE_CONFIGS
+    }?.value?.takeIf { it.isNotEmpty() }?.get(0)
+
+    if (modesByte != null) {
+        Log.d("PressAndHoldSettingsScreen", "Current modes state: ${modesByte.toString(2)}")
+        Log.d("PressAndHoldSettingsScreen", "Off mode: ${(modesByte and 0x01) != 0.toByte()}")
+        Log.d("PressAndHoldSettingsScreen", "Transparency mode: ${(modesByte and 0x02) != 0.toByte()}")
+        Log.d("PressAndHoldSettingsScreen", "Noise Cancellation mode: ${(modesByte and 0x04) != 0.toByte()}")
+        Log.d("PressAndHoldSettingsScreen", "Adaptive mode: ${(modesByte and 0x08) != 0.toByte()}")
+    }
+    val context = LocalContext.current
+    val sharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    val deviceName = sharedPreferences.getString("name", "AirPods Pro")
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -115,7 +127,7 @@ fun LongPress(navController: NavController, name: String) {
                             modifier = Modifier.scale(1.5f)
                         )
                         Text(
-                            sharedPreferences.getString("name", "AirPods")!!,
+                            deviceName?: "AirPods Pro",
                             style = TextStyle(
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Medium,
@@ -159,14 +171,29 @@ fun LongPress(navController: NavController, name: String) {
                     .background(backgroundColor, RoundedCornerShape(14.dp)),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                val offListeningMode = sharedPreferences.getBoolean("off_listening_mode", false)
-                LongPressElement("Off", offChecked, "long_press_off", offListeningMode, R.drawable.noise_cancellation, isFirst = true)
+                val offListeningModeValue = ServiceManager.getService()!!.aacpManager.controlCommandStatusList.find {
+                    it.identifier == AACPManager.Companion.ControlCommandIdentifiers.ALLOW_OFF_OPTION
+                }?.value?.takeIf { it.isNotEmpty() }?.get(0)
+                val offListeningMode = offListeningModeValue == 1.toByte()
+                LongPressElement(
+                    name = "Off",
+                    enabled = offListeningMode,
+                    resourceId =  R.drawable.noise_cancellation,
+                    isFirst = true)
                 if (offListeningMode) RightDivider()
-                LongPressElement("Transparency", transparencyChecked, "long_press_transparency", resourceId = R.drawable.transparency, isFirst = !offListeningMode)
+                LongPressElement(
+                    name = "Transparency",
+                    resourceId = R.drawable.transparency,
+                    isFirst = !offListeningMode)
                 RightDivider()
-                LongPressElement("Adaptive", adaptiveChecked, "long_press_adaptive", resourceId = R.drawable.adaptive)
+                LongPressElement(
+                    name = "Adaptive",
+                    resourceId = R.drawable.adaptive)
                 RightDivider()
-                LongPressElement("Noise Cancellation", ncChecked, "long_press_nc", resourceId = R.drawable.noise_cancellation, isLast = true)
+                LongPressElement(
+                    name = "Noise Cancellation",
+                    resourceId = R.drawable.noise_cancellation,
+                    isLast = true)
             }
             Text(
                 "Press and hold the stem to cycle between the selected noise control modes.",
@@ -178,13 +205,33 @@ fun LongPress(navController: NavController, name: String) {
             )
         }
     }
+    Log.d("PressAndHoldSettingsScreen", "Current byte: ${ServiceManager.getService()!!.aacpManager.controlCommandStatusList.find {
+        it.identifier == AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE_CONFIGS
+    }?.value?.takeIf { it.isNotEmpty() }?.get(0)?.toString(2)}")
 }
 
 @Composable
-fun LongPressElement(name: String, checked: MutableState<Boolean>, id: String, enabled: Boolean = true, resourceId: Int, isFirst: Boolean = false, isLast: Boolean = false) {
-    val sharedPreferences =
-        LocalContext.current.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    val offListeningMode = sharedPreferences.getBoolean("off_listening_mode", false)
+fun LongPressElement(name: String, enabled: Boolean = true, resourceId: Int, isFirst: Boolean = false, isLast: Boolean = false) {
+    val bit = when (name) {
+        "Off" -> 0x01
+        "Transparency" -> 0x02
+        "Noise Cancellation" -> 0x04
+        "Adaptive" -> 0x08
+        else -> -1
+    }
+    val context = LocalContext.current
+
+    val currentByteValue = ServiceManager.getService()!!.aacpManager.controlCommandStatusList.find {
+        it.identifier == AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE_CONFIGS
+    }?.value?.takeIf { it.isNotEmpty() }?.get(0)
+
+    val savedByte = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getInt("long_press_byte", 0b0101.toInt())
+    val byteValue = currentByteValue ?: (savedByte and 0xFF).toByte()
+
+    val isChecked = (byteValue.toInt() and bit) != 0
+    val checked = remember { mutableStateOf(isChecked) }
+
+    Log.d("PressAndHoldSettingsScreen", "LongPressElement: $name, checked: ${checked.value}, byteValue: ${byteValue.toInt()}, in bits: ${byteValue.toInt().toString(2)}")
     val darkMode = isSystemInDarkTheme()
     val textColor = if (darkMode) Color.White else Color.Black
     val desc = when (name) {
@@ -194,30 +241,72 @@ fun LongPressElement(name: String, checked: MutableState<Boolean>, id: String, e
         "Adaptive" -> "Dynamically adjust external noise"
         else -> ""
     }
-    fun valueChanged(value: Boolean = !checked.value) {
-        val originalLongPressArray = booleanArrayOf(
-            sharedPreferences.getBoolean("long_press_off", false),
-            sharedPreferences.getBoolean("long_press_nc", false),
-            sharedPreferences.getBoolean("long_press_transparency", false),
-            sharedPreferences.getBoolean("long_press_adaptive", false)
-        )
-        if (!value && originalLongPressArray.count { it } <= 2) {
-            return
-        }
-        checked.value = value
-        with(sharedPreferences.edit()) {
-            putBoolean(id, checked.value)
-            apply()
-        }
-        val newLongPressArray = booleanArrayOf(
-            sharedPreferences.getBoolean("long_press_off", false),
-            sharedPreferences.getBoolean("long_press_nc", false),
-            sharedPreferences.getBoolean("long_press_transparency", false),
-            sharedPreferences.getBoolean("long_press_adaptive", false)
-        )
-        ServiceManager.getService()
-            ?.updateLongPress(originalLongPressArray, newLongPressArray, offListeningMode)
+
+    fun countEnabledModes(byteValue: Int): Int {
+        var count = 0
+        if ((byteValue and 0x01) != 0) count++
+        if ((byteValue and 0x02) != 0) count++
+        if ((byteValue and 0x04) != 0) count++
+        if ((byteValue and 0x08) != 0) count++
+
+        Log.d("PressAndHoldSettingsScreen", "Byte: ${byteValue.toString(2)} Enabled modes: $count")
+        return count
     }
+
+    fun valueChanged(value: Boolean = !checked.value) {
+        val latestByteValue = ServiceManager.getService()!!.aacpManager.controlCommandStatusList.find {
+            it.identifier == AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE_CONFIGS
+        }?.value?.takeIf { it.isNotEmpty() }?.get(0)
+
+        val currentValue = (latestByteValue?.toInt() ?: byteValue.toInt()) and 0xFF
+
+        Log.d("PressAndHoldSettingsScreen", "Current value: $currentValue (binary: ${Integer.toBinaryString(currentValue)}), bit: $bit, value: $value")
+
+        if (!value) {
+            val newValue = currentValue and bit.inv()
+
+            Log.d("PressAndHoldSettingsScreen", "Bit to disable: $bit, inverted: ${bit.inv()}, after AND: ${Integer.toBinaryString(newValue)}")
+
+            val modeCount = countEnabledModes(newValue)
+
+            Log.d("PressAndHoldSettingsScreen", "After disabling, enabled modes count: $modeCount")
+
+            if (modeCount < 2) {
+                Log.d("PressAndHoldSettingsScreen", "Cannot disable $name mode - need at least 2 modes enabled")
+                return
+            }
+
+            val updatedByte = newValue.toByte()
+
+            Log.d("PressAndHoldSettingsScreen", "Sending updated byte: ${updatedByte.toInt() and 0xFF} (binary: ${Integer.toBinaryString(updatedByte.toInt() and 0xFF)})")
+
+            ServiceManager.getService()!!.aacpManager.sendControlCommand(
+                AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE_CONFIGS.value,
+                updatedByte
+            )
+
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+                .putInt("long_press_byte", newValue).apply()
+
+            checked.value = false
+            Log.d("PressAndHoldSettingsScreen", "Updated: $name, enabled: false, byte: ${updatedByte.toInt() and 0xFF}, bits: ${Integer.toBinaryString(updatedByte.toInt() and 0xFF)}")
+        } else {
+            val newValue = currentValue or bit
+            val updatedByte = newValue.toByte()
+
+            ServiceManager.getService()!!.aacpManager.sendControlCommand(
+                AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE_CONFIGS.value,
+                updatedByte
+            )
+
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+                .putInt("long_press_byte", newValue).apply()
+
+            checked.value = true
+            Log.d("PressAndHoldSettingsScreen", "Updated: $name, enabled: true, byte: ${updatedByte.toInt() and 0xFF}, bits: ${newValue.toString(2)}")
+        }
+    }
+
     val shape = when {
         isFirst -> RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)
         isLast -> RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp)
@@ -238,8 +327,8 @@ fun LongPressElement(name: String, checked: MutableState<Boolean>, id: String, e
                             backgroundColor = if (darkMode) Color(0x40888888) else Color(0x40D9D9D9)
                             tryAwaitRelease()
                             backgroundColor = if (darkMode) Color(0xFF1C1C1E) else Color(0xFFFFFFFF)
+                            valueChanged()
                         },
-                        onTap = { valueChanged() }
                     )
                 }
                 .padding(horizontal = 16.dp, vertical = 0.dp),

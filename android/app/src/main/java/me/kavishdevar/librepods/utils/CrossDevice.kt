@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
 
 package me.kavishdevar.librepods.utils
 
@@ -40,6 +41,7 @@ import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.services.ServiceManager
 import java.io.IOException
 import java.util.UUID
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 enum class CrossDevicePackets(val packet: ByteArray) {
     AIRPODS_CONNECTED(byteArrayOf(0x00, 0x01, 0x00, 0x01)),
@@ -87,7 +89,7 @@ object CrossDevice {
     private fun startServer() {
         CoroutineScope(Dispatchers.IO).launch {
             if (!bluetoothAdapter.isEnabled) return@launch
-            serverSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord("ALNCrossDevice", uuid)
+//            serverSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord("ALNCrossDevice", uuid)
             Log.d("CrossDevice", "Server started")
             while (serverSocket != null) {
                 if (!bluetoothAdapter.isEnabled) {
@@ -233,7 +235,7 @@ object CrossDevice {
                     Log.d("CrossDevice", "Received relayed packet: ${trimmedPacket.joinToString("") { "%02x".format(it) }}")
                     if (ServiceManager.getService()?.isConnectedLocally == true) {
                         val packetInHex = trimmedPacket.joinToString("") { "%02x".format(it) }
-                        ServiceManager.getService()?.sendPacket(packetInHex)
+//                        ServiceManager.getService()?.sendPacket(packetInHex)
                     } else if (ServiceManager.getService()?.batteryNotification?.isBatteryData(trimmedPacket) == true) {
                         batteryBytes = trimmedPacket
                         ServiceManager.getService()?.batteryNotification?.setBattery(trimmedPacket)

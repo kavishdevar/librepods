@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+@file:OptIn(ExperimentalEncodingApi::class)
 
 package me.kavishdevar.librepods.widgets
 
@@ -28,6 +29,8 @@ import android.util.Log
 import android.widget.RemoteViews
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.services.ServiceManager
+import me.kavishdevar.librepods.utils.AACPManager
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 class NoiseControlWidget : AppWidgetProvider() {
     override fun onUpdate(
@@ -79,7 +82,12 @@ class NoiseControlWidget : AppWidgetProvider() {
         if (intent.action == "ACTION_SET_ANC_MODE") {
             val mode = intent.getIntExtra("ANC_MODE", 1)
             Log.d("NoiseControlWidget", "Setting ANC mode to $mode")
-            ServiceManager.getService()?.setANCMode(mode)
+            ServiceManager.getService()!!
+                .aacpManager
+                .sendControlCommand(
+                    AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE.value,
+                    mode.toByte()
+                )
         }
     }
 }
