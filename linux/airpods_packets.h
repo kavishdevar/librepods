@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <optional>
+#include <climits>
 
 #include "enums.h"
 #include "BasicControlCommand.hpp"
