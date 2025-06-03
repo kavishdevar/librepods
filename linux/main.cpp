@@ -389,11 +389,11 @@ private slots:
 
     void bluezDeviceDisconnected(const QString &address, const QString &name)
     {
-        if (address == connectedDeviceMacAddress.replace("_", ":"))
+        if (address == m_deviceInfo->bluetoothAddress())
         {
-            onDeviceDisconnected(QBluetoothAddress(address));        }
-        else {
-            LOG_WARN("Disconnected device does not match connected device: " << address << " != " << connectedDeviceMacAddress);
+            onDeviceDisconnected(QBluetoothAddress(address));
+        } else {
+            LOG_WARN("Disconnected device does not match connected device: " << address << " != " << m_deviceInfo->bluetoothAddress());
         }
     }
 
@@ -512,7 +512,7 @@ private slots:
                 this, handleError);
 
         localSocket->connectToService(device.address(), QBluetoothUuid("74ec2172-0bad-4d01-8f77-997b2be0722a"));
-        connectedDeviceMacAddress = device.address().toString().replace(":", "_");
+        m_deviceInfo->setBluetoothAddress(device.address().toString());
         notifyAndroidDevice();
     }
 
@@ -599,7 +599,7 @@ private slots:
         {
             parseMetadata(data);
             initiateMagicPairing();
-            mediaController->setConnectedDeviceMacAddress(connectedDeviceMacAddress);
+            mediaController->setConnectedDeviceMacAddress(m_deviceInfo->bluetoothAddress().replace(":", "_"));
             if (m_deviceInfo->oneOrMorePodsInEar()) // AirPods get added as output device only after this
             {
                 mediaController->activateA2dpProfile();
@@ -708,7 +708,7 @@ private slots:
                 socket->close();
                 LOG_INFO("Disconnected from AirPods");
                 QProcess process;
-                process.start("bluetoothctl", QStringList() << "disconnect" << connectedDeviceMacAddress.replace("_", ":"));
+                process.start("bluetoothctl", QStringList() << "disconnect" << m_deviceInfo->bluetoothAddress());
                 process.waitForFinished();
                 QString output = process.readAllStandardOutput().trimmed();
                 LOG_INFO("Bluetoothctl output: " << output);
@@ -770,13 +770,13 @@ public:
         if (force) {
             LOG_INFO("Forcing connection to AirPods");
             QProcess process;
-            process.start("bluetoothctl", QStringList() << "connect" << connectedDeviceMacAddress.replace("_", ":"));
+            process.start("bluetoothctl", QStringList() << "connect" << m_deviceInfo->bluetoothAddress());
             process.waitForFinished();
             QString output = process.readAllStandardOutput().trimmed();
             LOG_INFO("Bluetoothctl output: " << output);
             if (output.contains("Connection successful")) {
                 LOG_INFO("Connection successful, proceeding with L2CAP connection");
-                QBluetoothAddress btAddress(connectedDeviceMacAddress.replace("_", ":"));
+                QBluetoothAddress btAddress(m_deviceInfo->bluetoothAddress());
                 forceL2capConnection(btAddress);
             } else {
                 LOG_ERROR("Connection failed, cannot proceed with L2CAP connection");
@@ -847,7 +847,6 @@ signals:
 private:
     QBluetoothSocket *socket = nullptr;
     QBluetoothSocket *phoneSocket = nullptr;
-    QString connectedDeviceMacAddress;
     QByteArray lastBatteryStatus;
     QByteArray lastEarDetectionStatus;
     MediaController* mediaController;

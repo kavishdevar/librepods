@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QByteArray>
+#include <QSettings>
 #include "battery.hpp"
 #include "enums.h"
 
@@ -26,6 +27,7 @@ class DeviceInfo : public QObject
     Q_PROPERTY(QString caseIcon READ caseIcon NOTIFY modelChanged)
     Q_PROPERTY(bool leftPodInEar READ isLeftPodInEar NOTIFY primaryChanged)
     Q_PROPERTY(bool rightPodInEar READ isRightPodInEar NOTIFY primaryChanged)
+    Q_PROPERTY(QString bluetoothAddress READ bluetoothAddress WRITE setBluetoothAddress NOTIFY bluetoothAddressChanged)
 
 public:
     explicit DeviceInfo(QObject *parent = nullptr) : QObject(parent), m_battery(new Battery(this)) {}
@@ -147,6 +149,16 @@ public:
     QString manufacturer() const { return m_manufacturer; }
     void setManufacturer(const QString &manufacturer) { m_manufacturer = manufacturer; }
 
+    QString bluetoothAddress() const { return m_bluetoothAddress; }
+    void setBluetoothAddress(const QString &address)
+    {
+        if (m_bluetoothAddress != address)
+        {
+            m_bluetoothAddress = address;
+            emit bluetoothAddressChanged(address);
+        }
+    }
+
     QString podIcon() const { return getModelIcon(model()).first; }
     QString caseIcon() const { return getModelIcon(model()).second; }
     bool isLeftPodInEar() const
@@ -174,6 +186,29 @@ public:
         setPrimaryInEar(false);
         setSecondaryInEar(false);
         setNoiseControlMode(NoiseControlMode::Off);
+        setBluetoothAddress("");
+    }
+
+    void save() const
+    {
+        QSettings settings("AirpodsTrayApp", "DeviceInfo");
+        settings.beginGroup("DeviceInfo");
+        settings.setValue("deviceName", m_deviceName);
+        settings.setValue("bluetoothAddress", m_bluetoothAddress);
+        settings.setValue("magicAccIRK", m_magicAccIRK.toBase64());
+        settings.setValue("magicAccEncKey", m_magicAccEncKey.toBase64());
+        settings.endGroup();
+    }
+
+    void load()
+    {
+        QSettings settings("AirpodsTrayApp", "DeviceInfo");
+        settings.beginGroup("DeviceInfo");
+        setDeviceName(settings.value("deviceName", "").toString());
+        setBluetoothAddress(settings.value("bluetoothAddress", "").toString());
+        setMagicAccIRK(QByteArray::fromBase64(settings.value("magicAccIRK", "").toByteArray()));
+        setMagicAccEncKey(QByteArray::fromBase64(settings.value("magicAccEncKey", "").toByteArray()));
+        settings.endGroup();
     }
 
 signals:
@@ -187,6 +222,7 @@ signals:
     void primaryChanged();
     void oneBudANCModeChanged(bool enabled);
     void modelChanged();
+    void bluetoothAddressChanged(const QString &address);
 
 private:
     QString m_batteryStatus;
@@ -202,8 +238,7 @@ private:
     QByteArray m_magicAccEncKey;
     bool m_oneBudANCMode = false;
     AirPodsModel m_model = AirPodsModel::Unknown;
-
-    // Additional metadata fields
     QString m_modelNumber;
     QString m_manufacturer;
+    QString m_bluetoothAddress;
 };
