@@ -647,11 +647,11 @@ private slots:
             LOG_INFO("Already connected to the phone");
             return;
         }
-        QBluetoothAddress phoneAddress(PHONE_MAC_ADDRESS);
+        QBluetoothAddress phoneAddress("00:00:00:00:00:00"); // Default address, will be overwritten if PHONE_MAC_ADDRESS is set
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         if (!env.value("PHONE_MAC_ADDRESS").isEmpty())
         {
-            QBluetoothAddress phoneAddress = QBluetoothAddress(env.value("PHONE_MAC_ADDRESS"));
+            phoneAddress = QBluetoothAddress(env.value("PHONE_MAC_ADDRESS"));
         }
         phoneSocket = new QBluetoothSocket(QBluetoothServiceInfo::L2capProtocol);
         connect(phoneSocket, &QBluetoothSocket::connected, this, [this]() {
