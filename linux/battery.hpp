@@ -158,7 +158,6 @@ public:
             isLeftCharging = states.value(Component::Left).status == BatteryStatus::Charging;
         }
 
-        int rightLevel;
         // If raw byte is 0xFF or (0x7F and charging), use the last known level
         if (rawRightBatteryByte == 0xFF || (rawRightBatteryByte == 0x7F && isRightCharging)) {
             rawRightBattery = states.value(Component::Right).level; // Use last valid level
