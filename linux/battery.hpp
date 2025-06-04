@@ -152,38 +152,29 @@ public:
         auto [isRightCharging, rawRightBattery] = formatBattery(rawRightBatteryByte);
         auto [isCaseCharging, rawCaseBattery] = formatBattery(rawCaseBatteryByte);
 
-        // Convert raw levels (0–127) to percentage (0–100) with caching for special values
-        int leftLevel;
         // If raw byte is 0xFF or (0x7F and charging), use the last known level
         if (rawLeftBatteryByte == 0xFF || (rawLeftBatteryByte == 0x7F && isLeftCharging)) {
-            leftLevel = states.value(Component::Left).level; // Use last valid level
+            rawLeftBatteryByte = states.value(Component::Left).level; // Use last valid level
             isLeftCharging = states.value(Component::Left).status == BatteryStatus::Charging;
-        } else {
-            leftLevel = rawLeftBattery;
         }
 
         int rightLevel;
         // If raw byte is 0xFF or (0x7F and charging), use the last known level
         if (rawRightBatteryByte == 0xFF || (rawRightBatteryByte == 0x7F && isRightCharging)) {
-            rightLevel = states.value(Component::Right).level; // Use last valid level
+            rawRightBattery = states.value(Component::Right).level; // Use last valid level
             isRightCharging = states.value(Component::Right).status == BatteryStatus::Charging;
-        } else {
-            rightLevel = rawRightBattery;
         }
 
-        int caseLevel;
         // If raw byte is 0xFF or (0x7F and charging), use the last known level
         if (rawCaseBatteryByte == 0xFF || (rawCaseBatteryByte == 0x7F && isCaseCharging)) {
-            caseLevel = states.value(Component::Case).level; // Use last valid level
+            rawCaseBattery = states.value(Component::Case).level; // Use last valid level
             isCaseCharging = states.value(Component::Case).status == BatteryStatus::Charging;
-        } else {
-            caseLevel = rawCaseBattery;
         }
 
         // Update states
-        states[Component::Left] = {static_cast<quint8>(leftLevel), isLeftCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
-        states[Component::Right] = {static_cast<quint8>(rightLevel), isRightCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
-        states[Component::Case] = {static_cast<quint8>(caseLevel), isCaseCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
+        states[Component::Left] = {static_cast<quint8>(rawLeftBattery), isLeftCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
+        states[Component::Right] = {static_cast<quint8>(rawRightBattery), isRightCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
+        states[Component::Case] = {static_cast<quint8>(rawCaseBattery), isCaseCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
         primaryPod = isLeftPodPrimary ? Component::Left : Component::Right;
         secondaryPod = isLeftPodPrimary ? Component::Right : Component::Left;
         emit batteryStatusChanged();
