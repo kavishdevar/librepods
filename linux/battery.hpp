@@ -157,6 +157,7 @@ public:
         // If raw byte is 0xFF or (0x7F and charging), use the last known level
         if (rawLeftBatteryByte == 0xFF || (rawLeftBatteryByte == 0x7F && isLeftCharging)) {
             leftLevel = states.value(Component::Left).level; // Use last valid level
+            isLeftCharging = states.value(Component::Left).status == BatteryStatus::Charging;
         } else {
             leftLevel = rawLeftBattery;
         }
@@ -165,6 +166,7 @@ public:
         // If raw byte is 0xFF or (0x7F and charging), use the last known level
         if (rawRightBatteryByte == 0xFF || (rawRightBatteryByte == 0x7F && isRightCharging)) {
             rightLevel = states.value(Component::Right).level; // Use last valid level
+            isRightCharging = states.value(Component::Right).status == BatteryStatus::Charging;
         } else {
             rightLevel = rawRightBattery;
         }
@@ -173,6 +175,7 @@ public:
         // If raw byte is 0xFF or (0x7F and charging), use the last known level
         if (rawCaseBatteryByte == 0xFF || (rawCaseBatteryByte == 0x7F && isCaseCharging)) {
             caseLevel = states.value(Component::Case).level; // Use last valid level
+            isCaseCharging = states.value(Component::Case).status == BatteryStatus::Charging;
         } else {
             caseLevel = rawCaseBattery;
         }
