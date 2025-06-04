@@ -93,36 +93,23 @@ BleManager::BleManager(QObject *parent) : QObject(parent)
             this, &BleManager::onScanFinished);
     connect(discoveryAgent, &QBluetoothDeviceDiscoveryAgent::errorOccurred,
             this, &BleManager::onErrorOccurred);
-
-    // Set up pruning timer
-    pruneTimer = new QTimer(this);
-    connect(pruneTimer, &QTimer::timeout, this, &BleManager::pruneOldDevices);
-    pruneTimer->start(PRUNE_INTERVAL_MS); // Start timer (runs every 5 seconds)
 }
 
 BleManager::~BleManager()
 {
     delete discoveryAgent;
-    delete pruneTimer;
 }
 
 void BleManager::startScan()
 {
     LOG_DEBUG("Starting BLE scan...");
-    devices.clear();
     discoveryAgent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
-    pruneTimer->start(PRUNE_INTERVAL_MS); // Ensure timer is running
 }
 
 void BleManager::stopScan()
 {
     LOG_DEBUG("Stopping BLE scan...");
     discoveryAgent->stop();
-}
-
-const QMap<QString, BleInfo> &BleManager::getDevices() const
-{
-    return devices;
 }
 
 void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
@@ -218,8 +205,6 @@ void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
             // Update timestamp
             deviceInfo.lastSeen = QDateTime::currentDateTime();
 
-            // Store device info in the map
-            devices[address] = deviceInfo;
             emit deviceFound(deviceInfo); // Emit signal for device found
         }
     }
@@ -237,21 +222,4 @@ void BleManager::onErrorOccurred(QBluetoothDeviceDiscoveryAgent::Error error)
 {
     LOG_ERROR("BLE scan error occurred:" << error);
     stopScan();
-}
-
-void BleManager::pruneOldDevices()
-{
-    QDateTime now = QDateTime::currentDateTime();
-    auto it = devices.begin();
-    while (it != devices.end())
-    {
-        if (it.value().lastSeen.msecsTo(now) > DEVICE_TIMEOUT_MS)
-        {
-            it = devices.erase(it); // Remove device if not seen recently
-        }
-        else
-        {
-            ++it;
-        }
-    }
 }
