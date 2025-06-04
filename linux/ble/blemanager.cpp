@@ -1,6 +1,96 @@
 #include "blemanager.h"
+#include "enums.h"
 #include <QDebug>
 #include <QTimer>
+#include "logger.h"
+
+AirpodsTrayApp::Enums::AirPodsModel getModelName(quint16 modelId)
+{
+    using namespace AirpodsTrayApp::Enums;
+    switch (modelId)
+    {
+    case 0x0220:
+        return AirPodsModel::AirPods1;
+    case 0x0F20:
+        return AirPodsModel::AirPods2;
+    case 0x1320:
+        return AirPodsModel::AirPods3;
+    case 0x1920:
+        return AirPodsModel::AirPods4;
+    case 0x1B20:
+        return AirPodsModel::AirPods4ANC;
+    case 0x0A20:
+        return AirPodsModel::AirPodsMaxLightning;
+    case 0x1F20:
+        return AirPodsModel::AirPodsMaxUSBC;
+    case 0x0E20:
+        return AirPodsModel::AirPodsPro;
+    case 0x1420:
+        return AirPodsModel::AirPodsPro2Lightning;
+    case 0x2420:
+        return AirPodsModel::AirPodsPro2USBC;
+    default:
+        return AirPodsModel::Unknown; // Default case for unknown models
+    }
+}
+
+QString getColorName(quint8 colorId)
+{
+    switch (colorId)
+    {
+    case 0x00:
+        return "White";
+    case 0x01:
+        return "Black";
+    case 0x02:
+        return "Red";
+    case 0x03:
+        return "Blue";
+    case 0x04:
+        return "Pink";
+    case 0x05:
+        return "Gray";
+    case 0x06:
+        return "Silver";
+    case 0x07:
+        return "Gold";
+    case 0x08:
+        return "Rose Gold";
+    case 0x09:
+        return "Space Gray";
+    case 0x0A:
+        return "Dark Blue";
+    case 0x0B:
+        return "Light Blue";
+    case 0x0C:
+        return "Yellow";
+    default:
+        return "Unknown";
+    }
+}
+
+QString getConnectionStateName(BleInfo::ConnectionState state)
+{
+    using ConnectionState = BleInfo::ConnectionState;
+    switch (state)
+    {
+    case ConnectionState::DISCONNECTED:
+        return QString("Disconnected");
+    case ConnectionState::IDLE:
+        return QString("Idle");
+    case ConnectionState::MUSIC:
+        return QString("Playing Music");
+    case ConnectionState::CALL:
+        return QString("On Call");
+    case ConnectionState::RINGING:
+        return QString("Ringing");
+    case ConnectionState::HANGING_UP:
+        return QString("Hanging Up");
+    case ConnectionState::UNKNOWN:
+    default:
+        return QString("Unknown");
+    }
+}
 
 BleManager::BleManager(QObject *parent) : QObject(parent)
 {
@@ -28,7 +118,7 @@ BleManager::~BleManager()
 
 void BleManager::startScan()
 {
-    qDebug() << "Starting BLE scan...";
+    LOG_DEBUG("Starting BLE scan...");
     devices.clear();
     discoveryAgent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
     pruneTimer->start(PRUNE_INTERVAL_MS); // Ensure timer is running
@@ -36,11 +126,11 @@ void BleManager::startScan()
 
 void BleManager::stopScan()
 {
-    qDebug() << "Stopping BLE scan...";
+    LOG_DEBUG("Stopping BLE scan...");
     discoveryAgent->stop();
 }
 
-const QMap<QString, DeviceInfo> &BleManager::getDevices() const
+const QMap<QString, BleInfo> &BleManager::getDevices() const
 {
     return devices;
 }
@@ -55,10 +145,11 @@ void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
         if (data.size() >= 10 && data[0] == 0x07)
         {
             QString address = info.address().toString();
-            DeviceInfo deviceInfo;
+            BleInfo deviceInfo;
             deviceInfo.name = info.name().isEmpty() ? "AirPods" : info.name();
             deviceInfo.address = address;
-            deviceInfo.rawData = data;
+            deviceInfo.rawData = data.left(data.size() - 16);
+            deviceInfo.encryptedPayload = data.mid(data.size() - 16);
 
             // data[1] is the length of the data, so we can skip it
 
@@ -68,8 +159,9 @@ void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
                 return; // Skip pairing mode devices (the values are differently structured)
             }
 
+            
             // Parse device model (big-endian: high byte at data[3], low byte at data[4])
-            deviceInfo.deviceModel = static_cast<quint16>(data[4]) | (static_cast<quint8>(data[3]) << 8);
+            deviceInfo.modelName = getModelName(static_cast<quint16>(data[4]) | (static_cast<quint8>(data[3]) << 8));
 
             // Status byte for primary pod and other flags
             quint8 status = static_cast<quint8>(data[5]);
@@ -83,15 +175,17 @@ void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
 
             // Lid open counter and device color
             quint8 lidIndicator = static_cast<quint8>(data[8]);
-            deviceInfo.deviceColor = static_cast<quint8>(data[9]);
+            deviceInfo.color = getColorName((quint8)(data[9]));
 
-            deviceInfo.connectionState = static_cast<DeviceInfo::ConnectionState>(data[10]);
+            deviceInfo.connectionState = static_cast<BleInfo::ConnectionState>(data[10]);
 
             // Next: Encrypted Payload: 16 bytes
 
             // Determine primary pod (bit 5 of status) and value flipping
             bool primaryLeft = (status & 0x20) != 0; // Bit 5: 1 = left primary, 0 = right primary
             bool areValuesFlipped = !primaryLeft;    // Flipped when right pod is primary
+
+            deviceInfo.primaryLeft = primaryLeft; // Store primary pod information
 
             // Parse battery levels
             int leftNibble = areValuesFlipped ? (podsBatteryByte >> 4) & 0x0F : podsBatteryByte & 0x0F;
@@ -117,6 +211,10 @@ void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
             deviceInfo.isLeftPodInEar = xorFactor ? (status & 0x08) != 0 : (status & 0x02) != 0;  // Bit 3 or 1
             deviceInfo.isRightPodInEar = xorFactor ? (status & 0x02) != 0 : (status & 0x08) != 0; // Bit 1 or 3
 
+            // Determine primary and secondary in-ear status
+            deviceInfo.isPrimaryInEar = primaryLeft ? deviceInfo.isLeftPodInEar : deviceInfo.isRightPodInEar;
+            deviceInfo.isSecondaryInEar = primaryLeft ? deviceInfo.isRightPodInEar : deviceInfo.isLeftPodInEar;
+
             // Microphone status
             deviceInfo.isLeftPodMicrophone = primaryLeft ^ deviceInfo.isThisPodInTheCase;
             deviceInfo.isRightPodMicrophone = !primaryLeft ^ deviceInfo.isThisPodInTheCase;
@@ -124,7 +222,7 @@ void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
             deviceInfo.lidOpenCounter = lidIndicator & 0x07; // Extract bits 0-2 (count)
             quint8 lidState = static_cast<quint8>((lidIndicator >> 3) & 0x01); // Extract bit 3 (lid state)
             if (deviceInfo.isThisPodInTheCase) {
-                deviceInfo.lidState = static_cast<DeviceInfo::LidState>(lidState);
+                deviceInfo.lidState = static_cast<BleInfo::LidState>(lidState);
             }
 
             // Update timestamp
@@ -132,19 +230,13 @@ void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
 
             // Store device info in the map
             devices[address] = deviceInfo;
-
-            // Debug output
-            qDebug() << "Found device:" << deviceInfo.name
-                     << "Left:" << (deviceInfo.leftPodBattery >= 0 ? QString("%1%").arg(deviceInfo.leftPodBattery) : "N/A")
-                     << "Right:" << (deviceInfo.rightPodBattery >= 0 ? QString("%1%").arg(deviceInfo.rightPodBattery) : "N/A")
-                     << "Case:" << (deviceInfo.caseBattery >= 0 ? QString("%1%").arg(deviceInfo.caseBattery) : "N/A");
+            emit deviceFound(deviceInfo); // Emit signal for device found
         }
     }
 }
 
 void BleManager::onScanFinished()
 {
-    qDebug() << "Scan finished.";
     if (discoveryAgent->isActive())
     {
         discoveryAgent->start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
@@ -153,7 +245,7 @@ void BleManager::onScanFinished()
 
 void BleManager::onErrorOccurred(QBluetoothDeviceDiscoveryAgent::Error error)
 {
-    qDebug() << "Error occurred:" << error;
+    LOG_ERROR("BLE scan error occurred:" << error);
     stopScan();
 }
 
@@ -165,7 +257,6 @@ void BleManager::pruneOldDevices()
     {
         if (it.value().lastSeen.msecsTo(now) > DEVICE_TIMEOUT_MS)
         {
-            qDebug() << "Removing old device:" << it.value().name << "at" << it.key();
             it = devices.erase(it); // Remove device if not seen recently
         }
         else

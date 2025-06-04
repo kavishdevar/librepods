@@ -189,26 +189,21 @@ public:
         setBluetoothAddress("");
     }
 
-    void save() const
+    void saveToSettings(QSettings &settings)
     {
-        QSettings settings("AirpodsTrayApp", "DeviceInfo");
         settings.beginGroup("DeviceInfo");
-        settings.setValue("deviceName", m_deviceName);
-        settings.setValue("bluetoothAddress", m_bluetoothAddress);
-        settings.setValue("magicAccIRK", m_magicAccIRK.toBase64());
-        settings.setValue("magicAccEncKey", m_magicAccEncKey.toBase64());
+        settings.setValue("deviceName", deviceName());
+        settings.setValue("model", static_cast<int>(model()));
+        settings.setValue("magicAccIRK", magicAccIRK());
+        settings.setValue("magicAccEncKey", magicAccEncKey());
         settings.endGroup();
     }
-
-    void load()
+    void loadFromSettings(const QSettings &settings)
     {
-        QSettings settings("AirpodsTrayApp", "DeviceInfo");
-        settings.beginGroup("DeviceInfo");
-        setDeviceName(settings.value("deviceName", "").toString());
-        setBluetoothAddress(settings.value("bluetoothAddress", "").toString());
-        setMagicAccIRK(QByteArray::fromBase64(settings.value("magicAccIRK", "").toByteArray()));
-        setMagicAccEncKey(QByteArray::fromBase64(settings.value("magicAccEncKey", "").toByteArray()));
-        settings.endGroup();
+        setDeviceName(settings.value("DeviceInfo/deviceName", "").toString());
+        setModel(static_cast<AirPodsModel>(settings.value("DeviceInfo/model", (int)(AirPodsModel::Unknown)).toInt()));
+        setMagicAccIRK(settings.value("DeviceInfo/magicAccIRK", QByteArray()).toByteArray());
+        setMagicAccEncKey(settings.value("DeviceInfo/magicAccEncKey", QByteArray()).toByteArray());
     }
 
 signals:

@@ -6,10 +6,11 @@
 #include <QMap>
 #include <QString>
 #include <QDateTime>
+#include "enums.h"
 
 class QTimer;
 
-class DeviceInfo
+class BleInfo
 {
 public:
     QString name;
@@ -20,20 +21,24 @@ public:
     bool leftCharging = false;
     bool rightCharging = false;
     bool caseCharging = false;
-    quint16 deviceModel = 0;
+    AirpodsTrayApp::Enums::AirPodsModel modelName = AirpodsTrayApp::Enums::AirPodsModel::Unknown; // Default model
     quint8 lidOpenCounter = 0;
-    quint8 deviceColor = 0;
+    QString color = "Unknown"; // Default color
     quint8 status = 0;
     QByteArray rawData;
+    QByteArray encryptedPayload; // 16 bytes of encrypted payload
 
     // Additional status flags from Kotlin version
     bool isLeftPodInEar = false;
     bool isRightPodInEar = false;
+    bool isPrimaryInEar = false;
+    bool isSecondaryInEar = false;
     bool isLeftPodMicrophone = false;
     bool isRightPodMicrophone = false;
     bool isThisPodInTheCase = false;
     bool isOnePodInCase = false;
     bool areBothPodsInCase = false;
+    bool primaryLeft = true; // True if left pod is primary, false if right pod is primary
 
     // Lid state enumeration
     enum class LidState
@@ -69,7 +74,7 @@ public:
 
     void startScan();
     void stopScan();
-    const QMap<QString, DeviceInfo> &getDevices() const;
+    const QMap<QString, BleInfo> &getDevices() const;
 
 private slots:
     void onDeviceDiscovered(const QBluetoothDeviceInfo &info);
@@ -77,9 +82,12 @@ private slots:
     void onErrorOccurred(QBluetoothDeviceDiscoveryAgent::Error error);
     void pruneOldDevices();
 
+signals:
+    void deviceFound(const BleInfo &device);
+
 private:
     QBluetoothDeviceDiscoveryAgent *discoveryAgent;
-    QMap<QString, DeviceInfo> devices;
+    QMap<QString, BleInfo> devices;
 
     QTimer *pruneTimer;                         // Timer for periodic pruning
     static const int PRUNE_INTERVAL_MS = 5000;  // Check every 5 seconds

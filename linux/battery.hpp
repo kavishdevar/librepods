@@ -130,6 +130,65 @@ public:
         return true;
     }
 
+    bool parseEncryptedPacket(const QByteArray &packet, bool isLeftPodPrimary)
+    {
+        // Validate packet size (expect 16 bytes based on provided payloads)
+        if (packet.size() != 16)
+        {
+            return false;
+        }
+
+        // Determine byte indices based on isFlipped
+        int leftByteIndex = isLeftPodPrimary ? 1 : 2;
+        int rightByteIndex = isLeftPodPrimary ? 2 : 1;
+
+        // Extract raw battery bytes
+        unsigned char rawLeftBatteryByte = static_cast<unsigned char>(packet.at(leftByteIndex));
+        unsigned char rawRightBatteryByte = static_cast<unsigned char>(packet.at(rightByteIndex));
+        unsigned char rawCaseBatteryByte = static_cast<unsigned char>(packet.at(3));
+
+        // Extract battery data (charging status and raw level 0-127)
+        auto [isLeftCharging, rawLeftBattery] = formatBattery(rawLeftBatteryByte);
+        auto [isRightCharging, rawRightBattery] = formatBattery(rawRightBatteryByte);
+        auto [isCaseCharging, rawCaseBattery] = formatBattery(rawCaseBatteryByte);
+
+        // Convert raw levels (0–127) to percentage (0–100) with caching for special values
+        int leftLevel;
+        // If raw byte is 0xFF or (0x7F and charging), use the last known level
+        if (rawLeftBatteryByte == 0xFF || (rawLeftBatteryByte == 0x7F && isLeftCharging)) {
+            leftLevel = states.value(Component::Left).level; // Use last valid level
+        } else {
+            leftLevel = rawLeftBattery;
+        }
+
+        int rightLevel;
+        // If raw byte is 0xFF or (0x7F and charging), use the last known level
+        if (rawRightBatteryByte == 0xFF || (rawRightBatteryByte == 0x7F && isRightCharging)) {
+            rightLevel = states.value(Component::Right).level; // Use last valid level
+        } else {
+            rightLevel = rawRightBattery;
+        }
+
+        int caseLevel;
+        // If raw byte is 0xFF or (0x7F and charging), use the last known level
+        if (rawCaseBatteryByte == 0xFF || (rawCaseBatteryByte == 0x7F && isCaseCharging)) {
+            caseLevel = states.value(Component::Case).level; // Use last valid level
+        } else {
+            caseLevel = rawCaseBattery;
+        }
+
+        // Update states
+        states[Component::Left] = {static_cast<quint8>(leftLevel), isLeftCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
+        states[Component::Right] = {static_cast<quint8>(rightLevel), isRightCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
+        states[Component::Case] = {static_cast<quint8>(caseLevel), isCaseCharging ? BatteryStatus::Charging : BatteryStatus::Discharging};
+        primaryPod = isLeftPodPrimary ? Component::Left : Component::Right;
+        secondaryPod = isLeftPodPrimary ? Component::Right : Component::Left;
+        emit batteryStatusChanged();
+        emit primaryChanged();
+
+        return true;
+    }
+
     // Get the raw state for a component
     BatteryState getState(Component comp) const
     {
@@ -185,6 +244,13 @@ private:
     bool isStatus(Component component, BatteryStatus status) const
     {
         return states.value(component).status == status;
+    }
+
+    std::pair<bool, int> formatBattery(unsigned char byteVal)
+    {
+        bool charging = (byteVal & 0x80) != 0;
+        int level = byteVal & 0x7F;
+        return std::make_pair(charging, level);
     }
 
     QMap<Component, BatteryState> states;

@@ -11,6 +11,8 @@
 #include "BluetoothMonitor.h"
 #include "autostartmanager.hpp"
 #include "deviceinfo.hpp"
+#include "ble/blemanager.h"
+#include "ble/bleutils.h"
 
 using namespace AirpodsTrayApp::Enums;
 
@@ -29,7 +31,9 @@ class AirPodsTrayApp : public QObject {
 
 public:
     AirPodsTrayApp(bool debugMode, bool hideOnStart, QQmlApplicationEngine *parent = nullptr)
-        : QObject(parent), debugMode(debugMode), m_settings(new QSettings("AirPodsTrayApp", "AirPodsTrayApp")), m_autoStartManager(new AutoStartManager(this)), m_hideOnStart(hideOnStart), parent(parent), m_deviceInfo(new DeviceInfo(this))
+        : QObject(parent), debugMode(debugMode), m_settings(new QSettings("AirPodsTrayApp", "AirPodsTrayApp"))
+        , m_autoStartManager(new AutoStartManager(this)), m_hideOnStart(hideOnStart), parent(parent)
+        , m_deviceInfo(new DeviceInfo(this)), m_bleManager(new BleManager(this))
     {
         QLoggingCategory::setFilterRules(QString("airpodsApp.debug=%1").arg(debugMode ? "true" : "false"));
         LOG_INFO("Initializing AirPodsTrayApp");
@@ -59,6 +63,7 @@ public:
         connect(monitor, &BluetoothMonitor::deviceConnected, this, &AirPodsTrayApp::bluezDeviceConnected);
         connect(monitor, &BluetoothMonitor::deviceDisconnected, this, &AirPodsTrayApp::bluezDeviceDisconnected);
 
+        connect(m_bleManager, &BleManager::deviceFound, this, &AirPodsTrayApp::bleDeviceFound);
         connect(m_deviceInfo->getBattery(), &Battery::primaryChanged, this, &AirPodsTrayApp::primaryChanged);
 
         // Load settings
@@ -379,6 +384,8 @@ private slots:
 
         // Clear the device name and model
         m_deviceInfo->reset();
+        m_bleManager->startScan();
+        emit airPodsStatusChanged();
 
         // Show system notification
         trayManager->showNotification(
@@ -545,6 +552,7 @@ private slots:
             // Store the keys
             m_deviceInfo->setMagicAccIRK(keys.magicAccIRK);
             m_deviceInfo->setMagicAccEncKey(keys.magicAccEncKey);
+            m_deviceInfo->saveToSettings(*m_settings);
         }
         // Get CA state
         else if (data.startsWith(AirPodsPackets::ConversationalAwareness::HEADER)) {
@@ -604,6 +612,7 @@ private slots:
             {
                 mediaController->activateA2dpProfile();
             }
+            m_bleManager->stopScan();
             emit airPodsStatusChanged();
         }
         else if (data.startsWith(AirPodsPackets::OneBudANCMode::HEADER)) {
@@ -733,6 +742,17 @@ private slots:
         QMetaObject::invokeMethod(this, "handlePhonePacket", Qt::QueuedConnection, Q_ARG(QByteArray, data));
     }
 
+    void bleDeviceFound(const BleInfo &device)
+    {
+        if (BLEUtils::isValidIrkRpa(m_deviceInfo->magicAccIRK(), device.address)) {
+            m_deviceInfo->setModel(device.modelName);
+            auto decryptet = BLEUtils::decryptLastBytes(device.encryptedPayload, m_deviceInfo->magicAccEncKey());
+            m_deviceInfo->getBattery()->parseEncryptedPacket(decryptet, device.primaryLeft);
+            m_deviceInfo->setPrimaryInEar(device.isPrimaryInEar);
+            m_deviceInfo->setSecondaryInEar(device.isSecondaryInEar);
+        }
+    }
+
 public:
     void handleMediaStateChange(MediaController::MediaState state) {
         if (state == MediaController::MediaState::Playing) {
@@ -822,6 +842,11 @@ public:
 
     void initializeBluetooth() {
         connectToPhone();
+
+        m_deviceInfo->loadFromSettings(*m_settings);
+        if (!areAirpodsConnected()) {
+            m_bleManager->startScan();
+        }
     }
 
     void loadMainModule() {
@@ -857,6 +882,7 @@ private:
     int m_retryAttempts = 3;
     bool m_hideOnStart = false;
     DeviceInfo *m_deviceInfo;
+    BleManager *m_bleManager;
 };
 
 int main(int argc, char *argv[]) {
