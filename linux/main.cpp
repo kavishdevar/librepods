@@ -1,7 +1,17 @@
 #include <QSettings>
 #include <QLocalServer>
 #include <QLocalSocket>
-#include "main.h"
+#include <QApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QBluetoothLocalDevice>
+#include <QBluetoothSocket>
+#include <QQuickWindow>
+#include <QLoggingCategory>
+#include <QThread>
+#include <QTimer>
+#include <QProcess>
+
 #include "airpods_packets.h"
 #include "logger.h"
 #include "mediacontroller.h"
