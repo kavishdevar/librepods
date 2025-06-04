@@ -3,35 +3,25 @@
 #include <QDebug>
 #include <QTimer>
 #include "logger.h"
+#include <QMap>
 
 AirpodsTrayApp::Enums::AirPodsModel getModelName(quint16 modelId)
 {
     using namespace AirpodsTrayApp::Enums;
-    switch (modelId)
-    {
-    case 0x0220:
-        return AirPodsModel::AirPods1;
-    case 0x0F20:
-        return AirPodsModel::AirPods2;
-    case 0x1320:
-        return AirPodsModel::AirPods3;
-    case 0x1920:
-        return AirPodsModel::AirPods4;
-    case 0x1B20:
-        return AirPodsModel::AirPods4ANC;
-    case 0x0A20:
-        return AirPodsModel::AirPodsMaxLightning;
-    case 0x1F20:
-        return AirPodsModel::AirPodsMaxUSBC;
-    case 0x0E20:
-        return AirPodsModel::AirPodsPro;
-    case 0x1420:
-        return AirPodsModel::AirPodsPro2Lightning;
-    case 0x2420:
-        return AirPodsModel::AirPodsPro2USBC;
-    default:
-        return AirPodsModel::Unknown; // Default case for unknown models
-    }
+    static const QMap<quint16, AirPodsModel> modelMap = {
+        {0x0220, AirPodsModel::AirPods1},
+        {0x0F20, AirPodsModel::AirPods2},
+        {0x1320, AirPodsModel::AirPods3},
+        {0x1920, AirPodsModel::AirPods4},
+        {0x1B20, AirPodsModel::AirPods4ANC},
+        {0x0A20, AirPodsModel::AirPodsMaxLightning},
+        {0x1F20, AirPodsModel::AirPodsMaxUSBC},
+        {0x0E20, AirPodsModel::AirPodsPro},
+        {0x1420, AirPodsModel::AirPodsPro2Lightning},
+        {0x2420, AirPodsModel::AirPodsPro2USBC}
+    };
+
+    return modelMap.value(modelId, AirPodsModel::Unknown);
 }
 
 QString getColorName(quint8 colorId)
