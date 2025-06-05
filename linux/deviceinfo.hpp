@@ -226,7 +226,7 @@ signals:
 private:
     QString m_batteryStatus;
     QString m_earDetectionStatus;
-    NoiseControlMode m_noiseControlMode = NoiseControlMode::Off;
+    NoiseControlMode m_noiseControlMode = NoiseControlMode::Transparency;
     bool m_conversationalAwareness = false;
     int m_adaptiveNoiseLevel = 50;
     QString m_deviceName;
