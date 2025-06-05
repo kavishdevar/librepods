@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QString>
 #include <QObject>
+#include <climits>
 
 #include "airpods_packets.h"
 
@@ -152,20 +153,17 @@ public:
         auto [isRightCharging, rawRightBattery] = formatBattery(rawRightBatteryByte);
         auto [isCaseCharging, rawCaseBattery] = formatBattery(rawCaseBatteryByte);
 
-        // If raw byte is 0xFF or (0x7F and charging), use the last known level
-        if (rawLeftBatteryByte == 0xFF || (rawLeftBatteryByte == 0x7F && isLeftCharging)) {
-            rawLeftBatteryByte = states.value(Component::Left).level; // Use last valid level
+        if (rawLeftBattery == CHAR_MAX) {
+            rawLeftBattery = states.value(Component::Left).level; // Use last valid level
             isLeftCharging = states.value(Component::Left).status == BatteryStatus::Charging;
         }
 
-        // If raw byte is 0xFF or (0x7F and charging), use the last known level
-        if (rawRightBatteryByte == 0xFF || (rawRightBatteryByte == 0x7F && isRightCharging)) {
+        if (rawRightBattery == CHAR_MAX) {
             rawRightBattery = states.value(Component::Right).level; // Use last valid level
             isRightCharging = states.value(Component::Right).status == BatteryStatus::Charging;
         }
 
-        // If raw byte is 0xFF or (0x7F and charging), use the last known level
-        if (rawCaseBatteryByte == 0xFF || (rawCaseBatteryByte == 0x7F && isCaseCharging)) {
+        if (rawCaseBattery == CHAR_MAX) {
             rawCaseBattery = states.value(Component::Case).level; // Use last valid level
             isCaseCharging = states.value(Component::Case).status == BatteryStatus::Charging;
         }
