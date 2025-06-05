@@ -28,6 +28,9 @@ qt_add_executable(applinux
     ble/bleutils.h
     ble/blemanager.cpp
     ble/blemanager.h
+    thirdparty/QR-Code-generator/qrcodegen.cpp
+    thirdparty/QR-Code-generator/qrcodegen.hpp
+    QRCodeImageProvider.hpp
 )
 
 qt_add_qml_module(applinux
@@ -39,6 +42,7 @@ qt_add_qml_module(applinux
         SegmentedControl.qml
         PodColumn.qml
         Icon.qml
+        KeysQRDialog.qml
 )
 
 # Add the resource file

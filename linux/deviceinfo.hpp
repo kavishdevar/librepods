@@ -28,6 +28,8 @@ class DeviceInfo : public QObject
     Q_PROPERTY(bool leftPodInEar READ isLeftPodInEar NOTIFY primaryChanged)
     Q_PROPERTY(bool rightPodInEar READ isRightPodInEar NOTIFY primaryChanged)
     Q_PROPERTY(QString bluetoothAddress READ bluetoothAddress WRITE setBluetoothAddress NOTIFY bluetoothAddressChanged)
+    Q_PROPERTY(QString magicAccIRK READ magicAccIRKHex CONSTANT)
+    Q_PROPERTY(QString magicAccEncKey READ magicAccEncKeyHex CONSTANT)
 
 public:
     explicit DeviceInfo(QObject *parent = nullptr) : QObject(parent), m_battery(new Battery(this)) {}
@@ -139,9 +141,11 @@ public:
 
     QByteArray magicAccIRK() const { return m_magicAccIRK; }
     void setMagicAccIRK(const QByteArray &irk) { m_magicAccIRK = irk; }
+    QString magicAccIRKHex() const { return QString::fromUtf8(m_magicAccIRK.toHex()); }
 
     QByteArray magicAccEncKey() const { return m_magicAccEncKey; }
     void setMagicAccEncKey(const QByteArray &key) { m_magicAccEncKey = key; }
+    QString magicAccEncKeyHex() const { return QString::fromUtf8(m_magicAccEncKey.toHex()); }
 
     QString modelNumber() const { return m_modelNumber; }
     void setModelNumber(const QString &modelNumber) { m_modelNumber = modelNumber; }

@@ -23,6 +23,7 @@
 #include "deviceinfo.hpp"
 #include "ble/blemanager.h"
 #include "ble/bleutils.h"
+#include "QRCodeImageProvider.hpp"
 
 using namespace AirpodsTrayApp::Enums;
 
@@ -940,6 +941,7 @@ int main(int argc, char *argv[]) {
     qmlRegisterType<DeviceInfo>("me.kavishdevar.DeviceInfo", 1, 0, "DeviceInfo");
     AirPodsTrayApp *trayApp = new AirPodsTrayApp(debugMode, hideOnStart, &engine);
     engine.rootContext()->setContextProperty("airPodsTrayApp", trayApp);
+    engine.addImageProvider("qrcode", new QRCodeImageProvider());
     trayApp->loadMainModule();
 
     QLocalServer server;
