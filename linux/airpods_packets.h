@@ -40,13 +40,13 @@ namespace AirPodsPackets
 
         inline std::optional<NoiseControlMode> parseMode(const QByteArray &data)
         {
-            char mode = ControlCommand::parseActive(data).value_or(CHAR_MAX);
+            char mode = ControlCommand::parseActive(data).value_or(CHAR_MAX) - 1;
             if (mode < static_cast<quint8>(NoiseControlMode::MinValue) ||
                 mode > static_cast<quint8>(NoiseControlMode::MaxValue))
             {
                 return std::nullopt;
             }
-            return static_cast<NoiseControlMode>(mode - 1);
+            return static_cast<NoiseControlMode>(mode);
         }
     }
 
