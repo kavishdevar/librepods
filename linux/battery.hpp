@@ -7,6 +7,7 @@
 #include <climits>
 
 #include "airpods_packets.h"
+#include "logger.h"
 
 class Battery : public QObject
 {
@@ -127,6 +128,10 @@ public:
 
         // Emit signal to notify about battery status change
         emit batteryStatusChanged();
+
+        // Log which is left and right pod
+        LOG_INFO("Primary Pod:" << primaryPod);
+        LOG_INFO("Secondary Pod:" << secondaryPod);
 
         return true;
     }

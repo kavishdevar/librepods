@@ -94,7 +94,7 @@ ApplicationWindow {
                     spacing: 8
 
                     PodColumn {
-                        isVisible: airPodsTrayApp.deviceInfo.battery.leftPodAvailable
+                        visible: airPodsTrayApp.deviceInfo.battery.leftPodAvailable
                         inEar: airPodsTrayApp.deviceInfo.leftPodInEar
                         iconSource: "qrc:/icons/assets/" + airPodsTrayApp.deviceInfo.podIcon
                         batteryLevel: airPodsTrayApp.deviceInfo.battery.leftPodLevel
@@ -103,7 +103,7 @@ ApplicationWindow {
                     }
 
                     PodColumn {
-                        isVisible: airPodsTrayApp.deviceInfo.battery.rightPodAvailable
+                        visible: airPodsTrayApp.deviceInfo.battery.rightPodAvailable
                         inEar: airPodsTrayApp.deviceInfo.rightPodInEar
                         iconSource: "qrc:/icons/assets/" + airPodsTrayApp.deviceInfo.podIcon
                         batteryLevel: airPodsTrayApp.deviceInfo.battery.rightPodLevel
@@ -112,7 +112,7 @@ ApplicationWindow {
                     }
 
                     PodColumn {
-                        isVisible: airPodsTrayApp.deviceInfo.battery.caseAvailable
+                        visible: airPodsTrayApp.deviceInfo.battery.caseAvailable
                         inEar: true
                         iconSource: "qrc:/icons/assets/" + airPodsTrayApp.deviceInfo.caseIcon
                         batteryLevel: airPodsTrayApp.deviceInfo.battery.caseLevel

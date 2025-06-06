@@ -5,6 +5,7 @@
 #include <QSettings>
 #include "battery.hpp"
 #include "enums.h"
+#include "eardetection.hpp"
 
 using namespace AirpodsTrayApp::Enums;
 
@@ -12,14 +13,11 @@ class DeviceInfo : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(QString batteryStatus READ batteryStatus WRITE setBatteryStatus NOTIFY batteryStatusChanged)
-    Q_PROPERTY(QString earDetectionStatus READ earDetectionStatus WRITE setEarDetectionStatus NOTIFY earDetectionStatusChanged)
     Q_PROPERTY(int noiseControlMode READ noiseControlModeInt WRITE setNoiseControlModeInt NOTIFY noiseControlModeChangedInt)
     Q_PROPERTY(bool conversationalAwareness READ conversationalAwareness WRITE setConversationalAwareness NOTIFY conversationalAwarenessChanged)
     Q_PROPERTY(int adaptiveNoiseLevel READ adaptiveNoiseLevel WRITE setAdaptiveNoiseLevel NOTIFY adaptiveNoiseLevelChanged)
     Q_PROPERTY(QString deviceName READ deviceName WRITE setDeviceName NOTIFY deviceNameChanged)
     Q_PROPERTY(Battery *battery READ getBattery CONSTANT)
-    Q_PROPERTY(bool primaryInEar READ isPrimaryInEar WRITE setPrimaryInEar NOTIFY primaryChanged)
-    Q_PROPERTY(bool secondaryInEar READ isSecondaryInEar WRITE setSecondaryInEar NOTIFY primaryChanged)
     Q_PROPERTY(bool oneBudANCMode READ oneBudANCMode WRITE setOneBudANCMode NOTIFY oneBudANCModeChanged)
     Q_PROPERTY(AirPodsModel model READ model WRITE setModel NOTIFY modelChanged)
     Q_PROPERTY(bool adaptiveModeActive READ adaptiveModeActive NOTIFY noiseControlModeChangedInt)
@@ -32,7 +30,9 @@ class DeviceInfo : public QObject
     Q_PROPERTY(QString magicAccEncKey READ magicAccEncKeyHex CONSTANT)
 
 public:
-    explicit DeviceInfo(QObject *parent = nullptr) : QObject(parent), m_battery(new Battery(this)) {}
+    explicit DeviceInfo(QObject *parent = nullptr) : QObject(parent), m_battery(new Battery(this)), m_earDetection(new EarDetection(this)) {
+        connect(getEarDetection(), &EarDetection::statusChanged, this, &DeviceInfo::primaryChanged);
+    }
 
     QString batteryStatus() const { return m_batteryStatus; }
     void setBatteryStatus(const QString &status)
@@ -41,16 +41,6 @@ public:
         {
             m_batteryStatus = status;
             emit batteryStatusChanged(status);
-        }
-    }
-
-    QString earDetectionStatus() const { return m_earDetectionStatus; }
-    void setEarDetectionStatus(const QString &status)
-    {
-        if (m_earDetectionStatus != status)
-        {
-            m_earDetectionStatus = status;
-            emit earDetectionStatusChanged(status);
         }
     }
 
@@ -98,26 +88,6 @@ public:
     }
 
     Battery *getBattery() const { return m_battery; }
-
-    bool isPrimaryInEar() const { return m_primaryInEar; }
-    void setPrimaryInEar(bool inEar)
-    {
-        if (m_primaryInEar != inEar)
-        {
-            m_primaryInEar = inEar;
-            emit primaryChanged();
-        }
-    }
-
-    bool isSecondaryInEar() const { return m_secoundaryInEar; }
-    void setSecondaryInEar(bool inEar)
-    {
-        if (m_secoundaryInEar != inEar)
-        {
-            m_secoundaryInEar = inEar;
-            emit primaryChanged();
-        }
-    }
 
     bool oneBudANCMode() const { return m_oneBudANCMode; }
     void setOneBudANCMode(bool enabled)
@@ -167,18 +137,18 @@ public:
     QString caseIcon() const { return getModelIcon(model()).second; }
     bool isLeftPodInEar() const
     {
-        if (getBattery()->getPrimaryPod() == Battery::Component::Left) return isPrimaryInEar();
-        else return isSecondaryInEar();
+        if (getBattery()->getPrimaryPod() == Battery::Component::Left) return getEarDetection()->isPrimaryInEar();
+        else return getEarDetection()->isSecondaryInEar();
     }
     bool isRightPodInEar() const
     {
-        if (getBattery()->getPrimaryPod() == Battery::Component::Right) return isPrimaryInEar();
-        else return isSecondaryInEar();
+        if (getBattery()->getPrimaryPod() == Battery::Component::Right) return getEarDetection()->isPrimaryInEar();
+        else return getEarDetection()->isSecondaryInEar();
     }
 
     bool adaptiveModeActive() const { return noiseControlMode() == NoiseControlMode::Adaptive; }
-    bool oneOrMorePodsInCase() const { return earDetectionStatus().contains("In case"); }
-    bool oneOrMorePodsInEar() const { return isPrimaryInEar() || isSecondaryInEar(); }
+
+    EarDetection *getEarDetection() const { return m_earDetection; }
 
     void reset()
     {
@@ -186,11 +156,9 @@ public:
         setModel(AirPodsModel::Unknown);
         m_battery->reset();
         setBatteryStatus("");
-        setEarDetectionStatus("");
-        setPrimaryInEar(false);
-        setSecondaryInEar(false);
         setNoiseControlMode(NoiseControlMode::Off);
         setBluetoothAddress("");
+        getEarDetection()->reset();
     }
 
     void saveToSettings(QSettings &settings)
@@ -210,9 +178,16 @@ public:
         setMagicAccEncKey(settings.value("DeviceInfo/magicAccEncKey", QByteArray()).toByteArray());
     }
 
+    void updateBatteryStatus()
+    {
+        int leftLevel = getBattery()->getState(Battery::Component::Left).level;
+        int rightLevel = getBattery()->getState(Battery::Component::Right).level;
+        int caseLevel = getBattery()->getState(Battery::Component::Case).level;
+        setBatteryStatus(QString("Left: %1%, Right: %2%, Case: %3%").arg(leftLevel).arg(rightLevel).arg(caseLevel));
+    }
+
 signals:
     void batteryStatusChanged(const QString &status);
-    void earDetectionStatusChanged(const QString &status);
     void noiseControlModeChanged(NoiseControlMode mode);
     void noiseControlModeChangedInt(int mode);
     void conversationalAwarenessChanged(bool enabled);
@@ -225,14 +200,11 @@ signals:
 
 private:
     QString m_batteryStatus;
-    QString m_earDetectionStatus;
     NoiseControlMode m_noiseControlMode = NoiseControlMode::Transparency;
     bool m_conversationalAwareness = false;
     int m_adaptiveNoiseLevel = 50;
     QString m_deviceName;
     Battery *m_battery;
-    bool m_primaryInEar = false;
-    bool m_secoundaryInEar = false;
     QByteArray m_magicAccIRK;
     QByteArray m_magicAccEncKey;
     bool m_oneBudANCMode = false;
@@ -240,4 +212,5 @@ private:
     QString m_modelNumber;
     QString m_manufacturer;
     QString m_bluetoothAddress;
+    EarDetection *m_earDetection;
 };

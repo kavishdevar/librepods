@@ -5,6 +5,7 @@
 #include <QObject>
 
 class QProcess;
+class EarDetection;
 
 class MediaController : public QObject
 {
@@ -29,7 +30,7 @@ public:
   ~MediaController();
 
   void initializeMprisInterface();
-  void handleEarDetection(const QString &status);
+  void handleEarDetection(EarDetection*);
   void followMediaChanges();
   bool isActiveOutputDeviceAirPods();
   void handleConversationalAwareness(const QByteArray &data);

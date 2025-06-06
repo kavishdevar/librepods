@@ -65,7 +65,6 @@ public:
 
         // Initialize MediaController and connect signals
         mediaController = new MediaController(this);
-        connect(m_deviceInfo, &DeviceInfo::earDetectionStatusChanged, mediaController, &MediaController::handleEarDetection);
         connect(mediaController, &MediaController::mediaStateChanged, this, &AirPodsTrayApp::handleMediaStateChange);
         mediaController->initializeMprisInterface();
         mediaController->followMediaChanges();
@@ -590,26 +589,14 @@ private slots:
         // Ear Detection
         else if (data.size() == 8 && data.startsWith(AirPodsPackets::Parse::EAR_DETECTION))
         {
-            char primary = data[6];
-            char secondary = data[7];
-            m_deviceInfo->setPrimaryInEar(data[6] == 0x00);
-            m_deviceInfo->setSecondaryInEar(data[7] == 0x00);
-            m_deviceInfo->setEarDetectionStatus(QString("Primary: %1, Secondary: %2")
-                                                         .arg(getEarStatus(primary), getEarStatus(secondary)));
-            LOG_INFO("Ear detection status: " << m_deviceInfo->earDetectionStatus());
+            m_deviceInfo->getEarDetection()->parseData(data);
+            mediaController->handleEarDetection(m_deviceInfo->getEarDetection());
         }
         // Battery Status
         else if (data.size() == 22 && data.startsWith(AirPodsPackets::Parse::BATTERY_STATUS))
         {
             m_deviceInfo->getBattery()->parsePacket(data);
-
-            int leftLevel = m_deviceInfo->getBattery()->getState(Battery::Component::Left).level;
-            int rightLevel = m_deviceInfo->getBattery()->getState(Battery::Component::Right).level;
-            int caseLevel = m_deviceInfo->getBattery()->getState(Battery::Component::Case).level;
-            m_deviceInfo->setBatteryStatus(QString("Left: %1%, Right: %2%, Case: %3%")
-                                               .arg(leftLevel)
-                                               .arg(rightLevel)
-                                               .arg(caseLevel));
+            m_deviceInfo->updateBatteryStatus();
             LOG_INFO("Battery status: " << m_deviceInfo->batteryStatus());
         }
         // Conversational Awareness Data
@@ -623,7 +610,7 @@ private slots:
             parseMetadata(data);
             initiateMagicPairing();
             mediaController->setConnectedDeviceMacAddress(m_deviceInfo->bluetoothAddress().replace(":", "_"));
-            if (m_deviceInfo->oneOrMorePodsInEar()) // AirPods get added as output device only after this
+            if (m_deviceInfo->getEarDetection()->oneOrMorePodsInEar()) // AirPods get added as output device only after this
             {
                 mediaController->activateA2dpProfile();
             }
@@ -763,8 +750,7 @@ private slots:
             m_deviceInfo->setModel(device.modelName);
             auto decryptet = BLEUtils::decryptLastBytes(device.encryptedPayload, m_deviceInfo->magicAccEncKey());
             m_deviceInfo->getBattery()->parseEncryptedPacket(decryptet, device.primaryLeft);
-            m_deviceInfo->setPrimaryInEar(device.isPrimaryInEar);
-            m_deviceInfo->setSecondaryInEar(device.isSecondaryInEar);
+            m_deviceInfo->getEarDetection()->overrideEarDetectionStatus(device.isPrimaryInEar, device.isSecondaryInEar);
         }
     }
 

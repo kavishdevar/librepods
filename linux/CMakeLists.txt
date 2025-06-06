@@ -31,6 +31,7 @@ qt_add_executable(applinux
     thirdparty/QR-Code-generator/qrcodegen.cpp
     thirdparty/QR-Code-generator/qrcodegen.hpp
     QRCodeImageProvider.hpp
+    eardetection.hpp
 )
 
 qt_add_qml_module(applinux

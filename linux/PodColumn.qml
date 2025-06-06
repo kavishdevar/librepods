@@ -1,16 +1,25 @@
 import QtQuick 2.15
 
 Column {
-    property bool isVisible: true
+    id: root
     property bool inEar: true
     property string iconSource
     property int batteryLevel: 0
     property bool isCharging: false
     property string indicator: ""
+    property real targetOpacity: inEar ? 1 : 0.5
+
+    Timer {
+        id: opacityTimer
+        interval: 50
+        onTriggered: root.opacity = root.targetOpacity
+    }
+
+    onInEarChanged: {
+        opacityTimer.restart()
+    }
 
     spacing: 5
-    opacity: inEar ? 1 : 0.5
-    visible: isVisible
 
     Image {
         source: parent.iconSource

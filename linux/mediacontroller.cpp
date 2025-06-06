@@ -1,5 +1,6 @@
 #include "mediacontroller.h"
 #include "logger.h"
+#include "eardetection.hpp"
 
 #include <QDebug>
 #include <QProcess>
@@ -38,7 +39,7 @@ void MediaController::initializeMprisInterface() {
   }
 }
 
-void MediaController::handleEarDetection(const QString &status)
+void MediaController::handleEarDetection(EarDetection *earDetection)
 {
   if (earDetectionBehavior == Disabled)
   {
@@ -46,15 +47,8 @@ void MediaController::handleEarDetection(const QString &status)
     return;
   }
 
-  bool primaryInEar = false;
-  bool secondaryInEar = false;
-
-  QStringList parts = status.split(", ");
-  if (parts.size() == 2)
-  {
-    primaryInEar = parts[0].contains("In Ear");
-    secondaryInEar = parts[1].contains("In Ear");
-  }
+  bool primaryInEar = earDetection->isPrimaryInEar();
+  bool secondaryInEar = earDetection->isSecondaryInEar();
 
   LOG_DEBUG("Ear detection status: primaryInEar="
             << primaryInEar << ", secondaryInEar=" << secondaryInEar
