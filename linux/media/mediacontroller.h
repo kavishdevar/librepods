@@ -6,6 +6,7 @@
 
 class QProcess;
 class EarDetection;
+class PlayerStatusWatcher;
 
 class MediaController : public QObject
 {
@@ -29,7 +30,6 @@ public:
   explicit MediaController(QObject *parent = nullptr);
   ~MediaController();
 
-  void initializeMprisInterface();
   void handleEarDetection(EarDetection*);
   void followMediaChanges();
   bool isActiveOutputDeviceAirPods();
@@ -50,13 +50,12 @@ private:
   MediaState mediaStateFromPlayerctlOutput(const QString &output);
   QString getAudioDeviceName();
 
-  QDBusInterface *mprisInterface = nullptr;
-  QProcess *playerctlProcess = nullptr;
   bool wasPausedByApp = false;
   int initialVolume = -1;
   QString connectedDeviceMacAddress;
   EarDetectionBehavior earDetectionBehavior = PauseWhenOneRemoved;
   QString m_deviceOutputName;
+  PlayerStatusWatcher *playerStatusWatcher = nullptr;
 };
 
 #endif // MEDIACONTROLLER_H

@@ -12,8 +12,8 @@ qt_standard_project_setup(REQUIRES 6.4)
 qt_add_executable(applinux
     main.cpp
     logger.h
-    mediacontroller.cpp
-    mediacontroller.h
+    media/mediacontroller.cpp
+    media/mediacontroller.h
     airpods_packets.h
     trayiconmanager.cpp
     trayiconmanager.h
@@ -32,6 +32,8 @@ qt_add_executable(applinux
     thirdparty/QR-Code-generator/qrcodegen.hpp
     QRCodeImageProvider.hpp
     eardetection.hpp
+    media/playerstatuswatcher.cpp
+    media/playerstatuswatcher.h
 )
 
 qt_add_qml_module(applinux

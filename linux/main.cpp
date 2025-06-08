@@ -14,7 +14,7 @@
 
 #include "airpods_packets.h"
 #include "logger.h"
-#include "mediacontroller.h"
+#include "media/mediacontroller.h"
 #include "trayiconmanager.h"
 #include "enums.h"
 #include "battery.hpp"
@@ -66,7 +66,6 @@ public:
         // Initialize MediaController and connect signals
         mediaController = new MediaController(this);
         connect(mediaController, &MediaController::mediaStateChanged, this, &AirPodsTrayApp::handleMediaStateChange);
-        mediaController->initializeMprisInterface();
         mediaController->followMediaChanges();
 
         monitor = new BluetoothMonitor(this);
@@ -795,13 +794,6 @@ public:
             process.waitForFinished();
             QString output = process.readAllStandardOutput().trimmed();
             LOG_INFO("Bluetoothctl output: " << output);
-            if (output.contains("Connection successful")) {
-                LOG_INFO("Connection successful, proceeding with L2CAP connection");
-                QBluetoothAddress btAddress(m_deviceInfo->bluetoothAddress());
-                forceL2capConnection(btAddress);
-            } else {
-                LOG_ERROR("Connection failed, cannot proceed with L2CAP connection");
-            }
         }
         QBluetoothLocalDevice localDevice;
         const QList<QBluetoothAddress> connectedDevices = localDevice.connectedDevices();
@@ -814,31 +806,6 @@ public:
             }
         }
         LOG_WARN("AirPods not found among connected devices");
-    }
-
-    void forceL2capConnection(const QBluetoothAddress &address) {
-        LOG_INFO("Retrying L2CAP connection for up to 10 seconds...");
-        QBluetoothDeviceInfo device(address, "", 0);
-        QElapsedTimer timer;
-        timer.start();
-        while (timer.elapsed() < 10000) {
-            QProcess bcProcess;
-            bcProcess.start("bluetoothctl", QStringList() << "connect" << address.toString());
-            bcProcess.waitForFinished();
-            QString output = bcProcess.readAllStandardOutput().trimmed();
-            LOG_INFO("Bluetoothctl output: " << output);
-            if (output.contains("Connection successful")) {
-                connectToDevice(device);
-                QThread::sleep(1);
-                if (socket && socket->isOpen()) {
-                    LOG_INFO("Successfully connected to device: " << address.toString());
-                    return;
-                }
-            } else {
-                LOG_WARN("Connection attempt failed, retrying...");
-            }
-        }
-        LOG_ERROR("Failed to connect to device within 10 seconds: " << address.toString());
     }
 
     void initializeBluetooth() {

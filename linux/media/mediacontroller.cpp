@@ -1,6 +1,7 @@
 #include "mediacontroller.h"
 #include "logger.h"
 #include "eardetection.hpp"
+#include "playerstatuswatcher.h"
 
 #include <QDebug>
 #include <QProcess>
@@ -9,34 +10,6 @@
 #include <QDBusConnectionInterface>
 
 MediaController::MediaController(QObject *parent) : QObject(parent) {
-  // No additional initialization required here
-}
-
-void MediaController::initializeMprisInterface() {
-  QStringList services =
-      QDBusConnection::sessionBus().interface()->registeredServiceNames();
-  QString mprisService;
-
-  for (const QString &service : services) {
-    if (service.startsWith("org.mpris.MediaPlayer2.") &&
-        service != "org.mpris.MediaPlayer2") {
-      mprisService = service;
-      break;
-    }
-  }
-
-  if (!mprisService.isEmpty()) {
-    mprisInterface = new QDBusInterface(mprisService, "/org/mpris/MediaPlayer2",
-                                        "org.mpris.MediaPlayer2.Player",
-                                        QDBusConnection::sessionBus(), this);
-    if (!mprisInterface->isValid()) {
-      LOG_ERROR("Failed to initialize MPRIS interface for service: ") << mprisService;
-    } else {
-      LOG_INFO("Connected to MPRIS service: " << mprisService);
-    }
-  } else {
-    LOG_WARN("No active MPRIS media players found");
-  }
 }
 
 void MediaController::handleEarDetection(EarDetection *earDetection)
@@ -118,16 +91,14 @@ void MediaController::setEarDetectionBehavior(EarDetectionBehavior behavior)
 }
 
 void MediaController::followMediaChanges() {
-  playerctlProcess = new QProcess(this);
-  connect(playerctlProcess, &QProcess::readyReadStandardOutput, this,
-          [this]() {
-            QString output =
-                playerctlProcess->readAllStandardOutput().trimmed();
-            LOG_DEBUG("Playerctl output: " << output);
-            MediaState state = mediaStateFromPlayerctlOutput(output);
+  playerStatusWatcher = new PlayerStatusWatcher("", this);
+  connect(playerStatusWatcher, &PlayerStatusWatcher::playbackStatusChanged,
+          this, [this](const QString &status)
+          {
+            LOG_DEBUG("Playback status changed: " << status);
+            MediaState state = mediaStateFromPlayerctlOutput(status);
             emit mediaStateChanged(state);
           });
-  playerctlProcess->start("playerctl", QStringList() << "--follow" << "status");
 }
 
 bool MediaController::isActiveOutputDeviceAirPods() {
@@ -241,13 +212,6 @@ void MediaController::pause() {
 }
 
 MediaController::~MediaController() {
-  if (playerctlProcess) {
-    playerctlProcess->terminate();
-    if (!playerctlProcess->waitForFinished()) {
-      playerctlProcess->kill();
-      playerctlProcess->waitForFinished(1000);
-    }
-  }
 }
 
 QString MediaController::getAudioDeviceName()
