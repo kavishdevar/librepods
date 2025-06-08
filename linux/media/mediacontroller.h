@@ -43,16 +43,15 @@ public:
 
   void play();
   void pause();
-  MediaState getCurrentMediaState() const { return m_mediaState; };
+  MediaState getCurrentMediaState() const;
 
 Q_SIGNALS:
   void mediaStateChanged(MediaState state);
 
 private:
-  MediaState mediaStateFromPlayerctlOutput(const QString &output);
+  MediaState mediaStateFromPlayerctlOutput(const QString &output) const;
   QString getAudioDeviceName();
   bool sendMediaPlayerCommand(const QString &method);
-  QDBusInterface *getMediaPlayerInterface();
 
   bool wasPausedByApp = false;
   int initialVolume = -1;
@@ -60,7 +59,6 @@ private:
   EarDetectionBehavior earDetectionBehavior = PauseWhenOneRemoved;
   QString m_deviceOutputName;
   PlayerStatusWatcher *playerStatusWatcher = nullptr;
-  MediaState m_mediaState = Stopped;
 };
 
 #endif // MEDIACONTROLLER_H

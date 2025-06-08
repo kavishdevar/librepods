@@ -44,7 +44,7 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
 
   if (shouldPause && isActiveOutputDeviceAirPods())
   {
-    if (m_mediaState == Playing)
+    if (getCurrentMediaState() == Playing)
     {
       pause();
     }
@@ -172,7 +172,7 @@ void MediaController::setConnectedDeviceMacAddress(const QString &macAddress) {
 }
 
 MediaController::MediaState MediaController::mediaStateFromPlayerctlOutput(
-    const QString &output) {
+    const QString &output) const {
   if (output == "Playing") {
     return MediaState::Playing;
   } else if (output == "Paused") {
@@ -182,71 +182,77 @@ MediaController::MediaState MediaController::mediaStateFromPlayerctlOutput(
   }
 }
 
-QDBusInterface *MediaController::getMediaPlayerInterface()
+MediaController::MediaState MediaController::getCurrentMediaState() const
 {
-  // List all media player services
-  QDBusConnection sessionBus = QDBusConnection::sessionBus();
-  QDBusInterface dbusInterface("org.freedesktop.DBus", "/org/freedesktop/DBus",
-                               "org.freedesktop.DBus", sessionBus);
-  QDBusReply<QStringList> reply = dbusInterface.call("ListNames");
-
-  if (!reply.isValid())
-  {
-    LOG_ERROR("Failed to list DBus services: " << reply.error().message());
-    return nullptr;
-  }
-
-  QStringList services = reply.value();
-  QString mediaPlayerService;
-
-  for (const QString &service : services)
-  {
-    if (service.startsWith("org.mpris.MediaPlayer2."))
-    {
-      mediaPlayerService = service;
-      break;
-    }
-  }
-
-  if (mediaPlayerService.isEmpty())
-  {
-    LOG_DEBUG("No active media player found on DBus");
-    return nullptr;
-  }
-
-  LOG_DEBUG("Found media player service: " << mediaPlayerService);
-  return new QDBusInterface(mediaPlayerService, "/org/mpris/MediaPlayer2",
-                            "org.mpris.MediaPlayer2.Player", sessionBus, this);
+  return mediaStateFromPlayerctlOutput(PlayerStatusWatcher::getCurrentPlaybackStatus(""));
 }
 
 bool MediaController::sendMediaPlayerCommand(const QString &method)
 {
-  QDBusInterface *iface = getMediaPlayerInterface();
-  if (!iface)
+  // Connect to the session bus
+  QDBusConnection bus = QDBusConnection::sessionBus();
+
+  // Find available MPRIS-compatible media players
+  QStringList services = bus.interface()->registeredServiceNames().value();
+  QStringList mprisServices;
+  for (const QString &service : services)
   {
-    LOG_ERROR("No media player interface available for " << method);
+    if (service.startsWith("org.mpris.MediaPlayer2."))
+    {
+      mprisServices << service;
+    }
+  }
+
+  if (mprisServices.isEmpty())
+  {
+    LOG_ERROR("No MPRIS-compatible media players found on DBus");
     return false;
   }
 
-  // Use QDBusMessage for more control and error handling
-  QDBusMessage message = QDBusMessage::createMethodCall(
-      iface->service(),
-      iface->path(),
-      iface->interface(),
-      method);
-
-  QDBusPendingCall call = iface->connection().asyncCall(message);
-  call.waitForFinished();
-
-  if (call.isError())
+  bool success = false;
+  // Try each MPRIS service until one succeeds
+  for (const QString &service : mprisServices)
   {
-    LOG_ERROR("Failed to execute " << method << ": " << call.error().message());
-    delete iface;
-    return false;
+    QDBusInterface playerInterface(
+        service,
+        "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2.Player",
+        bus);
+
+    if (!playerInterface.isValid())
+    {
+      LOG_ERROR("Invalid DBus interface for service: " << service);
+      continue;
+    }
+
+    // Send the Play or Pause command
+    if (method == "Play" || method == "Pause")
+    {
+      QDBusReply<void> reply = playerInterface.call(method);
+      if (reply.isValid())
+      {
+        LOG_INFO("Successfully sent " << method << " to " << service);
+        success = true;
+        break; // Exit after the first successful command
+      }
+      else
+      {
+        LOG_ERROR("Failed to send " << method << " to " << service
+                                    << ": " << reply.error().message());
+      }
+    }
+    else
+    {
+      LOG_ERROR("Unsupported method: " << method);
+      return false;
+    }
   }
 
-  delete iface;
-  return true;
+  if (!success)
+  {
+    LOG_ERROR("No media player responded successfully to " << method);
+  }
+  return success;
 }
 
 void MediaController::play()

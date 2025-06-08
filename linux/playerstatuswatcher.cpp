@@ -1,9 +1,8 @@
-#include "playerstatuswatcher.h"
+#include "media/playerstatuswatcher.h"
 #include <QDBusConnection>
 #include <QDBusPendingReply>
 #include <QVariantMap>
 #include <QDBusReply>
-#include <QDBusConnectionInterface>
 
 PlayerStatusWatcher::PlayerStatusWatcher(const QString &playerService, QObject *parent)
     : QObject(parent),
@@ -13,6 +12,10 @@ PlayerStatusWatcher::PlayerStatusWatcher(const QString &playerService, QObject *
       m_serviceWatcher(new QDBusServiceWatcher(playerService, QDBusConnection::sessionBus(),
                                                QDBusServiceWatcher::WatchForOwnerChange, this))
 {
+    // Register this object on the session bus to receive D-Bus messages
+    QDBusConnection::sessionBus().registerObject("/PlayerStatusWatcher", this,
+                                               QDBusConnection::ExportAllSlots);
+
     QDBusConnection::sessionBus().connect(
         playerService, "/org/mpris/MediaPlayer2", "org.freedesktop.DBus.Properties",
         "PropertiesChanged", this, SLOT(onPropertiesChanged(QString,QVariantMap,QStringList))
@@ -26,6 +29,14 @@ void PlayerStatusWatcher::onPropertiesChanged(const QString &interface,
                                               const QVariantMap &changed,
                                               const QStringList &)
 {
+    // Get the service name of the sender
+    QString sender = message().service();
+    
+    // Skip if it's a KDE Connect player
+    if (sender.contains("kdeconnect", Qt::CaseInsensitive)) {
+        return;
+    }
+
     if (interface == "org.mpris.MediaPlayer2.Player" && changed.contains("PlaybackStatus")) {
         emit playbackStatusChanged(changed.value("PlaybackStatus").toString());
     }
@@ -49,22 +60,18 @@ void PlayerStatusWatcher::onServiceOwnerChanged(const QString &name, const QStri
 
 QString PlayerStatusWatcher::getCurrentPlaybackStatus(const QString &playerService)
 {
-    QDBusConnection bus = QDBusConnection::sessionBus();
-    QStringList services = bus.interface()->registeredServiceNames().value();
-
-    for (const QString &service : services) {
-        if (service.startsWith("org.mpris.MediaPlayer2.")) {
-            QDBusInterface iface(service, "/org/mpris/MediaPlayer2",
-                               "org.mpris.MediaPlayer2.Player", bus);
-            
-            if (iface.isValid()) {
-                QVariant status = iface.property("PlaybackStatus");
-                if (status.isValid() && status.toString() == "Playing") {
-                    return status.toString();
-                }
-            }
-        }
+    QDBusInterface iface(
+        playerService,
+        "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2.Player",
+        QDBusConnection::sessionBus());
+    QVariant reply = iface.property("PlaybackStatus");
+    if (reply.isValid())
+    {
+        return reply.toString(); // "Playing", "Paused", "Stopped"
     }
-
-    return QString();
+    else
+    {
+        return QString(); // or handle error as needed
+    }
 }
