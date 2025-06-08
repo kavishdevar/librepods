@@ -44,12 +44,7 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
 
   if (shouldPause && isActiveOutputDeviceAirPods())
   {
-    QProcess process;
-    process.start("playerctl", QStringList() << "status");
-    process.waitForFinished();
-    QString playbackStatus = process.readAllStandardOutput().trimmed();
-    LOG_DEBUG("Playback status: " << playbackStatus);
-    if (playbackStatus == "Playing")
+    if (m_mediaState == Playing)
     {
       pause();
     }

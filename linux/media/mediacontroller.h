@@ -43,6 +43,7 @@ public:
 
   void play();
   void pause();
+  MediaState getCurrentMediaState() const { return m_mediaState; };
 
 Q_SIGNALS:
   void mediaStateChanged(MediaState state);
@@ -59,6 +60,7 @@ private:
   EarDetectionBehavior earDetectionBehavior = PauseWhenOneRemoved;
   QString m_deviceOutputName;
   PlayerStatusWatcher *playerStatusWatcher = nullptr;
+  MediaState m_mediaState = Stopped;
 };
 
 #endif // MEDIACONTROLLER_H
