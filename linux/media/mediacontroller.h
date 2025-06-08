@@ -1,12 +1,12 @@
 #ifndef MEDIACONTROLLER_H
 #define MEDIACONTROLLER_H
 
-#include <QDBusInterface>
 #include <QObject>
 
 class QProcess;
 class EarDetection;
 class PlayerStatusWatcher;
+class QDBusInterface;
 
 class MediaController : public QObject
 {
@@ -41,6 +41,7 @@ public:
   void setEarDetectionBehavior(EarDetectionBehavior behavior);
   inline EarDetectionBehavior getEarDetectionBehavior() const { return earDetectionBehavior; }
 
+  void play();
   void pause();
 
 Q_SIGNALS:
@@ -49,6 +50,8 @@ Q_SIGNALS:
 private:
   MediaState mediaStateFromPlayerctlOutput(const QString &output);
   QString getAudioDeviceName();
+  bool sendMediaPlayerCommand(const QString &method);
+  QDBusInterface *getMediaPlayerInterface();
 
   bool wasPausedByApp = false;
   int initialVolume = -1;

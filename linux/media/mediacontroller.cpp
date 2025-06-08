@@ -64,17 +64,7 @@ void MediaController::handleEarDetection(EarDetection *earDetection)
     // Resume if conditions are met and we previously paused
     if (shouldResume && wasPausedByApp && isActiveOutputDeviceAirPods())
     {
-      int result = QProcess::execute("playerctl", QStringList() << "play");
-      LOG_DEBUG("Executed 'playerctl play' with result: " << result);
-      if (result == 0)
-      {
-        LOG_INFO("Resumed playback via Playerctl");
-        wasPausedByApp = false;
-      }
-      else
-      {
-        LOG_ERROR("Failed to resume playback via Playerctl");
-      }
+      play();
     }
   }
   else
@@ -197,17 +187,96 @@ MediaController::MediaState MediaController::mediaStateFromPlayerctlOutput(
   }
 }
 
-void MediaController::pause() {
-  int result = QProcess::execute("playerctl", QStringList() << "pause");
-  LOG_DEBUG("Executed 'playerctl pause' with result: " << result);
-  if (result == 0)
+QDBusInterface *MediaController::getMediaPlayerInterface()
+{
+  // List all media player services
+  QDBusConnection sessionBus = QDBusConnection::sessionBus();
+  QDBusInterface dbusInterface("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                               "org.freedesktop.DBus", sessionBus);
+  QDBusReply<QStringList> reply = dbusInterface.call("ListNames");
+
+  if (!reply.isValid())
   {
-    LOG_INFO("Paused playback via Playerctl");
+    LOG_ERROR("Failed to list DBus services: " << reply.error().message());
+    return nullptr;
+  }
+
+  QStringList services = reply.value();
+  QString mediaPlayerService;
+
+  for (const QString &service : services)
+  {
+    if (service.startsWith("org.mpris.MediaPlayer2."))
+    {
+      mediaPlayerService = service;
+      break;
+    }
+  }
+
+  if (mediaPlayerService.isEmpty())
+  {
+    LOG_DEBUG("No active media player found on DBus");
+    return nullptr;
+  }
+
+  LOG_DEBUG("Found media player service: " << mediaPlayerService);
+  return new QDBusInterface(mediaPlayerService, "/org/mpris/MediaPlayer2",
+                            "org.mpris.MediaPlayer2.Player", sessionBus, this);
+}
+
+bool MediaController::sendMediaPlayerCommand(const QString &method)
+{
+  QDBusInterface *iface = getMediaPlayerInterface();
+  if (!iface)
+  {
+    LOG_ERROR("No media player interface available for " << method);
+    return false;
+  }
+
+  // Use QDBusMessage for more control and error handling
+  QDBusMessage message = QDBusMessage::createMethodCall(
+      iface->service(),
+      iface->path(),
+      iface->interface(),
+      method);
+
+  QDBusPendingCall call = iface->connection().asyncCall(message);
+  call.waitForFinished();
+
+  if (call.isError())
+  {
+    LOG_ERROR("Failed to execute " << method << ": " << call.error().message());
+    delete iface;
+    return false;
+  }
+
+  delete iface;
+  return true;
+}
+
+void MediaController::play()
+{
+  if (sendMediaPlayerCommand("Play"))
+  {
+    LOG_INFO("Resumed playback via DBus");
+    wasPausedByApp = false;
+  }
+  else
+  {
+    LOG_ERROR("Failed to resume playback via DBus");
+  }
+}
+
+void MediaController::pause()
+{
+  if (sendMediaPlayerCommand("Pause"))
+  {
+    LOG_INFO("Paused playback via DBus");
     wasPausedByApp = true;
   }
   else
   {
-    LOG_ERROR("Failed to pause playback via Playerctl");
+    LOG_ERROR("Failed to pause playback via DBus");
   }
 }
 
