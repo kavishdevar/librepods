@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LibrePods
+Comment=AirPods Manager for Linux
+Exec=applinux
+Icon=me.kavishdevar.LibrePods
+Categories=Audio;AudioVideo;Utility;
+Terminal=false
+StartupNotify=true
