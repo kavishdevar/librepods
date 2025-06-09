@@ -99,7 +99,10 @@ public:
             auto level = static_cast<quint8>(packet[offset + 2]);
             auto status = static_cast<BatteryStatus>(packet[offset + 3]);
 
-            newStates[comp] = {level, status};
+            if (status != BatteryStatus::Disconnected)
+            {
+                newStates[comp] = {level, status};
+            }
 
             // If this is a pod (Left or Right), add it to the list
             if (comp == Component::Left || comp == Component::Right)
