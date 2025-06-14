@@ -66,7 +66,7 @@ private:
                               "[Desktop Entry]\n"
                               "Type=Application\n"
                               "Name=%1\n"
-                              "Exec=%2\n"
+                              "Exec=%2 --hide\n"
                               "Icon=%3\n"
                               "Comment=%4\n"
                               "X-GNOME-Autostart-enabled=true\n"
