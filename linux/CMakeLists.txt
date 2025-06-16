@@ -9,7 +9,7 @@ find_package(OpenSSL REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.4)
 
-qt_add_executable(applinux
+qt_add_executable(librepods
     main.cpp
     logger.h
     media/mediacontroller.cpp
@@ -36,7 +36,7 @@ qt_add_executable(applinux
     media/playerstatuswatcher.h
 )
 
-qt_add_qml_module(applinux
+qt_add_qml_module(librepods
     URI linux
     VERSION 1.0
     QML_FILES
@@ -49,7 +49,7 @@ qt_add_qml_module(applinux
 )
 
 # Add the resource file
-qt_add_resources(applinux "resources"
+qt_add_resources(librepods "resources"
     PREFIX "/icons"
     FILES
         assets/airpods.png
@@ -64,12 +64,12 @@ qt_add_resources(applinux "resources"
         assets/fonts/SF-Symbols-6.ttf
 )
 
-target_link_libraries(applinux
+target_link_libraries(librepods
     PRIVATE Qt6::Quick Qt6::Widgets Qt6::Bluetooth Qt6::DBus OpenSSL::SSL OpenSSL::Crypto
 )
 
 include(GNUInstallDirs)
-install(TARGETS applinux
+install(TARGETS librepods
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
