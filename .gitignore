@@ -10,6 +10,7 @@ CMakeLists.txt.user*
 
 # Android Template
 
+.flatpak-builder/
 
 ### Android ###
 # Gradle files

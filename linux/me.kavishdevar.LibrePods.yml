@@ -1,0 +1,28 @@
+app-id: me.kavishdevar.LibrePods
+runtime: org.kde.Platform
+runtime-version: '6.9'
+sdk: org.kde.Sdk
+finish-args:
+  - --share=ipc
+  - --socket=session-bus # For MPRIS (media player control)
+  - --socket=system-bus # For BlueZ (Bluetooth daemon)
+  - --socket=pulseaudio # For audio control (pactl) - use pipewire if on PipeWire
+  - --allow=bluetooth # For direct Bluetooth access
+  - --socket=wayland # For Wayland compatibility
+  - --socket=fallback-x11 # For X11 compatibility
+  - --filesystem=~/.config/AirPodsTrayApp # To save QSettings
+  - --filesystem=xdg-config/autostart # For autostart functionality
+  - --device=all  # For full hardware access
+  - --talk-name=org.bluez  # Explicit BlueZ D-Bus access
+  - --share=network
+
+modules:
+  - name: librepods
+    buildsystem: cmake-ninja
+    sources:
+      - type: dir
+        path: .
+    build-commands:
+      - cmake --build .
+      - install -Dm644 me.kavishdevar.LibrePods.desktop -t /app/share/applications/
+      - install -Dm644 assets/airpods.png -t /app/share/icons/hicolor/512x512/apps/
