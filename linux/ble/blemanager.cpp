@@ -112,6 +112,11 @@ void BleManager::stopScan()
     discoveryAgent->stop();
 }
 
+bool BleManager::isScanning() const
+{
+    return discoveryAgent->isActive();
+}
+
 void BleManager::onDeviceDiscovered(const QBluetoothDeviceInfo &info)
 {
     // Check for Apple's manufacturer ID (0x004C)

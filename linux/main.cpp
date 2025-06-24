@@ -24,6 +24,7 @@
 #include "ble/blemanager.h"
 #include "ble/bleutils.h"
 #include "QRCodeImageProvider.hpp"
+#include "systemsleepmonitor.hpp"
 
 using namespace AirpodsTrayApp::Enums;
 
@@ -45,6 +46,7 @@ public:
         : QObject(parent), debugMode(debugMode), m_settings(new QSettings("AirPodsTrayApp", "AirPodsTrayApp"))
         , m_autoStartManager(new AutoStartManager(this)), m_hideOnStart(hideOnStart), parent(parent)
         , m_deviceInfo(new DeviceInfo(this)), m_bleManager(new BleManager(this))
+        , m_systemSleepMonitor(new SystemSleepMonitor(this))
     {
         QLoggingCategory::setFilterRules(QString("airpodsApp.debug=%1").arg(debugMode ? "true" : "false"));
         LOG_INFO("Initializing AirPodsTrayApp");
@@ -74,6 +76,8 @@ public:
 
         connect(m_bleManager, &BleManager::deviceFound, this, &AirPodsTrayApp::bleDeviceFound);
         connect(m_deviceInfo->getBattery(), &Battery::primaryChanged, this, &AirPodsTrayApp::primaryChanged);
+        connect(m_systemSleepMonitor, &SystemSleepMonitor::systemGoingToSleep, this, &AirPodsTrayApp::onSystemGoingToSleep);
+        connect(m_systemSleepMonitor, &SystemSleepMonitor::systemWakingUp, this, &AirPodsTrayApp::onSystemWakingUp);
 
         // Load settings
         CrossDevice.isEnabled = loadCrossDeviceEnabled();
@@ -332,6 +336,20 @@ public slots:
 
     int loadRetryAttempts() const { return m_settings->value("bluetooth/retryAttempts", 3).toInt(); }
     void saveRetryAttempts(int attempts) { m_settings->setValue("bluetooth/retryAttempts", attempts); }
+
+    void onSystemGoingToSleep()
+    {
+        if (m_bleManager->isScanning())
+        {
+            LOG_INFO("Stopping BLE scan before going to sleep");
+            m_bleManager->stopScan();
+        }
+    }
+    void onSystemWakingUp()
+    {
+        LOG_INFO("System is waking up, starting ble scan");
+        m_bleManager->startScan();
+    }
 
 private slots:
     void onTrayIconActivated()
@@ -851,6 +869,7 @@ private:
     bool m_hideOnStart = false;
     DeviceInfo *m_deviceInfo;
     BleManager *m_bleManager;
+    SystemSleepMonitor *m_systemSleepMonitor = nullptr;
 };
 
 int main(int argc, char *argv[]) {

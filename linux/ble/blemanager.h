@@ -72,6 +72,7 @@ public:
 
     void startScan();
     void stopScan();
+    bool isScanning() const;
 
 private slots:
     void onDeviceDiscovered(const QBluetoothDeviceInfo &info);

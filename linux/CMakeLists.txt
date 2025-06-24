@@ -34,6 +34,7 @@ qt_add_executable(librepods
     eardetection.hpp
     media/playerstatuswatcher.cpp
     media/playerstatuswatcher.h
+    systemsleepmonitor.hpp
 )
 
 qt_add_qml_module(librepods
