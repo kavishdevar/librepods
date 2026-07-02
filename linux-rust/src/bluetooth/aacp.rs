@@ -433,8 +433,25 @@ impl AACPManager {
             warn!("[hires] failed to set conversation detection: {}", e);
             return;
         }
-        // Push UI change
-        if let Some(ref tx) = self.state.lock().await.event_tx {
+        // AirPods don't echo this back, so record it in our own status list
+        // (the source of truth for conversation_detection_enabled) and push it
+        // to the UI ourselves.
+        let mut state = self.state.lock().await;
+        if let Some(existing) = state
+            .control_command_status_list
+            .iter_mut()
+            .find(|s| s.identifier == ControlCommandIdentifiers::ConversationDetectConfig)
+        {
+            existing.value = vec![value];
+        } else {
+            state
+                .control_command_status_list
+                .push(ControlCommandStatus {
+                    identifier: ControlCommandIdentifiers::ConversationDetectConfig,
+                    value: vec![value],
+                });
+        }
+        if let Some(ref tx) = state.event_tx {
             let _ = tx.send(AACPEvent::ControlCommand(ControlCommandStatus {
                 identifier: ControlCommandIdentifiers::ConversationDetectConfig,
                 value: vec![value],

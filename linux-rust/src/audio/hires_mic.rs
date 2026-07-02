@@ -161,12 +161,12 @@ async fn monitor_loop(
                     status.set_capture(app);
                     capture = Some(c);
 
-                    if crate::utils::AppSettings::load().hires_mic_pause_convo {
-                        let was_enabled = aacp.conversation_detection_enabled().await;
-                        old_convo_state = Some(was_enabled);
-                        if was_enabled {
-                            aacp.set_conversation_detection(false).await;
-                        }
+                    // Only disable (and remember to restore) if it was on.
+                    if crate::utils::AppSettings::load().hires_mic_pause_convo
+                        && aacp.conversation_detection_enabled().await
+                    {
+                        old_convo_state = Some(true);
+                        aacp.set_conversation_detection(false).await;
                     }
                 }
             }

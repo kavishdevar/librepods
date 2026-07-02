@@ -12,6 +12,10 @@ use libpulse_simple_binding::Simple;
 use log::{error, info, warn};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
+
+use dbus::blocking::Connection;
+use dbus::blocking::stdintf::org_freedesktop_dbus::Properties;
 
 use crate::audio::agc::Agc;
 
@@ -214,23 +218,105 @@ pub fn reset_a2dp(bdaddr: &str) {
     if !crate::utils::AppSettings::load().a2dp_reset {
         return;
     }
-    let sink = format!("bluez_output.{}.1", bdaddr.replace(':', "_"));
+    let card = format!("bluez_card.{}", bdaddr.replace(':', "_"));
     let Some((mut mainloop, mut context)) = connect() else {
         return;
     };
-    info!("[pw] suspend/resume {} to reset A2DP transport", sink);
     let mut introspect = context.introspect();
 
-    let op = introspect.suspend_sink_by_name(&sink, true, None);
+    let current_profile = Rc::new(RefCell::new(None::<String>));
+    let op = introspect.get_card_info_by_name(&card, {
+        let current_profile = current_profile.clone();
+        move |result| {
+            if let ListResult::Item(item) = result {
+                *current_profile.borrow_mut() = item
+                    .active_profile
+                    .as_ref()
+                    .and_then(|p| p.name.as_ref())
+                    .map(|n| n.to_string());
+            }
+        }
+    });
     while op.get_state() == OperationState::Running {
         mainloop.iterate(false);
     }
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    let op = introspect.suspend_sink_by_name(&sink, false, None);
+
+    let Some(current_profile) = current_profile.borrow().clone() else {
+        warn!("[pw] no active profile on {}; skipping A2DP reset", card);
+        mainloop.quit(Retval(0));
+        return;
+    };
+
+    // Resetting the a2dp transport can pause media players do to setting the crad profile to off
+    // Get all active media players
+    let players = playing_media_players();
+
+    info!(
+        "[pw] reset A2DP transport: {} off -> {}",
+        card, current_profile
+    );
+    let op = introspect.set_card_profile_by_name(&card, "off", None);
+    while op.get_state() == OperationState::Running {
+        mainloop.iterate(false);
+    }
+
+    let op = introspect.set_card_profile_by_name(&card, &current_profile, None);
     while op.get_state() == OperationState::Running {
         mainloop.iterate(false);
     }
     mainloop.quit(Retval(0));
+
+    // resume all media players after the reset
+    resume_media_players(&players);
+}
+
+// MPRIS players currently reporting "Playing" (kdeconnect proxies excluded).
+fn playing_media_players() -> Vec<String> {
+    let Ok(conn) = Connection::new_session() else {
+        return Vec::new();
+    };
+    let proxy = conn.with_proxy(
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        Duration::from_secs(5),
+    );
+    let names: (Vec<String>,) = match proxy.method_call("org.freedesktop.DBus", "ListNames", ()) {
+        Ok(n) => n,
+        Err(_) => return Vec::new(),
+    };
+    names
+        .0
+        .into_iter()
+        .filter(|s| {
+            s.starts_with("org.mpris.MediaPlayer2.")
+                && !s.starts_with("org.mpris.MediaPlayer2.kdeconnect.mpris_")
+        })
+        .filter(|s| {
+            let proxy = conn.with_proxy(s, "/org/mpris/MediaPlayer2", Duration::from_secs(5));
+            proxy
+                .get::<String>("org.mpris.MediaPlayer2.Player", "PlaybackStatus")
+                .map(|st| st == "Playing")
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+fn resume_media_players(services: &[String]) {
+    if services.is_empty() {
+        return;
+    }
+    let Ok(conn) = Connection::new_session() else {
+        return;
+    };
+    for service in services {
+        let proxy = conn.with_proxy(service, "/org/mpris/MediaPlayer2", Duration::from_secs(5));
+        if proxy
+            .method_call::<(), _, &str, &str>("org.mpris.MediaPlayer2.Player", "Play", ())
+            .is_ok()
+        {
+            info!("[pw] resumed media player after A2DP reset: {}", service);
+        }
+    }
 }
 
 fn connect() -> Option<(Mainloop, Context)> {
