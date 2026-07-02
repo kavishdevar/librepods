@@ -22,6 +22,7 @@ pub fn airpods_view<'a>(
     devices_list: &HashMap<String, DeviceData>,
     state: &'a AirPodsState,
     aacp_manager: Arc<AACPManager>,
+    pause_convo: bool,
     // att_manager: Arc<ATTManager>
 ) -> iced::widget::Container<'a, Message> {
     let mac = mac.to_string();
@@ -266,23 +267,27 @@ pub fn airpods_view<'a>(
                                 }
                             ).width(Length::Fill),
                         ].width(Length::Fill),
-                        toggler(state.conversation_awareness_enabled)
-                            .on_toggle(move |is_enabled| {
-                                let aacp_manager = aacp_manager_conv_detect.clone();
-                                run_async_in_thread(
-                                    async move {
-                                        aacp_manager.send_control_command(
-                                            ControlCommandIdentifiers::ConversationDetectConfig,
-                                            if is_enabled { &[0x01] } else { &[0x02] }
-                                        ).await.expect("Failed to send Conversation Awareness command");
-                                    }
-                                );
-                                let mut state = state.clone();
-                                state.conversation_awareness_enabled = is_enabled;
-                                Message::StateChanged(mac_audio.to_string(), DeviceState::AirPods(state))
-                            })
-                        .spacing(0)
-                        .size(20)
+                        {
+                            // Locked while a capture manages it, so the user can't fight the override.
+                            let convo_toggler = toggler(state.conversation_awareness_enabled)
+                                .spacing(0)
+                                .size(20);
+                            if pause_convo && aacp_manager.mic_active() {
+                                convo_toggler
+                            } else {
+                                convo_toggler.on_toggle(move |is_enabled| {
+                                    let aacp_manager = aacp_manager_conv_detect.clone();
+                                    run_async_in_thread(
+                                        async move {
+                                            aacp_manager.set_conversation_detection(is_enabled).await;
+                                        }
+                                    );
+                                    let mut state = state.clone();
+                                    state.conversation_awareness_enabled = is_enabled;
+                                    Message::StateChanged(mac_audio.to_string(), DeviceState::AirPods(state))
+                                })
+                            }
+                        }
                     ]
                     .align_y(Center)
                     .spacing(8)

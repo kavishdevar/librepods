@@ -5,7 +5,7 @@ use bluer::{
     Address, AddressType, Error, Result,
     l2cap::{SeqPacket, Socket, SocketAddr},
 };
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -403,6 +403,38 @@ impl AACPManager {
             hires_mic: Arc::new(Mutex::new(None)),
             mic_status: crate::audio::hires_mic::MicStatus::new(),
             runtime: tokio::runtime::Handle::current(),
+        }
+    }
+
+    pub async fn conversation_detection_enabled(&self) -> bool {
+        self.state
+            .lock()
+            .await
+            .control_command_status_list
+            .iter()
+            .find(|s| s.identifier == ControlCommandIdentifiers::ConversationDetectConfig)
+            .is_some_and(|s| s.value.first() == Some(&0x01))
+    }
+
+    pub async fn set_conversation_detection(&self, enabled: bool) {
+        let value = if enabled { 0x01 } else { 0x02 };
+        info!("[aacp] setting conversation detection to {}", enabled);
+        if let Err(e) = self
+            .send_control_command(
+                ControlCommandIdentifiers::ConversationDetectConfig,
+                &[value],
+            )
+            .await
+        {
+            warn!("[hires] failed to set conversation detection: {}", e);
+            return;
+        }
+        // Push UI change
+        if let Some(ref tx) = self.state.lock().await.event_tx {
+            let _ = tx.send(AACPEvent::ControlCommand(ControlCommandStatus {
+                identifier: ControlCommandIdentifiers::ConversationDetectConfig,
+                value: vec![value],
+            }));
         }
     }
 

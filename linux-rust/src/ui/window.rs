@@ -85,6 +85,7 @@ pub struct App {
     stem_control: bool,
     hires_mic_enabled: bool,
     hires_mic_agc: bool,
+    hires_mic_pause_convo: bool,
     a2dp_reset: bool,
 }
 
@@ -120,6 +121,7 @@ pub enum Message {
     StemControlChanged(bool),
     A2dpResetChanged(bool),
     HiResMicAgcChanged(bool),
+    HiResMicPauseConvoChanged(bool),
     MicLevelTick,
 }
 
@@ -165,6 +167,7 @@ impl App {
         let stem_control = app_settings.stem_control;
         let hires_mic_enabled = app_settings.hires_mic_enabled;
         let hires_mic_agc = app_settings.hires_mic_agc;
+        let hires_mic_pause_convo = app_settings.hires_mic_pause_convo;
         let a2dp_reset = app_settings.a2dp_reset;
 
         let bluetooth_state = BluetoothState::new();
@@ -219,6 +222,7 @@ impl App {
                 stem_control,
                 hires_mic_enabled,
                 hires_mic_agc,
+                hires_mic_pause_convo,
                 a2dp_reset,
             },
             Task::batch(vec![open_task, wait_task]),
@@ -232,6 +236,7 @@ impl App {
             stem_control: self.stem_control,
             hires_mic_enabled: self.hires_mic_enabled,
             hires_mic_agc: self.hires_mic_agc,
+            hires_mic_pause_convo: self.hires_mic_pause_convo,
             a2dp_reset: self.a2dp_reset,
         }
         .save();
@@ -657,6 +662,11 @@ impl App {
                 self.save_settings();
                 Task::none()
             }
+            Message::HiResMicPauseConvoChanged(is_enabled) => {
+                self.hires_mic_pause_convo = is_enabled;
+                self.save_settings();
+                Task::none()
+            }
         }
     }
 
@@ -876,7 +886,8 @@ impl App {
                                                                     id,
                                                                     &devices_list,
                                                                     state,
-                                                                    aacp_manager.clone()
+                                                                    aacp_manager.clone(),
+                                                                    self.hires_mic_pause_convo
                                                                 ))
                                                     })
                                                 }
@@ -1179,6 +1190,47 @@ impl App {
                                         )
                                     .align_y(Center);
 
+                            let hires_mic_pause_convo_value = self.hires_mic_pause_convo;
+                            let hires_mic_pause_convo_toggle = container(
+                                row![
+                                    column![
+                                        text("Pause conversation awareness during capture").size(16),
+                                        text("Turns off conversation awareness while the hi-res microphone is capturing, then restores it afterwards.").size(12).style(
+                                            |theme: &Theme| {
+                                                let mut style = text::Style::default();
+                                                style.color = Some(theme.palette().text.scale_alpha(0.7));
+                                                style
+                                            }
+                                        ).width(Length::Fill)
+                                    ].width(Length::Fill),
+                                    toggler(hires_mic_pause_convo_value)
+                                        .on_toggle(move |is_enabled| {
+                                            Message::HiResMicPauseConvoChanged(is_enabled)
+                                        })
+                                    .spacing(0)
+                                    .size(20)
+                                    ]
+                                        .align_y(Center)
+                                        .spacing(12)
+                                    )
+                                        .padding(Padding{
+                                            top: 5.0,
+                                            bottom: 5.0,
+                                            left: 18.0,
+                                            right: 18.0,
+                                        })
+                                        .style(
+                                            |theme: &Theme| {
+                                                let mut style = container::Style::default();
+                                                style.background = Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                                                let mut border = Border::default();
+                                                border.color = theme.palette().primary.scale_alpha(0.5);
+                                                style.border = border.rounded(16);
+                                                style
+                                            }
+                                        )
+                                    .align_y(Center);
+
                             let controls_settings_col = column![
                                 container(
                                     text("Controls").size(20).style(
@@ -1210,6 +1262,8 @@ impl App {
                                     a2dp_reset_toggle,
                                     Space::new().height(Length::from(20)),
                                     hires_mic_agc_toggle,
+                                    Space::new().height(Length::from(20)),
+                                    hires_mic_pause_convo_toggle,
                                 ]
                             )
                                 .padding(20)

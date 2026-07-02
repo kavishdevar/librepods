@@ -118,6 +118,8 @@ struct Capture {
 
 async fn monitor_loop(aacp: AACPManager, addr: String, status: MicStatus, stop: Arc<Notify>) {
     let mut capture: Option<Capture> = None;
+    // Conversation detection value saved while we override it off for capture.
+    let mut old_convo_state: Option<bool> = None;
     info!(
         "[hires] activity monitor started, watching '{}'",
         output::SOURCE_NAME
@@ -139,11 +141,22 @@ async fn monitor_loop(aacp: AACPManager, addr: String, status: MicStatus, stop: 
                 if let Some(c) = start_capture(&aacp, &addr, &status).await {
                     status.set_capture(app);
                     capture = Some(c);
+
+                    if crate::utils::AppSettings::load().hires_mic_pause_convo {
+                        let was_enabled = aacp.conversation_detection_enabled().await;
+                        old_convo_state = Some(was_enabled);
+                        if was_enabled {
+                            aacp.set_conversation_detection(false).await;
+                        }
+                    }
                 }
             }
             (false, true) => {
                 info!("[hires] recorder gone, stopping capture");
                 stop_capture(capture.take().unwrap(), &aacp, &addr).await;
+                if let Some(prev) = old_convo_state.take() {
+                    aacp.set_conversation_detection(prev).await;
+                }
                 status.reset();
             }
             (true, true) => {
@@ -168,6 +181,9 @@ async fn monitor_loop(aacp: AACPManager, addr: String, status: MicStatus, stop: 
 
     if let Some(c) = capture.take() {
         stop_capture(c, &aacp, &addr).await;
+        if let Some(prev) = old_convo_state.take() {
+            aacp.set_conversation_detection(prev).await;
+        }
     }
     status.reset();
 }
