@@ -79,23 +79,28 @@ impl MicStatus {
 }
 
 pub struct HiResMic {
-    _vmic: VirtualMic,
     stop: Arc<Notify>,
     monitor: Option<TokioHandle<()>>,
 }
 
 impl HiResMic {
-    // Create the persistent virtual input and spawn the activity monitor.
+    // Create the persistent virtual input and spawn the activity monitor. The
+    // monitor owns the virtual device and unloads it when it exits.
     pub async fn start(aacp: &AACPManager, addr: String, status: MicStatus) -> Option<HiResMic> {
         let vmic = VirtualMic::open(ELD_CHANNELS as u8)?;
         let stop = Arc::new(Notify::new());
+        let wake = aacp.hires_wake();
         // Spawn on the backend runtime, not the caller's (the UI toggle uses a
         // throwaway runtime that would abort this task immediately).
-        let monitor = aacp
-            .runtime()
-            .spawn(monitor_loop(aacp.clone(), addr, status, stop.clone()));
+        let monitor = aacp.runtime().spawn(monitor_loop(
+            aacp.clone(),
+            addr,
+            status,
+            stop.clone(),
+            wake,
+            vmic,
+        ));
         Some(HiResMic {
-            _vmic: vmic,
             stop,
             monitor: Some(monitor),
         })
@@ -108,6 +113,10 @@ impl HiResMic {
             let _ = monitor.await;
         }
     }
+
+    pub fn is_running(&self) -> bool {
+        self.monitor.as_ref().is_some_and(|h| !h.is_finished())
+    }
 }
 
 // A live capture session: the playback stream feeding the sink plus its decode
@@ -116,7 +125,14 @@ struct Capture {
     decode_thread: Option<JoinHandle<()>>,
 }
 
-async fn monitor_loop(aacp: AACPManager, addr: String, status: MicStatus, stop: Arc<Notify>) {
+async fn monitor_loop(
+    aacp: AACPManager,
+    addr: String,
+    status: MicStatus,
+    stop: Arc<Notify>,
+    wake: Arc<Notify>,
+    _vmic: VirtualMic,
+) {
     let mut capture: Option<Capture> = None;
     // Conversation detection value saved while we override it off for capture.
     let mut old_convo_state: Option<bool> = None;
@@ -128,15 +144,18 @@ async fn monitor_loop(aacp: AACPManager, addr: String, status: MicStatus, stop: 
     loop {
         tokio::select! {
             _ = stop.notified() => break,
+            _ = wake.notified() => {}
             _ = tokio::time::sleep(POLL_INTERVAL) => {}
         }
 
         let app = tokio::task::spawn_blocking(|| output::source_consumer(output::SOURCE_NAME))
             .await
             .unwrap_or(None);
+        let enabled = aacp.hires_mic_enabled();
+        let recording = app.is_some();
 
-        match (app.is_some(), capture.is_some()) {
-            (true, false) => {
+        match (enabled, recording, capture.is_some()) {
+            (true, true, false) => {
                 info!("[hires] recorder detected ({:?}), starting capture", app);
                 if let Some(c) = start_capture(&aacp, &addr, &status).await {
                     status.set_capture(app);
@@ -151,18 +170,10 @@ async fn monitor_loop(aacp: AACPManager, addr: String, status: MicStatus, stop: 
                     }
                 }
             }
-            (false, true) => {
-                info!("[hires] recorder gone, stopping capture");
-                stop_capture(capture.take().unwrap(), &aacp, &addr).await;
-                if let Some(prev) = old_convo_state.take() {
-                    aacp.set_conversation_detection(prev).await;
-                }
-                status.reset();
-            }
-            (true, true) => {
+            (true, true, true) => {
                 status.set_capture(app);
                 let stalled = status.since_last_sdu().is_some_and(|d| d > STALL_TIMEOUT);
-                if capture.is_some() && stalled {
+                if stalled {
                     warn!(
                         "[hires] no audio from device for {}ms, restarting capture",
                         STALL_TIMEOUT.as_millis()
@@ -175,7 +186,26 @@ async fn monitor_loop(aacp: AACPManager, addr: String, status: MicStatus, stop: 
                     }
                 }
             }
+            // Disabled while capturing: end the 0x58 stream now.
+            // The virtual source stays up feeding silence, so an active
+            // recorder isn't dropped onto the AirPods' HFP mic (handsfree).
+            (_, _, true) => {
+                info!(
+                    "[hires] stopping capture (enabled={}, recording={})",
+                    enabled, recording
+                );
+                stop_capture(capture.take().unwrap(), &aacp, &addr).await;
+                if let Some(prev) = old_convo_state.take() {
+                    aacp.set_conversation_detection(prev).await;
+                }
+                status.reset();
+            }
             _ => {}
+        }
+
+        // Once disabled and nothing is recording from the source, unload it.
+        if !enabled && !recording {
+            break;
         }
     }
 

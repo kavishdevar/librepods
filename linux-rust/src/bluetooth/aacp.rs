@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{Mutex, Notify, mpsc};
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep};
 
@@ -386,6 +386,9 @@ pub struct AACPManager {
     tasks: Arc<Mutex<JoinSet<()>>>,
     hires_enabled: Arc<AtomicBool>,
     hires_mic: Arc<Mutex<Option<crate::audio::hires_mic::HiResMic>>>,
+    /// Wakes the hi-res monitor so it re-polls promptly when the feature is
+    /// toggled, instead of waiting out the poll interval.
+    hires_wake: Arc<Notify>,
     mic_status: crate::audio::hires_mic::MicStatus,
     /// Handle to the long-lived backend runtime, so the hi-res monitor task
     /// survives even when armed from a throwaway runtime (the UI toggle thread).
@@ -401,6 +404,7 @@ impl AACPManager {
                 crate::utils::AppSettings::load().hires_mic_enabled,
             )),
             hires_mic: Arc::new(Mutex::new(None)),
+            hires_wake: Arc::new(Notify::new()),
             mic_status: crate::audio::hires_mic::MicStatus::new(),
             runtime: tokio::runtime::Handle::current(),
         }
@@ -454,12 +458,19 @@ impl AACPManager {
         &self.runtime
     }
 
+    pub fn hires_mic_enabled(&self) -> bool {
+        self.hires_enabled.load(Ordering::Relaxed)
+    }
+
+    pub fn hires_wake(&self) -> Arc<Notify> {
+        self.hires_wake.clone()
+    }
+
     pub async fn set_hires_mic_enabled(&self, enabled: bool) {
         self.hires_enabled.store(enabled, Ordering::Relaxed);
+        self.hires_wake.notify_one();
         if enabled {
             self.arm_hires_mic().await;
-        } else {
-            self.disarm_hires_mic().await;
         }
     }
 
@@ -470,7 +481,7 @@ impl AACPManager {
             return;
         }
         let mut guard = self.hires_mic.lock().await;
-        if guard.is_some() {
+        if guard.as_ref().is_some_and(|m| m.is_running()) {
             return;
         }
         let addr = self.state.lock().await.airpods_mac.map(|a| a.to_string());
