@@ -106,6 +106,9 @@ impl ksni::Tray for MyTray {
             description: format!("{} {} {}", l, r, c),
         }
     }
+    fn activate(&mut self, _x: i32, _y: i32) {
+        self.open_window();
+    }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
         let allow_off = self.allow_off_option == Some(0x01);
@@ -132,11 +135,7 @@ impl ksni::Tray for MyTray {
             StandardItem {
                 label: "Open Window".into(),
                 icon_name: "window-new".into(),
-                activate: Box::new(|this: &mut Self| {
-                    if let Some(tx) = &this.ui_tx {
-                        let _ = tx.send(BluetoothUIMessage::OpenWindow);
-                    }
-                }),
+                activate: Box::new(|this: &mut Self| this.open_window()),
                 ..Default::default()
             }
             .into(),
@@ -190,6 +189,14 @@ impl ksni::Tray for MyTray {
             }
             .into(),
         ]
+    }
+}
+
+impl MyTray {
+    fn open_window(&self) {
+        if let Some(tx) = &self.ui_tx {
+            let _ = tx.send(BluetoothUIMessage::OpenWindow);
+        }
     }
 }
 
@@ -298,4 +305,37 @@ fn generate_icon(text: &str, text_mode: bool, charging: bool) -> Icon {
         height: height as i32,
         data,
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_activation_opens_window() {
+        let (ui_tx, mut ui_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut tray = MyTray {
+            conversation_detect_enabled: None,
+            battery_headphone: None,
+            battery_headphone_status: None,
+            battery_l: None,
+            battery_l_status: None,
+            battery_r: None,
+            battery_r_status: None,
+            battery_c: None,
+            battery_c_status: None,
+            connected: false,
+            listening_mode: None,
+            allow_off_option: None,
+            command_tx: None,
+            ui_tx: Some(ui_tx),
+        };
+
+        <MyTray as ksni::Tray>::activate(&mut tray, TRAY_ACTIVATION_X, TRAY_ACTIVATION_Y);
+
+        assert!(matches!(ui_rx.try_recv(), Ok(BluetoothUIMessage::OpenWindow)));
+    }
+
+    const TRAY_ACTIVATION_X: i32 = 0;
+    const TRAY_ACTIVATION_Y: i32 = 0;
 }
