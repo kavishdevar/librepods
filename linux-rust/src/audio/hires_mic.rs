@@ -87,7 +87,7 @@ impl HiResMic {
     // Create the persistent virtual input and spawn the activity monitor. The
     // monitor owns the virtual device and unloads it when it exits.
     pub async fn start(aacp: &AACPManager, addr: String, status: MicStatus) -> Option<HiResMic> {
-        let vmic = VirtualMic::open(ELD_CHANNELS as u8)?;
+        let vmic = VirtualMic::open(ELD_SAMPLE_RATE, ELD_CHANNELS as u8)?;
         let stop = Arc::new(Notify::new());
         let wake = aacp.hires_wake();
         // Spawn on the backend runtime, not the caller's (the UI toggle uses a
