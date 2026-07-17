@@ -34,12 +34,6 @@ void TrayIconManager::showNotification(const QString &title, const QString &mess
     trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 3000);
 }
 
-void TrayIconManager::TrayIconManager::updateBatteryStatus(const QString &status)
-{
-    trayIcon->setToolTip(tr("Battery Status: ") + status);
-    updateIconFromBattery(status);
-}
-
 void TrayIconManager::setActiveDevice(const QString &deviceKey)
 {
     if (m_activeDeviceKey == deviceKey)

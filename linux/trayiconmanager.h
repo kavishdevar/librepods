@@ -17,8 +17,6 @@ class TrayIconManager : public QObject
 public:
     explicit TrayIconManager(QObject *parent = nullptr);
 
-    void updateBatteryStatus(const QString &status);
-
     // Per-device battery tracking. Devices are keyed by their Bluetooth
     // address so several connected AirPods can be shown at once; the active
     // device (the one the app has an AACP connection to) drives the icon.
