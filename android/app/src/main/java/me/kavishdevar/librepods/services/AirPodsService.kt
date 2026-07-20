@@ -921,9 +921,14 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 val blockedForSinglePod = config.conversationalAwarenessBothPodsOnly && budsInEar < 2
 
                 if (conversationAwarenessNotification.status == 1.toByte() || conversationAwarenessNotification.status == 2.toByte()) {
-                    if (!blockedForSinglePod) MediaController.startSpeaking()
+                    if (blockedForSinglePod) {
+                        Log.d("AirPodsParser", "CA startSpeaking() suppressed — both-pods-only is ON and only $budsInEar bud(s) in ear")
+                    } else {
+                        Log.d("AirPodsParser", "CA startSpeaking() called (budsInEar=$budsInEar, bothPodsOnly=${config.conversationalAwarenessBothPodsOnly})")
+                        MediaController.startSpeaking()
+                    }
                 } else if (conversationAwarenessNotification.status == 6.toByte() || conversationAwarenessNotification.status == 8.toByte() || conversationAwarenessNotification.status == 9.toByte()) {
-                    MediaController.stopSpeaking() // Never gate the "stop" side — volume must always be restored.
+                    MediaController.stopSpeaking() // Never gated — volume must always be restored.
                 }
 
                 Log.d(
