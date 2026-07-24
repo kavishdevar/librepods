@@ -29,6 +29,7 @@ struct OwnedCardInfo {
     index: u32,
     proplist: Proplist,
     profiles: Vec<OwnedCardProfileInfo>,
+    active_profile: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -327,6 +328,19 @@ impl MediaController {
             }
         }
 
+        // If the card is already on an A2DP profile, leave it alone. Switching
+        // profiles (even between two a2dp-sink variants) tears down and
+        // recreates the PipeWire sink, which kills the very stream whose start
+        // triggered this call -- players like Chromium react by pausing, so
+        // every resume immediately pauses itself again.
+        if let Some(idx) = current_device_index
+            && let Some(active) = self.get_active_profile(idx).await
+            && active.starts_with("a2dp-sink")
+        {
+            info!("A2DP profile {} already active, not switching", active);
+            return;
+        }
+
         if !self.is_a2dp_profile_available().await {
             warn!("A2DP profile not available, attempting to restart WirePlumber");
             if self.restart_wire_plumber().await {
@@ -573,6 +587,17 @@ impl MediaController {
         }
         debug!("No suitable profile found");
         String::new()
+    }
+
+    async fn get_active_profile(&self, card_index: u32) -> Option<String> {
+        tokio::task::spawn_blocking(move || {
+            get_card_info_list_sync()
+                .iter()
+                .find(|c| c.index == card_index)
+                .and_then(|card| card.active_profile.clone())
+        })
+        .await
+        .unwrap_or(None)
     }
 
     async fn is_profile_available(&self, card_index: u32, profile: &str) -> bool {
@@ -924,6 +949,10 @@ fn get_card_info_list_sync() -> Vec<OwnedCardInfo> {
                     index: item.index,
                     proplist: item.proplist.clone(),
                     profiles,
+                    active_profile: item
+                        .active_profile
+                        .as_ref()
+                        .and_then(|p| p.name.as_ref().map(|n| n.to_string())),
                 });
             }
         }
