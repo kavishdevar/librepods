@@ -13,11 +13,18 @@ use libpulse_binding::proplist::Proplist;
 use libpulse_binding::volume::{ChannelVolumes, Volume};
 use log::{debug, error, info, warn};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::process::Command;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::task::AbortHandle;
+
+// Reconnecting AirPods creates a fresh MediaController. Keep the listener task
+// outside the controller so the replacement can stop its predecessor by MAC.
+static PLAYBACK_LISTENERS: LazyLock<StdMutex<HashMap<String, AbortHandle>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
 
 #[derive(Clone, Debug)]
 struct OwnedCardProfileInfo {
@@ -105,14 +112,20 @@ impl MediaController {
             return;
         }
         state.playback_listener_running = true;
+        let connected_device_mac = state.connected_device_mac.clone();
         drop(state);
 
         let controller_clone = self.clone();
-        tokio::spawn(async move {
+        let mut listeners = PLAYBACK_LISTENERS.lock().unwrap();
+        if let Some(previous_listener) = listeners.remove(&connected_device_mac) {
+            previous_listener.abort();
+        }
+        let listener = tokio::spawn(async move {
             controller_clone
                 .playback_listener_loop(aacp_manager, control_tx)
                 .await;
         });
+        listeners.insert(connected_device_mac, listener.abort_handle());
     }
 
     async fn playback_listener_loop(
@@ -1077,6 +1090,54 @@ async fn get_sink_name_by_mac(mac: &str) -> Option<String> {
         error!("No matching sink found for MAC address: {}", mac_clone);
         None
     })
+    .await
+    .unwrap_or(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn playback_listener_replacement_is_scoped_to_device() {
+        let first_mac = "00:00:00:00:00:01";
+        let other_mac = "00:00:00:00:00:02";
+
+        let first = MediaController::new(first_mac.to_string(), String::new());
+        let (first_tx, _first_rx) = tokio::sync::mpsc::unbounded_channel();
+        first
+            .start_playback_listener(AACPManager::new(), first_tx)
+            .await;
+        let first_handle = PLAYBACK_LISTENERS
+            .lock()
+            .unwrap()
+            .get(first_mac)
+            .unwrap()
+            .clone();
+
+        let other = MediaController::new(other_mac.to_string(), String::new());
+        let (other_tx, _other_rx) = tokio::sync::mpsc::unbounded_channel();
+        other
+            .start_playback_listener(AACPManager::new(), other_tx)
+            .await;
+        assert!(!first_handle.is_finished());
+
+        let replacement = MediaController::new(first_mac.to_string(), String::new());
+        let (replacement_tx, _replacement_rx) = tokio::sync::mpsc::unbounded_channel();
+        replacement
+            .start_playback_listener(AACPManager::new(), replacement_tx)
+            .await;
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !first_handle.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
         .await
-        .unwrap_or(None)
+        .expect("superseded playback listener should stop");
+
+        let listeners = PLAYBACK_LISTENERS.lock().unwrap();
+        listeners.get(first_mac).unwrap().abort();
+        listeners.get(other_mac).unwrap().abort();
+    }
 }
