@@ -310,18 +310,18 @@ impl MediaController {
             return;
         }
 
-        let device_index = state.device_index;
         let mac = state.connected_device_mac.clone();
         drop(state);
 
-        let mut current_device_index = device_index;
-
-        if current_device_index.is_none() {
-            warn!("Device index not found, trying to get it.");
-            current_device_index = self.get_audio_device_index(&mac).await;
-            if let Some(idx) = current_device_index {
+        // The card index changes on every reconnect, so a cached index goes
+        // stale as soon as the AirPods drop and come back -- and a stale index
+        // makes every check below fail against a nonexistent card. Resolve it
+        // fresh by MAC each time instead.
+        match self.get_audio_device_index(&mac).await {
+            Some(idx) => {
                 self.state.lock().await.device_index = Some(idx);
-            } else {
+            }
+            None => {
                 warn!("Could not get device index. Cannot activate A2DP profile.");
                 return;
             }
