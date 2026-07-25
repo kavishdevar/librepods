@@ -2679,6 +2679,33 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             aacpSessionGeneration == generation
         }
     }
+    private fun <T> withCurrentAacpSession(
+        generation: Long,
+        socket: BluetoothSocket? = null,
+        block: () -> T
+    ): T? {
+        return synchronized(aacpSessionLock) {
+            val activeSocket = BluetoothConnectionManager.aacpSocket
+            if (aacpSessionGeneration != generation ||
+                activeSocket == null ||
+                (socket != null && activeSocket !== socket)
+            ) {
+                null
+            } else {
+                block()
+            }
+        }
+    }
+    private fun invalidateAacpSessionIfCurrent(generation: Long): Boolean {
+        return synchronized(aacpSessionLock) {
+            if (aacpSessionGeneration != generation) {
+                false
+            } else {
+                invalidateAacpSession()
+                true
+            }
+        }
+    }
 
     private fun activateAacpSession(
         generation: Long,
@@ -2718,13 +2745,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             aacpInitializationJob = null
             BluetoothConnectionManager.aacpSocket = null
             BluetoothConnectionManager.attSocket = null
+            aacpManager.disconnected()
         }
         readerJob?.cancel()
         initializationJob?.cancel()
         sockets.forEach { socket ->
             runCatching { socket.close() }
         }
-        aacpManager.disconnected()
     }
 
     private fun finishAacpSession(generation: Long, socket: BluetoothSocket) {
@@ -2748,6 +2775,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 aacpInitializationJob = null
                 BluetoothConnectionManager.aacpSocket = null
                 BluetoothConnectionManager.attSocket = null
+                aacpManager.disconnected()
+                updateNotificationContent(false)
+                sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
+                    setPackage(packageName)
+                })
                 true
             }
         }
@@ -2757,11 +2789,6 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         sockets.forEach { currentSocket ->
             runCatching { currentSocket.close() }
         }
-        aacpManager.disconnected()
-        updateNotificationContent(false)
-        sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
-            setPackage(packageName)
-        })
     }
 
     private fun onAACPFrameReceived() {
@@ -2813,6 +2840,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 BluetoothConnectionManager.aacpSocket != null
             ) {
                 readyAacpSessionGeneration = generation
+                sendBroadcast(
+                    Intent(AirPodsNotifications.AIRPODS_CONNECTED).putExtra("device", device).apply {
+                        setPackage(packageName)
+                    }
+                )
                 true
             } else {
                 false
@@ -2826,44 +2858,45 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 "stemConfig=$stemConfigSent"
         )
 
-        sendBroadcast(
-            Intent(AirPodsNotifications.AIRPODS_CONNECTED).putExtra("device", device).apply {
-                setPackage(packageName)
-            }
-        )
     }
 
     private fun startAacpInitialization(generation: Long) {
         val job = serviceScope.launch {
             delay(200)
-            if (!isCurrentAacpGeneration(generation)) return@launch
-            aacpManager.sendPacket(aacpManager.createHandshakePacket())
+            if (withCurrentAacpSession(generation) {
+                aacpManager.sendPacket(aacpManager.createHandshakePacket())
+            } == null) return@launch
             delay(200)
-            if (!isCurrentAacpGeneration(generation)) return@launch
-            aacpManager.sendSetFeatureFlagsPacket()
+            if (withCurrentAacpSession(generation) {
+                aacpManager.sendSetFeatureFlagsPacket()
+            } == null) return@launch
             delay(200)
-            if (!isCurrentAacpGeneration(generation)) return@launch
-            aacpManager.sendNotificationRequest()
+            if (withCurrentAacpSession(generation) {
+                aacpManager.sendNotificationRequest()
+            } == null) return@launch
             delay(200)
-            if (!isCurrentAacpGeneration(generation)) return@launch
-            aacpManager.sendSomePacketIDontKnowWhatItIs()
+            if (withCurrentAacpSession(generation) {
+                aacpManager.sendSomePacketIDontKnowWhatItIs()
+            } == null) return@launch
             delay(200)
-            if (!isCurrentAacpGeneration(generation)) return@launch
-            aacpManager.sendRequestProximityKeys(
-                (
-                    AACPManager.Companion.ProximityKeyType.IRK.value +
-                        AACPManager.Companion.ProximityKeyType.ENC_KEY.value
-                    ).toByte()
-            )
+            if (withCurrentAacpSession(generation) {
+                aacpManager.sendRequestProximityKeys(
+                    (
+                        AACPManager.Companion.ProximityKeyType.IRK.value +
+                            AACPManager.Companion.ProximityKeyType.ENC_KEY.value
+                        ).toByte()
+                )
+            } == null) return@launch
             if (!handleIncomingCallOnceConnected) startHeadTracking() else handleIncomingCall()
             delay(5000)
-            if (!isCurrentAacpGeneration(generation)) return@launch
-            aacpManager.sendPacket(aacpManager.createHandshakePacket())
-            aacpManager.sendSetFeatureFlagsPacket()
-            aacpManager.sendNotificationRequest()
-            aacpManager.sendRequestProximityKeys(
-                AACPManager.Companion.ProximityKeyType.IRK.value
-            )
+            if (withCurrentAacpSession(generation) {
+                aacpManager.sendPacket(aacpManager.createHandshakePacket())
+                aacpManager.sendSetFeatureFlagsPacket()
+                aacpManager.sendNotificationRequest()
+                aacpManager.sendRequestProximityKeys(
+                    AACPManager.Companion.ProximityKeyType.IRK.value
+                )
+            } == null) return@launch
             if (!handleIncomingCallOnceConnected) stopHeadTracking()
         }
         synchronized(aacpSessionLock) {
@@ -2878,7 +2911,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     private fun startAacpReader(socket: BluetoothSocket, generation: Long) {
         val job = serviceScope.launch {
             try {
-                while (socket.isConnected && isCurrentAacpGeneration(generation)) {
+                while (withCurrentAacpSession(generation, socket) { socket.isConnected } == true) {
                     val buffer = ByteArray(1024)
                     val bytesRead = socket.inputStream.read(buffer)
                     if (bytesRead <= 0) {
@@ -2888,22 +2921,24 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         break
                     }
 
-                    val data = buffer.copyOfRange(0, bytesRead)
-                    sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DATA).apply {
-                        putExtra("data", data)
-                        setPackage(packageName)
-                    })
-                    val formattedHex = data.joinToString(" ") { "%02X".format(it) }
-                    updateNotificationContent(
-                        true,
-                        sharedPreferences.getString("name", device?.name),
-                        batteryNotification.getBattery()
-                    )
-                    aacpManager.receivePacket(data)
-                    if (!isHeadTrackingData(data)) {
-                        Log.d("AirPodsData", "Data received: $formattedHex")
-                        logPacket(data, "AirPods")
-                    }
+                    if (withCurrentAacpSession(generation, socket) {
+                        val data = buffer.copyOfRange(0, bytesRead)
+                        sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DATA).apply {
+                            putExtra("data", data)
+                            setPackage(packageName)
+                        })
+                        val formattedHex = data.joinToString(" ") { "%02X".format(it) }
+                        updateNotificationContent(
+                            true,
+                            sharedPreferences.getString("name", device?.name),
+                            batteryNotification.getBattery()
+                        )
+                        aacpManager.receivePacket(data)
+                        if (!isHeadTrackingData(data)) {
+                            Log.d("AirPodsData", "Data received: $formattedHex")
+                            logPacket(data, "AirPods")
+                        }
+                    } == null) break
                 }
             } catch (e: Exception) {
                 if (isCurrentAacpGeneration(generation)) {
@@ -2935,12 +2970,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             createBluetoothSocket(adapter, device, uuid, 4097)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create BluetoothSocket: ${e.message}")
-            if (isCurrentAacpGeneration(generation)) {
-                invalidateAacpSession()
+            if (invalidateAacpSessionIfCurrent(generation)) {
+                showSocketConnectionFailureNotification(
+                    "Failed to create Bluetooth socket: ${e.localizedMessage}"
+                )
             }
-            showSocketConnectionFailureNotification(
-                "Failed to create Bluetooth socket: ${e.localizedMessage}"
-            )
             return
         }
 
@@ -2979,11 +3013,14 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 }
             }
 
-            if (!socket.isConnected || !isCurrentAacpGeneration(generation) ||
-                !activateAacpSession(generation, socket, attSocket)
-            ) {
+            val activated = socket.isConnected &&
+                isCurrentAacpGeneration(generation) &&
+                activateAacpSession(generation, socket, attSocket)
+            if (!activated) {
                 runCatching { attSocket?.close() }
-                runCatching { socket.close() }
+                if (!invalidateAacpSessionIfCurrent(generation)) {
+                    runCatching { socket.close() }
+                }
                 return
             }
 
@@ -3015,21 +3052,25 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 }
             }
 
-            aacpManager.sendPacket(aacpManager.createHandshakePacket())
-            aacpManager.sendSetFeatureFlagsPacket()
-            aacpManager.sendNotificationRequest()
-            Log.d(TAG, "Requesting proximity keys")
-            aacpManager.sendRequestProximityKeys(
-                (
-                    AACPManager.Companion.ProximityKeyType.IRK.value +
-                        AACPManager.Companion.ProximityKeyType.ENC_KEY.value
-                    ).toByte()
-            )
+            if (withCurrentAacpSession(generation) {
+                aacpManager.sendPacket(aacpManager.createHandshakePacket())
+                aacpManager.sendSetFeatureFlagsPacket()
+                aacpManager.sendNotificationRequest()
+                Log.d(TAG, "Requesting proximity keys")
+                aacpManager.sendRequestProximityKeys(
+                    (
+                        AACPManager.Companion.ProximityKeyType.IRK.value +
+                            AACPManager.Companion.ProximityKeyType.ENC_KEY.value
+                        ).toByte()
+                )
+            } == null) {
+                return
+            }
             startAacpReader(socket, generation)
             startAacpInitialization(generation)
         } catch (e: Exception) {
-            if (isCurrentAacpGeneration(generation)) {
-                invalidateAacpSession()
+            runCatching { attSocket?.close() }
+            if (invalidateAacpSessionIfCurrent(generation)) {
                 if (manual) {
                     sendToast("Couldn't connect to socket: ${e.localizedMessage}")
                 } else {
@@ -3038,11 +3079,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     )
                 }
             } else {
-                runCatching { attSocket?.close() }
                 runCatching { socket.close() }
             }
         }
     }
+
 
     fun disconnectForCD() {
         invalidateAacpSession()
