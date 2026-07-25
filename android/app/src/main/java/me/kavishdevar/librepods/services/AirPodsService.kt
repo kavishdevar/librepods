@@ -2665,6 +2665,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             ).distinct()
             BluetoothConnectionManager.aacpSocket = null
             BluetoothConnectionManager.attSocket = null
+            aacpManager.disconnected()
             pendingAacpSocket = null
             aacpSessionGeneration
         }
