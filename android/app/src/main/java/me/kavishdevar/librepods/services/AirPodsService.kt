@@ -2679,29 +2679,33 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             aacpSessionGeneration == generation
         }
     }
-    private fun <T> withCurrentAacpSession(
+
+    private fun isCurrentAacpSession(
+        generation: Long,
+        socket: BluetoothSocket? = null
+    ): Boolean {
+        return synchronized(aacpSessionLock) {
+            val activeSocket = BluetoothConnectionManager.aacpSocket
+            aacpSessionGeneration == generation &&
+                activeSocket != null &&
+                (socket == null || activeSocket === socket)
+        }
+    }
+
+    private fun runWithCurrentAacpSession(
         generation: Long,
         socket: BluetoothSocket? = null,
-        block: () -> T
-    ): T? {
+        block: () -> Unit
+    ): Boolean {
         return synchronized(aacpSessionLock) {
             val activeSocket = BluetoothConnectionManager.aacpSocket
             if (aacpSessionGeneration != generation ||
                 activeSocket == null ||
                 (socket != null && activeSocket !== socket)
             ) {
-                null
-            } else {
-                block()
-            }
-        }
-    }
-    private fun invalidateAacpSessionIfCurrent(generation: Long): Boolean {
-        return synchronized(aacpSessionLock) {
-            if (aacpSessionGeneration != generation) {
                 false
             } else {
-                invalidateAacpSession()
+                block()
                 true
             }
         }
@@ -2725,34 +2729,45 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         }
     }
 
-    private fun invalidateAacpSession() {
+    private fun invalidateAacpSession(expectedGeneration: Long? = null): Boolean {
         var sockets: List<BluetoothSocket> = emptyList()
         var readerJob: Job? = null
         var initializationJob: Job? = null
-        synchronized(aacpSessionLock) {
-            aacpSessionGeneration += 1
-            connectionAttemptInProgress = false
-            readyAacpSessionGeneration = null
-            readerJob = aacpReaderJob
-            initializationJob = aacpInitializationJob
-            sockets = listOfNotNull(
-                pendingAacpSocket,
-                BluetoothConnectionManager.aacpSocket,
-                BluetoothConnectionManager.attSocket
-            ).distinct()
-            pendingAacpSocket = null
-            aacpReaderJob = null
-            aacpInitializationJob = null
-            BluetoothConnectionManager.aacpSocket = null
-            BluetoothConnectionManager.attSocket = null
-            aacpManager.disconnected()
+        val invalidated = synchronized(aacpSessionLock) {
+            if (expectedGeneration != null &&
+                aacpSessionGeneration != expectedGeneration
+            ) {
+                false
+            } else {
+                aacpSessionGeneration += 1
+                connectionAttemptInProgress = false
+                readyAacpSessionGeneration = null
+                readerJob = aacpReaderJob
+                initializationJob = aacpInitializationJob
+                sockets = listOfNotNull(
+                    pendingAacpSocket,
+                    BluetoothConnectionManager.aacpSocket,
+                    BluetoothConnectionManager.attSocket
+                ).distinct()
+                pendingAacpSocket = null
+                aacpReaderJob = null
+                aacpInitializationJob = null
+                BluetoothConnectionManager.aacpSocket = null
+                BluetoothConnectionManager.attSocket = null
+                aacpManager.disconnected()
+                true
+            }
         }
+        if (!invalidated) return false
+
         readerJob?.cancel()
         initializationJob?.cancel()
         sockets.forEach { socket ->
             runCatching { socket.close() }
         }
+        return true
     }
+
 
     private fun finishAacpSession(generation: Long, socket: BluetoothSocket) {
         var sockets: List<BluetoothSocket> = emptyList()
@@ -2863,40 +2878,40 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     private fun startAacpInitialization(generation: Long) {
         val job = serviceScope.launch {
             delay(200)
-            if (withCurrentAacpSession(generation) {
+            if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendPacket(aacpManager.createHandshakePacket())
-            } == null) return@launch
+            }) return@launch
             delay(200)
-            if (withCurrentAacpSession(generation) {
+            if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendSetFeatureFlagsPacket()
-            } == null) return@launch
+            }) return@launch
             delay(200)
-            if (withCurrentAacpSession(generation) {
+            if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendNotificationRequest()
-            } == null) return@launch
+            }) return@launch
             delay(200)
-            if (withCurrentAacpSession(generation) {
+            if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendSomePacketIDontKnowWhatItIs()
-            } == null) return@launch
+            }) return@launch
             delay(200)
-            if (withCurrentAacpSession(generation) {
+            if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendRequestProximityKeys(
                     (
                         AACPManager.Companion.ProximityKeyType.IRK.value +
                             AACPManager.Companion.ProximityKeyType.ENC_KEY.value
                         ).toByte()
                 )
-            } == null) return@launch
+            }) return@launch
             if (!handleIncomingCallOnceConnected) startHeadTracking() else handleIncomingCall()
             delay(5000)
-            if (withCurrentAacpSession(generation) {
+            if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendPacket(aacpManager.createHandshakePacket())
                 aacpManager.sendSetFeatureFlagsPacket()
                 aacpManager.sendNotificationRequest()
                 aacpManager.sendRequestProximityKeys(
                     AACPManager.Companion.ProximityKeyType.IRK.value
                 )
-            } == null) return@launch
+            }) return@launch
             if (!handleIncomingCallOnceConnected) stopHeadTracking()
         }
         synchronized(aacpSessionLock) {
@@ -2911,7 +2926,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     private fun startAacpReader(socket: BluetoothSocket, generation: Long) {
         val job = serviceScope.launch {
             try {
-                while (withCurrentAacpSession(generation, socket) { socket.isConnected } == true) {
+                while (isCurrentAacpSession(generation, socket) && socket.isConnected) {
                     val buffer = ByteArray(1024)
                     val bytesRead = socket.inputStream.read(buffer)
                     if (bytesRead <= 0) {
@@ -2921,7 +2936,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         break
                     }
 
-                    if (withCurrentAacpSession(generation, socket) {
+                    if (!runWithCurrentAacpSession(generation, socket) {
                         val data = buffer.copyOfRange(0, bytesRead)
                         sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DATA).apply {
                             putExtra("data", data)
@@ -2938,7 +2953,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             Log.d("AirPodsData", "Data received: $formattedHex")
                             logPacket(data, "AirPods")
                         }
-                    } == null) break
+                    }) break
                 }
             } catch (e: Exception) {
                 if (isCurrentAacpGeneration(generation)) {
@@ -2970,7 +2985,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             createBluetoothSocket(adapter, device, uuid, 4097)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create BluetoothSocket: ${e.message}")
-            if (invalidateAacpSessionIfCurrent(generation)) {
+            if (invalidateAacpSession(generation)) {
                 showSocketConnectionFailureNotification(
                     "Failed to create Bluetooth socket: ${e.localizedMessage}"
                 )
@@ -3018,7 +3033,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 activateAacpSession(generation, socket, attSocket)
             if (!activated) {
                 runCatching { attSocket?.close() }
-                if (!invalidateAacpSessionIfCurrent(generation)) {
+                if (!invalidateAacpSession(generation)) {
                     runCatching { socket.close() }
                 }
                 return
@@ -3052,7 +3067,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 }
             }
 
-            if (withCurrentAacpSession(generation) {
+            if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendPacket(aacpManager.createHandshakePacket())
                 aacpManager.sendSetFeatureFlagsPacket()
                 aacpManager.sendNotificationRequest()
@@ -3063,14 +3078,14 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             AACPManager.Companion.ProximityKeyType.ENC_KEY.value
                         ).toByte()
                 )
-            } == null) {
+            }) {
                 return
             }
             startAacpReader(socket, generation)
             startAacpInitialization(generation)
         } catch (e: Exception) {
             runCatching { attSocket?.close() }
-            if (invalidateAacpSessionIfCurrent(generation)) {
+            if (invalidateAacpSession(generation)) {
                 if (manual) {
                     sendToast("Couldn't connect to socket: ${e.localizedMessage}")
                 } else {
