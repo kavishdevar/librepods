@@ -2902,7 +2902,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         ).toByte()
                 )
             }) return@launch
-            if (!handleIncomingCallOnceConnected) startHeadTracking() else handleIncomingCall()
+            if (!runWithCurrentAacpSession(generation) {
+                if (!handleIncomingCallOnceConnected) startHeadTracking() else handleIncomingCall()
+            }) return@launch
             delay(5000)
             if (!runWithCurrentAacpSession(generation) {
                 aacpManager.sendPacket(aacpManager.createHandshakePacket())
@@ -2912,7 +2914,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     AACPManager.Companion.ProximityKeyType.IRK.value
                 )
             }) return@launch
-            if (!handleIncomingCallOnceConnected) stopHeadTracking()
+            if (!runWithCurrentAacpSession(generation) {
+                if (!handleIncomingCallOnceConnected) stopHeadTracking()
+            }) return@launch
         }
         synchronized(aacpSessionLock) {
             if (aacpSessionGeneration == generation) {
