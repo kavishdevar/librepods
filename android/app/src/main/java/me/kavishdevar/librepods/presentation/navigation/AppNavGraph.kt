@@ -112,6 +112,7 @@ fun AppNavGraph(
                                 navigateToTroubleshooting = { navigate(Screen.Troubleshooting) },
                                 navigateToCallControlScreen = { navigate(Screen.CallControl(it)) },
                                 navigateToMicrophoneSettings = { navigate(Screen.MicrophoneSettings) },
+                                navigateToHeartRateTest = { navigate(Screen.HeartRateTest) },
                             )
                         }
 
@@ -129,8 +130,7 @@ fun AppNavGraph(
                                 navigateToPurchase = ::navigateToPurchase,
                                 navigateToTroubleshooting = { navigate(Screen.Troubleshooting) },
                                 navigateToOpenSourceLicenses = { navigate(Screen.OpenSourceLicenses) },
-                                navigateToReleaseNotesScreen = { navigate(Screen.ReleaseNotes) },
-                                navigateToHeartRateTest = { navigate(Screen.HeartRateTest) }
+                                navigateToReleaseNotesScreen = { navigate(Screen.ReleaseNotes) }
                             )
                         }
 

@@ -55,6 +55,7 @@ import me.kavishdevar.librepods.data.ControlCommandRepository
 import me.kavishdevar.librepods.data.CustomEq
 import me.kavishdevar.librepods.data.StemAction
 import me.kavishdevar.librepods.data.XposedRemotePrefProvider
+import me.kavishdevar.librepods.health.HealthConnectExportStatus
 import me.kavishdevar.librepods.services.AirPodsService
 
 @Suppress("ArrayInDataClass")
@@ -85,6 +86,9 @@ data class AirPodsUiState(
     val heartRateMonitoringEnabled: Boolean = false,
     val heartRateStreaming: Boolean = false,
     val heartRateSamples: List<HeartRateSample> = emptyList(),
+    val healthConnectExportEnabled: Boolean = false,
+    val healthConnectExportStatus: HealthConnectExportStatus = HealthConnectExportStatus.UNAVAILABLE,
+    val healthConnectDetailedSamples: Boolean = false,
 
     val eqData: FloatArray = floatArrayOf(),
 
@@ -482,6 +486,21 @@ class AirPodsViewModel(
                 _uiState.update { it.copy(heartRateSamples = samples) }
             }
         }
+        viewModelScope.launch {
+            service.healthConnectExportEnabled.collect { enabled ->
+                _uiState.update { it.copy(healthConnectExportEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            service.healthConnectExportStatus.collect { status ->
+                _uiState.update { it.copy(healthConnectExportStatus = status) }
+            }
+        }
+        viewModelScope.launch {
+            service.healthConnectDetailedSamples.collect { detailed ->
+                _uiState.update { it.copy(healthConnectDetailedSamples = detailed) }
+            }
+        }
     }
 
     fun loadCurrentStatus() {
@@ -493,6 +512,9 @@ class AirPodsViewModel(
                     heartRateMonitoringEnabled = service.heartRateMonitoringEnabled.value,
                     heartRateStreaming = service.heartRateStreaming.value,
                     heartRateSamples = service.heartRateSamples.value,
+                    healthConnectExportEnabled = service.healthConnectExportEnabled.value,
+                    healthConnectExportStatus = service.healthConnectExportStatus.value,
+                    healthConnectDetailedSamples = service.healthConnectDetailedSamples.value,
                     battery = service.getBattery(),
                     ancMode = controlRepo.getValue(ControlCommandIdentifiers.LISTENING_MODE)?.get(0)?.toInt() ?: 1,
                     controlStates = controlRepo.getMap()
@@ -652,6 +674,7 @@ class AirPodsViewModel(
     }
 
     fun reconnectFromSavedMac() {
+        if (!::service.isInitialized) return
         service.reconnectFromSavedMac()
     }
 
@@ -682,6 +705,43 @@ class AirPodsViewModel(
             return
         }
         service.setHeartRateMonitoringEnabled(enabled)
+    }
+
+    fun refreshHealthConnectExportState() {
+        if (!isReady || isDemoMode) return
+        service.refreshHealthConnectExportState()
+    }
+
+    fun setHealthConnectExportEnabled(enabled: Boolean) {
+        if (!isReady) return
+        if (isDemoMode) {
+            _uiState.update {
+                it.copy(
+                    healthConnectExportEnabled = enabled,
+                    healthConnectExportStatus = if (enabled) {
+                        HealthConnectExportStatus.ENABLED
+                    } else {
+                        HealthConnectExportStatus.READY
+                    }
+                )
+            }
+            return
+        }
+        service.setHealthConnectExportEnabled(enabled)
+    }
+
+    fun setHealthConnectDetailedSamples(detailed: Boolean) {
+        if (!isReady) return
+        if (isDemoMode) {
+            _uiState.update { it.copy(healthConnectDetailedSamples = detailed) }
+            return
+        }
+        service.setHealthConnectDetailedSamples(detailed)
+    }
+
+    fun markHealthConnectPermissionDenied() {
+        if (!isReady || isDemoMode) return
+        service.markHealthConnectPermissionDenied()
     }
 
     fun setATTCharacteristicValue(handle: ATTHandles, value: ByteArray) {

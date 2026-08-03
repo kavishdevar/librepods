@@ -1,5 +1,5 @@
 /*
-    LibrePods - AirPods liberated from Appleâ€™s ecosystem
+    LibrePods - AirPods liberated from Apple’s ecosystem
     Copyright (C) 2025 LibrePods contributors
 
     This program is free software: you can redistribute it and/or modify
@@ -10,6 +10,7 @@
 
 package me.kavishdevar.librepods.presentation.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -33,6 +34,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -42,7 +44,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.health.connect.client.PermissionController
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
+import me.kavishdevar.librepods.health.HealthConnectExportStatus
+import me.kavishdevar.librepods.health.HealthConnectHeartRateExporter
 import me.kavishdevar.librepods.presentation.components.StyledToggle
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
@@ -53,6 +58,20 @@ import java.util.Date
 @Composable
 fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
     val state by viewModel.uiState.collectAsState()
+    val healthConnectPermissionLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { grantedPermissions: Set<String> ->
+        if (HealthConnectHeartRateExporter.WRITE_HEART_RATE_PERMISSION in grantedPermissions) {
+            viewModel.setHealthConnectExportEnabled(true)
+        } else {
+            viewModel.markHealthConnectPermissionDenied()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshHealthConnectExportState()
+    }
+
     val materialDesign = LocalDesignSystem.current == DesignSystem.Material
     val topPadding = if (materialDesign) {
         16.dp
@@ -64,10 +83,40 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
     val latestSample = state.heartRateSamples.lastOrNull()
     val monitoringStatus = when {
         !state.heartRateMonitoringEnabled -> "Disabled"
-        !state.isLocallyConnected -> "Enabled â€” waiting for connection"
+        !state.isLocallyConnected -> "Enabled — waiting for connection"
         state.heartRateStreaming -> "Streaming"
-        else -> "Enabled â€” awaiting stream"
+        else -> "Enabled — awaiting valid sample"
     }
+    val healthConnectDescription = when (state.healthConnectExportStatus) {
+        HealthConnectExportStatus.UNAVAILABLE ->
+            "Health Connect is not available on this device."
+
+        HealthConnectExportStatus.UPDATE_REQUIRED ->
+            "Install or update Health Connect to save heart-rate samples."
+
+        HealthConnectExportStatus.PERMISSION_REQUIRED ->
+            "Write permission is required before samples can be saved."
+
+        HealthConnectExportStatus.PERMISSION_DENIED ->
+            "Permission was denied. Turn this on to request it again."
+
+        HealthConnectExportStatus.READY ->
+            "Available. Enable this to save validated samples on this device."
+
+        HealthConnectExportStatus.ENABLED ->
+            if (state.healthConnectDetailedSamples) {
+                "Validated samples are saved in 15-second batches with their original timestamps."
+            } else {
+                "Validated samples are averaged into one Health Connect record per minute."
+            }
+
+        HealthConnectExportStatus.ERROR ->
+            "A write failed. Buffered samples will be retried without creating duplicates."
+    }
+    val healthConnectAvailable = state.healthConnectExportStatus !in setOf(
+        HealthConnectExportStatus.UNAVAILABLE,
+        HealthConnectExportStatus.UPDATE_REQUIRED
+    )
 
     Column(
         modifier = Modifier
@@ -77,17 +126,6 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(topPadding))
-
-        StyledToggle(
-            title = "Heart-rate test",
-            label = "Enable monitoring",
-            description = "Uses the existing AirPods AACP connection and remains enabled across reconnects.",
-            checked = state.heartRateMonitoringEnabled,
-            onCheckedChange = viewModel::setHeartRateMonitoringEnabled,
-            header = true
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -105,7 +143,7 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
                 ) {
                     Column {
                         Text(
-                            text = latestSample?.bpm?.toString() ?: "â€”",
+                            text = latestSample?.bpm?.toString() ?: "—",
                             style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -144,6 +182,59 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        StyledToggle(
+            title = "Health Connect",
+            label = "Save heart-rate samples",
+            description = healthConnectDescription,
+            checked = state.healthConnectExportEnabled,
+            enabled = healthConnectAvailable,
+            onCheckedChange = { enabled: Boolean ->
+                if (!enabled) {
+                    viewModel.setHealthConnectExportEnabled(false)
+                } else {
+                    when (state.healthConnectExportStatus) {
+                        HealthConnectExportStatus.READY,
+                        HealthConnectExportStatus.ENABLED ->
+                            viewModel.setHealthConnectExportEnabled(true)
+
+                        HealthConnectExportStatus.PERMISSION_REQUIRED,
+                        HealthConnectExportStatus.PERMISSION_DENIED,
+                        HealthConnectExportStatus.ERROR ->
+                            healthConnectPermissionLauncher.launch(
+                                HealthConnectHeartRateExporter.REQUIRED_PERMISSIONS
+                            )
+
+                        HealthConnectExportStatus.UNAVAILABLE,
+                        HealthConnectExportStatus.UPDATE_REQUIRED -> Unit
+                    }
+                }
+            }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        StyledToggle(
+            title = null,
+            label = "Detailed samples",
+            description = if (state.healthConnectDetailedSamples) {
+                "Export original per-second samples in 15-second batches. AirPods sampling is unchanged."
+            } else {
+                "Export one average BPM for each minute. AirPods sampling is unchanged."
+            },
+            checked = state.healthConnectDetailedSamples,
+            enabled = healthConnectAvailable,
+            onCheckedChange = viewModel::setHealthConnectDetailedSamples
+        )
+
+        Text(
+            text = "Heart-rate tracking is controlled from the connected-device screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Text(
             text = "Recent samples",
             style = MaterialTheme.typography.titleMedium,
@@ -154,7 +245,7 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
         HeartRateGraph(samples = state.heartRateSamples)
 
         Text(
-            text = "Experimental test data only. Do not use it for medical decisions.",
+            text = "Experimental wellness data only. LibrePods and AirPods are not medical devices; do not use these readings for diagnosis or medical decisions.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp)
@@ -247,5 +338,3 @@ private fun formatLastUpdate(sample: HeartRateSample?): String {
     return DateFormat.getTimeInstance(DateFormat.MEDIUM)
         .format(Date(sample.receivedAtMillis))
 }
-
-
