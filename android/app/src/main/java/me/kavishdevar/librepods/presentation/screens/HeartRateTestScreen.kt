@@ -226,13 +226,6 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
             onCheckedChange = viewModel::setHealthConnectDetailedSamples
         )
 
-        Text(
-            text = "Heart-rate tracking is controlled from the connected-device screen.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-        )
-
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
@@ -243,13 +236,6 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
         )
 
         HeartRateGraph(samples = state.heartRateSamples)
-
-        Text(
-            text = "Experimental wellness data only. LibrePods and AirPods are not medical devices; do not use these readings for diagnosis or medical decisions.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp)
-        )
 
         Spacer(modifier = Modifier.height(bottomPadding))
     }

@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
+import me.kavishdevar.librepods.presentation.theme.DesignSystem
+import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 
 @Composable
 fun HeartRateCard(
@@ -92,10 +94,17 @@ fun HeartRateCard(
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            Switch(
-                checked = monitoringEnabled,
-                onCheckedChange = onMonitoringChanged
-            )
+            when (LocalDesignSystem.current) {
+                DesignSystem.Material -> Switch(
+                    checked = monitoringEnabled,
+                    onCheckedChange = onMonitoringChanged
+                )
+
+                DesignSystem.Apple -> StyledSwitch(
+                    checked = monitoringEnabled,
+                    onCheckedChange = onMonitoringChanged
+                )
+            }
         }
     }
 }
