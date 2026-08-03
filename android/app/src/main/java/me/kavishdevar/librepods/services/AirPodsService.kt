@@ -73,6 +73,9 @@ import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,6 +92,7 @@ import me.kavishdevar.librepods.bluetooth.ATTHandles
 import me.kavishdevar.librepods.bluetooth.ATTManagerv2
 import me.kavishdevar.librepods.bluetooth.BLEManager
 import me.kavishdevar.librepods.bluetooth.BluetoothConnectionManager
+import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.bluetooth.createBluetoothSocket
 import me.kavishdevar.librepods.data.AirPodsInstance
 import me.kavishdevar.librepods.data.AirPodsModels
@@ -231,11 +235,29 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     private val maxLogEntries = 1000
     private val inMemoryLogs = mutableSetOf<String>()
 
+    private val heartRateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val heartRateLock = Any()
+    private var heartRateStartJob: Job? = null
+    private var heartRateSessionRequested = false
+    private var heartRateStreamStarted = false
+
+    private val _heartRateMonitoringEnabled = MutableStateFlow(false)
+    val heartRateMonitoringEnabled: StateFlow<Boolean> get() = _heartRateMonitoringEnabled
+
+    private val _heartRateStreaming = MutableStateFlow(false)
+    val heartRateStreaming: StateFlow<Boolean> get() = _heartRateStreaming
+
+    private val _heartRateSamples = MutableStateFlow<List<HeartRateSample>>(emptyList())
+    val heartRateSamples: StateFlow<List<HeartRateSample>> get() = _heartRateSamples
+
     private var handleIncomingCallOnceConnected = false
 
     lateinit var bleManager: BLEManager
 
     companion object {
+        private const val HEART_RATE_MONITORING_PREFERENCE = "heart_rate_monitoring_enabled"
+        private const val MAX_HEART_RATE_SAMPLES = 60
+
         init {
             System.loadLibrary("bluetooth_socket")
         }
@@ -377,6 +399,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         _packetLogsFlow.value = inMemoryLogs.toSet()
 
         sharedPreferences = getSharedPreferences("settings", MODE_PRIVATE)
+        _heartRateMonitoringEnabled.value = sharedPreferences.getBoolean(
+            HEART_RATE_MONITORING_PREFERENCE,
+            false
+        )
         initializeConfig()
 
         aacpManager = AACPManager()
@@ -696,6 +722,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 //                    isConnectedLocally = false
                     popupShown = false
                     updateNotificationContent(false)
+                    stopHeartRateMonitoring()
                     aacpManager.disconnected()
                     BluetoothConnectionManager.aacpSocket = null
                     BluetoothConnectionManager.attSocket = null
@@ -1078,6 +1105,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     HeadTracking.processPacket(headTracking)
                     processHeadTrackingData(headTracking)
                 }
+            }
+
+            override fun onHeartRateReceived(sample: HeartRateSample) {
+                if (!_heartRateMonitoringEnabled.value) return
+                _heartRateSamples.value = (_heartRateSamples.value + sample).takeLast(MAX_HEART_RATE_SAMPLES)
             }
 
             override fun onProximityKeysReceived(proximityKeys: ByteArray) {
@@ -2756,13 +2788,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     aacpManager.sendSomePacketIDontKnowWhatItIs()
                     delay(200)
                     aacpManager.sendRequestProximityKeys((AACPManager.Companion.ProximityKeyType.IRK.value + AACPManager.Companion.ProximityKeyType.ENC_KEY.value).toByte())
-                    if (!handleIncomingCallOnceConnected) startHeadTracking() else handleIncomingCall()
+                    if (!handleIncomingCallOnceConnected) {
+                        if (!_heartRateMonitoringEnabled.value) startHeadTracking()
+                    } else {
+                        handleIncomingCall()
+                    }
                     Handler(Looper.getMainLooper()).postDelayed({
                         aacpManager.sendPacket(aacpManager.createHandshakePacket())
                         aacpManager.sendSetFeatureFlagsPacket()
                         aacpManager.sendNotificationRequest()
                         aacpManager.sendRequestProximityKeys(AACPManager.Companion.ProximityKeyType.IRK.value)
-                        if (!handleIncomingCallOnceConnected) stopHeadTracking()
+                        if (!handleIncomingCallOnceConnected && !_heartRateMonitoringEnabled.value) {
+                            stopHeadTracking()
+                        }
                     }, 5000)
 
                     sendBroadcast(
@@ -2772,6 +2810,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             })
 
                     setupStemActions()
+                    startHeartRateMonitoringIfEnabled()
 
                     while (socket.isConnected) {
                         try {
@@ -2785,7 +2824,6 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                                     setPackage(packageName)
                                 })
                                 val bytes = buffer.copyOfRange(0, bytesRead)
-                                val formattedHex = bytes.joinToString(" ") { "%02X".format(it) }
 //                                    CrossDevice.sendReceivedPacket(bytes)
                                 updateNotificationContent(
                                     true,
@@ -2793,9 +2831,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                                     batteryNotification.getBattery()
                                 )
 
-                                aacpManager.receivePacket(data)
+                                val suppressRawPacketLogging = aacpManager.receivePacket(data)
 
-                                if (!isHeadTrackingData(data)) {
+                                if (!suppressRawPacketLogging && !isHeadTrackingData(data)) {
+                                    val formattedHex = bytes.joinToString(" ") { "%02X".format(it) }
                                     Log.d("AirPodsData", "Data received: $formattedHex")
                                     logPacket(data, "AirPods")
                                 }
@@ -2805,6 +2844,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                                 sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
                                     setPackage(packageName)
                                 })
+                                handleHeartRateDisconnected()
                                 aacpManager.disconnected()
                                 return@launch
                             }
@@ -2814,6 +2854,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
                                 setPackage(packageName)
                             })
+                            handleHeartRateDisconnected()
                             aacpManager.disconnected()
                             return@launch
                         }
@@ -2821,6 +2862,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     }
                     Log.d("AirPods Service", "socket closed")
 //                        isConnectedLocally = false
+                    handleHeartRateDisconnected()
                     aacpManager.disconnected()
                     updateNotificationContent(false)
                     sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
@@ -2829,6 +2871,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 }
             }
         } catch (e: Exception) {
+            handleHeartRateDisconnected()
             e.printStackTrace()
             Log.d(TAG, "Failed to connect to BluetoothConnectionManager.aacpSocket?: ${e.message}")
             showSocketConnectionFailureNotification("Failed to establish connection: ${e.localizedMessage}")
@@ -2842,6 +2885,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     }
 
     fun disconnectForCD() {
+        stopHeartRateMonitoring()
         BluetoothConnectionManager.aacpSocket?.close()
         MediaController.pausedWhileTakingOver = false
         Log.d(TAG, "Disconnected from AirPods, showing island.")
@@ -2874,6 +2918,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     fun disconnectAirPods() {
         if (BluetoothConnectionManager.aacpSocket == null) return
+        stopHeartRateMonitoring()
         try {
             BluetoothConnectionManager.aacpSocket?.close()
         } catch(e: Exception) {
@@ -3139,9 +3184,130 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         if (checkSelfPermission("android.permission.READ_PHONE_STATE") == PackageManager.PERMISSION_GRANTED) {
             telephonyManager.unregisterTelephonyCallback(phoneStateListener)
         }
+        stopHeartRateMonitoring()
+        heartRateScope.cancel()
 //        isConnectedLocally = false
 //        CrossDevice.isAvailable = true
         super.onDestroy()
+    }
+
+    fun setHeartRateMonitoringEnabled(enabled: Boolean) {
+        val wasEnabled = _heartRateMonitoringEnabled.value
+        sharedPreferences.edit { putBoolean(HEART_RATE_MONITORING_PREFERENCE, enabled) }
+        _heartRateMonitoringEnabled.value = enabled
+
+        if (enabled) {
+            if (!wasEnabled) _heartRateSamples.value = emptyList()
+            startHeartRateMonitoringIfEnabled()
+        } else {
+            stopHeartRateMonitoring(forceStop = wasEnabled)
+        }
+    }
+
+    private fun startHeartRateMonitoringIfEnabled() {
+        if (!_heartRateMonitoringEnabled.value) return
+        if (BluetoothConnectionManager.aacpSocket?.isConnected != true) {
+            _heartRateStreaming.value = false
+            return
+        }
+
+        synchronized(heartRateLock) {
+            if (heartRateSessionRequested || heartRateStreamStarted || heartRateStartJob?.isActive == true) return
+
+            heartRateStartJob = heartRateScope.launch {
+                if (isHeadTrackingActive) {
+                    stopHeadTracking()
+                    delay(220)
+                }
+
+                val sessionInitialized = initializeHeartRateAacpSession()
+                if (!sessionInitialized) {
+                    synchronized(heartRateLock) {
+                        heartRateStartJob = null
+                        _heartRateStreaming.value = false
+                    }
+                    return@launch
+                }
+
+                val enabledSent = synchronized(heartRateLock) {
+                    if (!_heartRateMonitoringEnabled.value ||
+                        BluetoothConnectionManager.aacpSocket?.isConnected != true
+                    ) {
+                        heartRateStartJob = null
+                        false
+                    } else {
+                        val sent = aacpManager.sendControlCommand(
+                            AACPManager.Companion.ControlCommandIdentifiers.HRM_STATE.value,
+                            true
+                        )
+                        if (sent) {
+                            heartRateSessionRequested = true
+                        } else {
+                            heartRateStartJob = null
+                        }
+                        sent
+                    }
+                }
+                if (!enabledSent) return@launch
+
+                delay(120)
+
+                synchronized(heartRateLock) startFrame@{
+                    if (!_heartRateMonitoringEnabled.value ||
+                        BluetoothConnectionManager.aacpSocket?.isConnected != true
+                    ) {
+                        heartRateStartJob = null
+                        return@startFrame
+                    }
+
+                    val started = aacpManager.sendHeartRateStartFrame()
+                    heartRateStreamStarted = started
+                    _heartRateStreaming.value = started
+                    heartRateStartJob = null
+                    Log.d(TAG, "RTBuddy heart-rate start sent=$started")
+                }
+            }
+        }
+    }
+
+    private suspend fun initializeHeartRateAacpSession(): Boolean {
+        fun canContinue(): Boolean =
+            _heartRateMonitoringEnabled.value &&
+                BluetoothConnectionManager.aacpSocket?.isConnected == true
+
+        if (!canContinue() || !aacpManager.sendHeartRateConnectService0()) return false
+        delay(180)
+        if (!canContinue() || !aacpManager.sendHeartRateCapabilitiesService0()) return false
+        delay(220)
+        if (!canContinue() || !aacpManager.sendHeartRateConnectService4()) return false
+        delay(180)
+        if (!canContinue() || !aacpManager.sendHeartRateCapabilitiesService4()) return false
+        delay(220)
+        Log.d(TAG, "RTBuddy heart-rate AACP 1.3 session initialized")
+        return canContinue()
+    }
+
+    private fun stopHeartRateMonitoring(forceStop: Boolean = false) {
+        synchronized(heartRateLock) {
+            val jobWasActive = heartRateStartJob?.isActive == true
+            heartRateStartJob?.cancel()
+            heartRateStartJob = null
+
+            val shouldStop =
+                forceStop || heartRateSessionRequested || heartRateStreamStarted || jobWasActive
+            heartRateSessionRequested = false
+            heartRateStreamStarted = false
+            _heartRateStreaming.value = false
+
+            if (shouldStop && BluetoothConnectionManager.aacpSocket?.isConnected == true) {
+                aacpManager.sendHeartRateStopFrame()
+            }
+        }
+    }
+
+    private fun handleHeartRateDisconnected() {
+        stopHeartRateMonitoring()
+        _heartRateStreaming.value = false
     }
 
     var isHeadTrackingActive = false

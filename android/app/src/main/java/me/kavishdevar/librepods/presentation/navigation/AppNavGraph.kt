@@ -24,6 +24,7 @@ import me.kavishdevar.librepods.presentation.screens.AppSettingsScreen
 import me.kavishdevar.librepods.presentation.screens.CallControlScreen
 import me.kavishdevar.librepods.presentation.screens.EqualizerRoute
 import me.kavishdevar.librepods.presentation.screens.HeadTrackingScreen
+import me.kavishdevar.librepods.presentation.screens.HeartRateTestScreen
 import me.kavishdevar.librepods.presentation.screens.HearingAidAdjustmentsScreen
 import me.kavishdevar.librepods.presentation.screens.HearingAidScreen
 import me.kavishdevar.librepods.presentation.screens.HearingProtectionScreen
@@ -128,7 +129,8 @@ fun AppNavGraph(
                                 navigateToPurchase = ::navigateToPurchase,
                                 navigateToTroubleshooting = { navigate(Screen.Troubleshooting) },
                                 navigateToOpenSourceLicenses = { navigate(Screen.OpenSourceLicenses) },
-                                navigateToReleaseNotesScreen = { navigate(Screen.ReleaseNotes) }
+                                navigateToReleaseNotesScreen = { navigate(Screen.ReleaseNotes) },
+                                navigateToHeartRateTest = { navigate(Screen.HeartRateTest) }
                             )
                         }
 
@@ -141,6 +143,12 @@ fun AppNavGraph(
                         NavEntry(screen) {
                             if (!airPodsViewModel.isReady) LoadingScreen()
                             HeadTrackingScreen(airPodsViewModel, ::navigateToPurchase)
+                        }
+
+                    Screen.HeartRateTest ->
+                        NavEntry(screen) {
+                            if (!airPodsViewModel.isReady) LoadingScreen()
+                            HeartRateTestScreen(airPodsViewModel)
                         }
 
                     Screen.Accessibility ->

@@ -62,6 +62,34 @@ class AACPManager {
 
         private val HEADER_BYTES = byteArrayOf(0x04, 0x00, 0x04, 0x00)
 
+        // Exact AACP 1.3 initialization used by the validated RTBuddy probe before HR streaming.
+        private val HEART_RATE_CONNECT_SERVICE_0 = byteArrayOf(
+            0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x03, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        )
+        private val HEART_RATE_CAPABILITIES_SERVICE_0 =
+            byteArrayOf(0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00)
+        private val HEART_RATE_CONNECT_SERVICE_4 = byteArrayOf(
+            0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x03, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        )
+        private val HEART_RATE_CAPABILITIES_SERVICE_4 =
+            byteArrayOf(0x04, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00)
+
+        // Verified RTBuddy SensorDataWX HEARTRATE(19) service-setting frames from the legacy probe.
+        // These arrays intentionally omit HEADER_BYTES because sendDataPacket() adds it.
+        private val HEART_RATE_START_1S = byteArrayOf(
+            0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
+            0x08, 0xE3.toByte(), 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
+            0x02, 0x1A, 0x05, 0x01, 0x40, 0x42, 0x0F, 0x00
+        )
+
+        private val HEART_RATE_STOP = byteArrayOf(
+            0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
+            0x08, 0xED.toByte(), 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
+            0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00
+        )
+
         data class ControlCommandStatus(
             val identifier: ControlCommandIdentifiers, val value: ByteArray
         ) {
@@ -235,6 +263,7 @@ class AACPManager {
         fun onControlCommandReceived(controlCommand: ByteArray)
         fun onDeviceInformationReceived(deviceInformation: AirPodsInformation)
         fun onHeadTrackingReceived(headTracking: ByteArray)
+        fun onHeartRateReceived(sample: HeartRateSample)
         fun onUnknownPacketReceived(packet: ByteArray)
         fun onProximityKeysReceived(proximityKeys: ByteArray)
         fun onStemPressReceived(stemPress: ByteArray)
@@ -280,6 +309,7 @@ class AACPManager {
     }
 
     private var callback: PacketCallback? = null
+    private val heartRateDecoder = RtBuddyHeartRateDecoder()
 
     fun setPacketCallback(callback: PacketCallback) {
         this.callback = callback
@@ -305,6 +335,18 @@ class AACPManager {
     fun sendDataPacket(data: ByteArray): Boolean {
         return sendPacket(createDataPacket(data))
     }
+
+    fun sendHeartRateStartFrame(): Boolean = sendDataPacket(HEART_RATE_START_1S)
+
+    fun sendHeartRateStopFrame(): Boolean = sendDataPacket(HEART_RATE_STOP)
+
+    fun sendHeartRateConnectService0(): Boolean = sendPacket(HEART_RATE_CONNECT_SERVICE_0)
+
+    fun sendHeartRateCapabilitiesService0(): Boolean = sendPacket(HEART_RATE_CAPABILITIES_SERVICE_0)
+
+    fun sendHeartRateConnectService4(): Boolean = sendPacket(HEART_RATE_CONNECT_SERVICE_4)
+
+    fun sendHeartRateCapabilitiesService4(): Boolean = sendPacket(HEART_RATE_CAPABILITIES_SERVICE_4)
 
     fun sendControlCommand(identifier: Byte, value: ByteArray): Boolean {
         val controlPacket = createControlCommandPacket(identifier, value)
@@ -397,8 +439,23 @@ class AACPManager {
         return opcode + data
     }
 
+    fun receivePacket(packet: ByteArray): Boolean {
+        val heartRateResult = heartRateDecoder.feed(packet)
+        if (heartRateResult.relatedFrameCount > 0) {
+            Log.d(
+                TAG,
+                "Received RTBuddy heart-rate frames=${heartRateResult.relatedFrameCount}, " +
+                    "rejected=${heartRateResult.rejectedFrameCount}, " +
+                    "samples=${heartRateResult.samples.size}"
+            )
+        }
+        heartRateResult.samples.forEach { callback?.onHeartRateReceived(it) }
+        heartRateResult.passthroughPackets.forEach(::receiveStandardPacket)
+        return heartRateResult.suppressRawLogging
+    }
+
     @OptIn(ExperimentalStdlibApi::class)
-    fun receivePacket(packet: ByteArray) {
+    private fun receiveStandardPacket(packet: ByteArray) {
         if (!packet.toHexString().startsWith("04000400")) {
             Log.w(
                 TAG, "Received packet does not start with expected header: ${
@@ -1139,7 +1196,11 @@ class AACPManager {
     @OptIn(ExperimentalStdlibApi::class)
     fun sendPacket(packet: ByteArray): Boolean {
         try {
-            Log.d(TAG, "Sending packet: ${packet.joinToString(" ") { "%02X".format(it) }}")
+            if (isHeartRateRtBuddyPacket(packet)) {
+                Log.d(TAG, "Sending RTBuddy heart-rate stream control packet")
+            } else {
+                Log.d(TAG, "Sending packet: ${packet.joinToString(" ") { "%02X".format(it) }}")
+            }
 
             if (packet[4] == Opcodes.CONTROL_COMMAND) {
                 val controlCommand = try {
@@ -1269,8 +1330,14 @@ class AACPManager {
         )
     }
 
+    private fun isHeartRateRtBuddyPacket(packet: ByteArray): Boolean {
+        return packet.contentEquals(HEADER_BYTES + HEART_RATE_START_1S) ||
+            packet.contentEquals(HEADER_BYTES + HEART_RATE_STOP)
+    }
+
     fun disconnected() {
         Log.d(TAG, "Disconnected, clearing state")
+        heartRateDecoder.reset()
         controlCommandStatusList.clear()
         controlCommandListeners.clear()
         owns = false

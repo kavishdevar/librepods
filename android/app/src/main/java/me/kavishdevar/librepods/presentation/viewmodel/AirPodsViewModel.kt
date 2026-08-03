@@ -43,6 +43,7 @@ import me.kavishdevar.librepods.bluetooth.AACPManager.Companion.ControlCommandId
 import me.kavishdevar.librepods.bluetooth.ATTCCCDHandles
 import me.kavishdevar.librepods.bluetooth.ATTHandles
 import me.kavishdevar.librepods.bluetooth.BluetoothConnectionManager
+import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.data.AirPodsInstance
 import me.kavishdevar.librepods.data.AirPodsModels
 import me.kavishdevar.librepods.data.AirPodsNotifications
@@ -80,6 +81,10 @@ data class AirPodsUiState(
 
     val headTrackingActive: Boolean = false,
     val headGesturesEnabled: Boolean = true,
+
+    val heartRateMonitoringEnabled: Boolean = false,
+    val heartRateStreaming: Boolean = false,
+    val heartRateSamples: List<HeartRateSample> = emptyList(),
 
     val eqData: FloatArray = floatArrayOf(),
 
@@ -210,6 +215,7 @@ class AirPodsViewModel(
         loadInstance()
         loadSharedPreferences()
         observeAACP()
+        observeHeartRate()
         loadCurrentStatus()
         loadEq()
         loadATT()
@@ -460,12 +466,33 @@ class AirPodsViewModel(
         }
     }
 
+    private fun observeHeartRate() {
+        viewModelScope.launch {
+            service.heartRateMonitoringEnabled.collect { enabled ->
+                _uiState.update { it.copy(heartRateMonitoringEnabled = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            service.heartRateStreaming.collect { streaming ->
+                _uiState.update { it.copy(heartRateStreaming = streaming) }
+            }
+        }
+        viewModelScope.launch {
+            service.heartRateSamples.collect { samples ->
+                _uiState.update { it.copy(heartRateSamples = samples) }
+            }
+        }
+    }
+
     fun loadCurrentStatus() {
         if (isDemoMode) return
         service.let { service ->
             _uiState.update {
                 it.copy(
                     isLocallyConnected = BluetoothConnectionManager.aacpSocket?.isConnected == true,
+                    heartRateMonitoringEnabled = service.heartRateMonitoringEnabled.value,
+                    heartRateStreaming = service.heartRateStreaming.value,
+                    heartRateSamples = service.heartRateSamples.value,
                     battery = service.getBattery(),
                     ancMode = controlRepo.getValue(ControlCommandIdentifiers.LISTENING_MODE)?.get(0)?.toInt() ?: 1,
                     controlStates = controlRepo.getMap()
@@ -640,6 +667,21 @@ class AirPodsViewModel(
     fun stopHeadTracking() {
         service.stopHeadTracking()
         _uiState.update { it.copy(headTrackingActive = false) }
+    }
+
+    fun setHeartRateMonitoringEnabled(enabled: Boolean) {
+        if (!isReady) return
+        if (isDemoMode) {
+            _uiState.update {
+                it.copy(
+                    heartRateMonitoringEnabled = enabled,
+                    heartRateStreaming = enabled && it.isLocallyConnected,
+                    heartRateSamples = if (enabled) emptyList() else it.heartRateSamples
+                )
+            }
+            return
+        }
+        service.setHeartRateMonitoringEnabled(enabled)
     }
 
     fun setATTCharacteristicValue(handle: ATTHandles, value: ByteArray) {

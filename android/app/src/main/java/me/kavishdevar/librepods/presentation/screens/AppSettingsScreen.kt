@@ -105,7 +105,8 @@ fun AppSettingsScreen(
     navigateToPurchase: () -> Unit,
     navigateToTroubleshooting: () -> Unit,
     navigateToOpenSourceLicenses: () -> Unit,
-    navigateToReleaseNotesScreen: () -> Unit
+    navigateToReleaseNotesScreen: () -> Unit,
+    navigateToHeartRateTest: () -> Unit
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -380,6 +381,15 @@ fun AppSettingsScreen(
                     Toast.makeText(context, restartBluetoothText, Toast.LENGTH_SHORT).show()
                     viewModel.setVendorIdHook(enabled)
                 }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        StyledList(title = "Tests") {
+            StyledListItem(
+                name = "Heart-rate test",
+                description = "View validated samples from supported AirPods",
+                onClick = navigateToHeartRateTest,
             )
         }
 
