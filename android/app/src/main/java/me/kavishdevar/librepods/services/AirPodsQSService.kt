@@ -35,9 +35,10 @@ import android.util.Log
 import androidx.annotation.RequiresApi
 import me.kavishdevar.librepods.QuickSettingsDialogActivity
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.constants.AirPodsNotifications
-import me.kavishdevar.librepods.constants.NoiseControlMode
-import me.kavishdevar.librepods.utils.AACPManager
+import me.kavishdevar.librepods.bluetooth.AACPManager
+import me.kavishdevar.librepods.bluetooth.BluetoothConnectionManager
+import me.kavishdevar.librepods.data.AirPodsNotifications
+import me.kavishdevar.librepods.data.NoiseControlMode
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @RequiresApi(Build.VERSION_CODES.Q)
@@ -98,7 +99,7 @@ class AirPodsQSService : TileService() {
         Log.d("AirPodsQSService", "onStartListening")
 
         val service = ServiceManager.getService()
-        isAirPodsConnected = service?.isConnectedLocally == true
+        isAirPodsConnected = BluetoothConnectionManager.aacpSocket?.isConnected == true
         currentAncMode = service?.getANC() ?: (NoiseControlMode.OFF.ordinal + 1)
 
         if (currentAncMode == NoiseControlMode.OFF.ordinal + 1 && !isOffModeEnabled()) {
@@ -151,7 +152,7 @@ class AirPodsQSService : TileService() {
             return
         }
 
-        val clickBehavior = sharedPreferences.getString("qs_click_behavior", "dialog") ?: "dialog"
+        val clickBehavior = "cycle" // sharedPreferences.getString("qs_click_behavior", "dialog") ?: "dialog"
 
         if (clickBehavior == "dialog") {
             launchDialogActivity()
@@ -244,8 +245,10 @@ class AirPodsQSService : TileService() {
 
     private fun getNextAncMode(): Int {
         val availableModes = getAvailableModes()
+        Log.d("AirPodsQSService", "availableModes: $availableModes, currentAncMode: $currentAncMode")
         val currentIndex = availableModes.indexOf(currentAncMode)
         val nextIndex = (currentIndex + 1) % availableModes.size
+        Log.d("AirPodsQSService", "nextIndex: $nextIndex")
         return availableModes[nextIndex]
     }
 
