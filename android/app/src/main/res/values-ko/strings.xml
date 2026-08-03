@@ -174,7 +174,7 @@
     <string name="enter_enc_key_hex">16바이트 ENC_KEY를 16진수 문자열(32자)로 입력하세요:</string>
     <string name="must_be_32_hex_chars">정확히 32개의 16진수 문자여야 합니다</string>
     <string name="error_converting_hex">16진수 변환 오류:</string>
-    <string name="found_offset_restart_bluetooth">오프셋을 찾았습니다. Bluetooth 프로세스를 다시 시작하세요</string>
+    <string name="found_offset_restart_bluetooth">Bluetooth 프로세스를 다시 시작하세요</string>
     <string name="digital_assistant">디지털 어시스턴트</string>
     <string name="on">켬</string>
     <string name="camera_remote">카메라 리모컨</string>
@@ -264,4 +264,18 @@
     <string name="optimized_charging">최적화된 충전 한도</string>
     <string name="optimized_charging_description">AirPods는 일상적인 사용 패턴을 학습하여 최적화된 한도까지 충전할 시기와 완전 충전을 허용할 시기를 결정할 수 있습니다. 이 한도는 일상적인 사용 패턴에 맞춰 조정되며 시간이 지나도 배터리 수명을 보존합니다.\n이 설정은 지원되지 않는 AirPods 또는 오래된 펌웨어 버전의 AirPods에는 영향을 주지 않을 수 있습니다.</string>
     <string name="enable_app_in_xposed_or_update_device">계속하려면 Xposed에서 LibrePods를 활성화하거나 기기를 업데이트하세요.</string>
+    <string name="play_foss_premium_banner">결제 오류로 인해 프리미엄 이용 권한이 %1$d일 후 만료됩니다. 이미 앱을 업그레이드했다면 이 메시지를 눌러 billing@kavish.xyz로 이메일을 보내 이용 권한을 복원하거나 확인하세요. 불편을 드려 죄송합니다.</string>
+    <string name="custom">사용자 지정</string>
+    <string name="recommended">권장</string>
+    <string name="appearance">디자인</string>
+    <string name="use_material3e">Material 3 Expressive 사용</string>
+    <string name="material3e">Material 3 Expressive</string>
+    <string name="update_m3e_description">LibrePods가 새로운 타이포그래피와 적응형 색상 구성표를 포함한 Material 3 Expressive 기반의 새로운 디자인을 지원합니다.\n앱 설정에서 Apple 디자인으로 다시 전환할 수 있습니다.</string>
+    <string name="update_equalizer_description">최신 AirPods 베타 펌웨어에서만 사용할 수 있습니다. 베타 펌웨어를 설치하려면 OS 버전 27을 실행하는 Apple 기기가 필요합니다.</string>
+    <string name="what_s_new">새로운 기능</string>
+    <string name="reconnecting">다시 연결하는 중</string>
+    <string name="tap_to_reconnect">탭하여 다시 연결</string>
+    <string name="permissions">권한</string>
+    <string name="privacy_policy">개인정보 처리방침</string>
+    <string name="i_agree">동의합니다</string>
 </resources>
