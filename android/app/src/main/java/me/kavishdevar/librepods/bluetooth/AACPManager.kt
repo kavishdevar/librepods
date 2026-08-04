@@ -34,6 +34,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  */
 class AACPManager {
     private val TAG = "AACPManager[${System.identityHashCode(this)}]"
+    private val writerLock = Any()
     companion object {
         @Suppress("unused")
         object Opcodes {
@@ -1220,15 +1221,16 @@ class AACPManager {
                 )
             }
 
-            val socket = BluetoothConnectionManager.aacpSocket ?: return false
-
-            if (socket.isConnected) {
-                socket.outputStream?.write(packet)
-                socket.outputStream?.flush()
-                return true
-            } else {
-                Log.d(TAG, "Can't send packet: Socket not initialized or connected")
-                return false
+            return synchronized(writerLock) {
+                val socket = BluetoothConnectionManager.aacpSocket
+                if (socket?.isConnected == true) {
+                    socket.outputStream.write(packet)
+                    socket.outputStream.flush()
+                    true
+                } else {
+                    Log.d(TAG, "Can't send packet: Socket not initialized or connected")
+                    false
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error sending packet: ${e.message}")

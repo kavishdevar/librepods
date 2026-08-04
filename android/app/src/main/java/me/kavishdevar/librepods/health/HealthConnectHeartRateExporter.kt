@@ -80,7 +80,7 @@ class HealthConnectHeartRateExporter(
     private val mutex = Mutex()
     private val pendingSamples = linkedMapOf<String, PendingSample>()
     private var pendingBatch: PendingBatch? = null
-    private var lowDataWindowStartMillis: Long? = null
+    private var minuteWindowStartMillis: Long? = null
     private var requestedDetailedSamples: Boolean? = null
     private var healthConnectClient: HealthConnectClient? = null
     private var scheduledFlush: Job? = null
@@ -108,8 +108,7 @@ class HealthConnectHeartRateExporter(
                 HealthConnectClient.SDK_AVAILABLE -> {
                     val client = getClient()
                     val granted = try {
-                        client.permissionController.getGrantedPermissions()
-                            .contains(WRITE_HEART_RATE_PERMISSION)
+                        hasWritePermission(client)
                     } catch (error: Exception) {
                         Log.w(TAG, "Unable to query Health Connect permissions", error)
                         _enabled.value = false
@@ -166,8 +165,7 @@ class HealthConnectHeartRateExporter(
             when (HealthConnectClient.getSdkStatus(appContext)) {
                 HealthConnectClient.SDK_AVAILABLE -> {
                     val granted = try {
-                        getClient().permissionController.getGrantedPermissions()
-                            .contains(WRITE_HEART_RATE_PERMISSION)
+                        hasWritePermission(getClient())
                     } catch (error: Exception) {
                         Log.w(TAG, "Unable to enable Health Connect export", error)
                         _enabled.value = false
@@ -249,8 +247,8 @@ class HealthConnectHeartRateExporter(
                         deviceModel = deviceModel.ifBlank { "AirPods" }
                     )
                 )
-                if (!_detailedSamples.value && lowDataWindowStartMillis == null) {
-                    lowDataWindowStartMillis = sample.receivedAtMillis
+                if (!_detailedSamples.value && minuteWindowStartMillis == null) {
+                    minuteWindowStartMillis = sample.receivedAtMillis
                 }
                 trimBufferLocked()
 
@@ -265,12 +263,12 @@ class HealthConnectHeartRateExporter(
                         scheduleFlushLocked(FLUSH_INTERVAL_MILLIS)
                         false
                     }
-                } else if (hasCompletedLowDataWindowLocked()) {
+                } else if (hasCompletedMinuteWindowLocked()) {
                     scheduledFlush?.cancel()
                     scheduledFlush = null
                     true
                 } else {
-                    scheduleLowDataFlushLocked()
+                    scheduleMinuteFlushLocked()
                     false
                 }
             }
@@ -322,32 +320,41 @@ class HealthConnectHeartRateExporter(
                 _status.value = HealthConnectExportStatus.PERMISSION_REQUIRED
                 return false
             } catch (error: IOException) {
-                Log.w(TAG, "Health Connect write failed; keeping batch for retry", error)
-                _status.value = HealthConnectExportStatus.ERROR
-                scheduleFlushLocked(RETRY_INTERVAL_MILLIS)
+                handleRetryableWriteFailureLocked(
+                    "Health Connect write failed; keeping batch for retry",
+                    error
+                )
                 return false
             } catch (error: IllegalStateException) {
-                Log.w(TAG, "Health Connect is temporarily unavailable", error)
-                _status.value = HealthConnectExportStatus.ERROR
-                scheduleFlushLocked(RETRY_INTERVAL_MILLIS)
+                handleRetryableWriteFailureLocked(
+                    "Health Connect is temporarily unavailable",
+                    error
+                )
                 return false
             } catch (error: RuntimeException) {
-                Log.w(TAG, "Unexpected Health Connect write failure", error)
-                _status.value = HealthConnectExportStatus.ERROR
-                scheduleFlushLocked(RETRY_INTERVAL_MILLIS)
+                handleRetryableWriteFailureLocked(
+                    "Unexpected Health Connect write failure",
+                    error
+                )
                 return false
             }
         }
 
         applyRequestedDetailLocked()
-        return !hasPendingSamplesLocked()
+        return true
+    }
+
+    private fun handleRetryableWriteFailureLocked(message: String, error: Exception) {
+        Log.w(TAG, message, error)
+        _status.value = HealthConnectExportStatus.ERROR
+        scheduleFlushLocked(RETRY_INTERVAL_MILLIS)
     }
 
     private fun applyRequestedDetailLocked() {
         val detailed = requestedDetailedSamples ?: return
         if (hasPendingSamplesLocked()) return
 
-        lowDataWindowStartMillis = null
+        minuteWindowStartMillis = null
         sharedPreferences.edit {
             putBoolean(DETAILED_SAMPLES_PREFERENCE, detailed)
         }
@@ -371,13 +378,13 @@ class HealthConnectHeartRateExporter(
         if (_detailedSamples.value) {
             scheduleFlushLocked(FLUSH_INTERVAL_MILLIS)
         } else {
-            scheduleLowDataFlushLocked()
+            scheduleMinuteFlushLocked()
         }
     }
 
-    private fun scheduleLowDataFlushLocked() {
-        val windowStart = ensureLowDataWindowStartLocked() ?: return
-        val windowEnd = windowStart + LOW_DATA_WINDOW_MILLIS
+    private fun scheduleMinuteFlushLocked() {
+        val windowStart = ensureMinuteWindowStartLocked() ?: return
+        val windowEnd = windowStart + MINUTE_WINDOW_MILLIS
         val delayMillis = (windowEnd - System.currentTimeMillis()).coerceAtLeast(0L)
         scheduleFlushLocked(delayMillis)
     }
@@ -388,7 +395,7 @@ class HealthConnectHeartRateExporter(
         return if (_detailedSamples.value) {
             createDetailedBatchLocked()
         } else {
-            createLowDataBatchLocked(forcePartialMinute)
+            createMinuteAverageBatchLocked(forcePartialMinute)
         }
     }
 
@@ -410,17 +417,17 @@ class HealthConnectHeartRateExporter(
         ).also { pendingBatch = it }
     }
 
-    private fun createLowDataBatchLocked(forcePartialMinute: Boolean): PendingBatch? {
+    private fun createMinuteAverageBatchLocked(forcePartialMinute: Boolean): PendingBatch? {
         val orderedSamples = pendingSamples.values.sortedWith(PENDING_SAMPLE_COMPARATOR)
         if (orderedSamples.isEmpty()) return null
 
-        var windowStart = ensureLowDataWindowStartLocked() ?: return null
+        var windowStart = ensureMinuteWindowStartLocked() ?: return null
         val earliestTimestamp = orderedSamples.first().sample.receivedAtMillis
-        var windowEnd = windowStart + LOW_DATA_WINDOW_MILLIS
+        var windowEnd = windowStart + MINUTE_WINDOW_MILLIS
         while (earliestTimestamp >= windowEnd) {
             windowStart = windowEnd
-            windowEnd = windowStart + LOW_DATA_WINDOW_MILLIS
-            lowDataWindowStartMillis = windowStart
+            windowEnd = windowStart + MINUTE_WINDOW_MILLIS
+            minuteWindowStartMillis = windowStart
         }
 
         val hasSampleAfterWindow = orderedSamples.any {
@@ -462,7 +469,7 @@ class HealthConnectHeartRateExporter(
     private fun completePendingBatchLocked(batch: PendingBatch) {
         pendingBatch = null
         if (batch.detail == BatchDetail.MINUTE_AVERAGE) {
-            lowDataWindowStartMillis = if (batch.partialMinute) {
+            minuteWindowStartMillis = if (batch.partialMinute) {
                 null
             } else {
                 batch.endTimeMillis
@@ -518,18 +525,18 @@ class HealthConnectHeartRateExporter(
     private fun bufferedSampleCountLocked(): Int =
         pendingSamples.size + (pendingBatch?.samples?.size ?: 0)
 
-    private fun hasCompletedLowDataWindowLocked(): Boolean {
-        val windowStart = ensureLowDataWindowStartLocked() ?: return false
-        val windowEnd = windowStart + LOW_DATA_WINDOW_MILLIS
+    private fun hasCompletedMinuteWindowLocked(): Boolean {
+        val windowStart = ensureMinuteWindowStartLocked() ?: return false
+        val windowEnd = windowStart + MINUTE_WINDOW_MILLIS
         return System.currentTimeMillis() >= windowEnd || pendingSamples.values.any {
             it.sample.receivedAtMillis >= windowEnd
         }
     }
 
-    private fun ensureLowDataWindowStartLocked(): Long? {
-        lowDataWindowStartMillis?.let { return it }
+    private fun ensureMinuteWindowStartLocked(): Long? {
+        minuteWindowStartMillis?.let { return it }
         return pendingSamples.values.minOfOrNull { it.sample.receivedAtMillis }?.also {
-            lowDataWindowStartMillis = it
+            minuteWindowStartMillis = it
         }
     }
 
@@ -587,6 +594,9 @@ class HealthConnectHeartRateExporter(
     private fun getClient(): HealthConnectClient = healthConnectClient
         ?: HealthConnectClient.getOrCreate(appContext).also { healthConnectClient = it }
 
+    private suspend fun hasWritePermission(client: HealthConnectClient): Boolean =
+        WRITE_HEART_RATE_PERMISSION in client.permissionController.getGrantedPermissions()
+
     private fun statusForSdk(): HealthConnectExportStatus =
         when (HealthConnectClient.getSdkStatus(appContext)) {
             HealthConnectClient.SDK_AVAILABLE -> HealthConnectExportStatus.PERMISSION_REQUIRED
@@ -598,8 +608,7 @@ class HealthConnectHeartRateExporter(
         return when (HealthConnectClient.getSdkStatus(appContext)) {
             HealthConnectClient.SDK_AVAILABLE -> {
                 val permissionGranted = try {
-                    getClient().permissionController.getGrantedPermissions()
-                        .contains(WRITE_HEART_RATE_PERMISSION)
+                    hasWritePermission(getClient())
                 } catch (error: Exception) {
                     Log.w(TAG, "Unable to query Health Connect permissions", error)
                     return HealthConnectExportStatus.ERROR
@@ -638,7 +647,7 @@ class HealthConnectHeartRateExporter(
         private const val MAX_BATCH_SIZE = 15
         private const val MAX_BUFFERED_SAMPLES = 300
         private const val FLUSH_INTERVAL_MILLIS = 15_000L
-        private const val LOW_DATA_WINDOW_MILLIS = 60_000L
+        private const val MINUTE_WINDOW_MILLIS = 60_000L
         private const val RETRY_INTERVAL_MILLIS = 30_000L
 
         val WRITE_HEART_RATE_PERMISSION: String =

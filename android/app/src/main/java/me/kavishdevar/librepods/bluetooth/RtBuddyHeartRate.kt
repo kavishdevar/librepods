@@ -124,14 +124,6 @@ internal class RtBuddyHeartRateDecoder {
     }
 
     private fun classifyFrame(frame: ByteArray): FrameClassification {
-        if (frame.size < AACP_RTBUDDY_HEADER_LENGTH) return FrameClassification()
-        if (!frame.startsWithPrefix(RTBUDDY_FRAME_PREFIX)) return FrameClassification()
-
-        val declaredLength = frame.readLe16(10)
-        if (frame.size != AACP_RTBUDDY_HEADER_LENGTH + declaredLength) {
-            return FrameClassification()
-        }
-
         val hasHeartRateReference = hasHeartRateServiceReference(
             frame,
             AACP_RTBUDDY_HEADER_LENGTH,
@@ -145,16 +137,19 @@ internal class RtBuddyHeartRateDecoder {
             return FrameClassification(isHeartRateRelated = heartRateRelated)
         }
 
-        val command = sensorData.commands.firstOrNull { command ->
-            val payload = command.payload ?: return@firstOrNull false
-            command.service == HEART_RATE_SERVICE &&
-                payload.size == HEART_RATE_PAYLOAD_LENGTH &&
-                payload[15] == 0x10.toByte() &&
-                payload[16] == 0x00.toByte() &&
-                payload[17] == 0x00.toByte() &&
-                payload[1].toInt().and(0xFF) in MIN_BPM..MAX_BPM
-        } ?: return FrameClassification(isHeartRateRelated = true)
-        val payload = command.payload ?: return FrameClassification(isHeartRateRelated = true)
+        val payload = sensorData.commands.asSequence()
+            .mapNotNull { command ->
+                command.payload?.takeIf {
+                    command.service == HEART_RATE_SERVICE &&
+                        it.size == HEART_RATE_PAYLOAD_LENGTH &&
+                        it[15] == 0x10.toByte() &&
+                        it[16] == 0x00.toByte() &&
+                        it[17] == 0x00.toByte() &&
+                        it[1].toInt().and(0xFF) in MIN_BPM..MAX_BPM
+                }
+            }
+            .firstOrNull()
+            ?: return FrameClassification(isHeartRateRelated = true)
 
         return FrameClassification(
             isHeartRateRelated = true,
@@ -182,17 +177,17 @@ internal class RtBuddyHeartRateDecoder {
                 }
 
                 WIRE_LENGTH_DELIMITED -> {
-                    val length = readVarint(data, index, end) ?: return false
-                    if (length.value > Int.MAX_VALUE) return false
-                    index = length.nextIndex
-                    val subEnd = index + length.value.toInt()
-                    if (subEnd < index || subEnd > end) return false
+                    val fieldValue = readLengthDelimited(data, index, end) ?: return false
                     if (field in HEART_RATE_SERVICE_REFERENCE_FIELDS &&
-                        parseReferencedService(data, index, subEnd) == HEART_RATE_SERVICE
+                        parseReferencedService(
+                            data,
+                            fieldValue.startIndex,
+                            fieldValue.endIndex
+                        ) == HEART_RATE_SERVICE
                     ) {
                         return true
                     }
-                    index = subEnd
+                    index = fieldValue.endIndex
                 }
 
                 WIRE_FIXED64 -> {
@@ -235,28 +230,36 @@ internal class RtBuddyHeartRateDecoder {
                 }
 
                 WIRE_LENGTH_DELIMITED -> {
-                    val length = readVarint(data, index, end) ?: return null
-                    index = length.nextIndex
-                    if (length.value > Int.MAX_VALUE) return null
-                    val subEnd = index + length.value.toInt()
-                    if (subEnd < index || subEnd > end) return null
+                    val fieldValue = readLengthDelimited(data, index, end) ?: return null
 
                     when (field) {
-                        5, 8, 9, 12 -> parseReferencedService(data, index, subEnd)
+                        5, 8, 9, 12 -> parseReferencedService(
+                            data,
+                            fieldValue.startIndex,
+                            fieldValue.endIndex
+                        )
                             ?.let(referencedServices::add)
 
                         7 -> {
-                            val command = parseCommand(data, index, subEnd)
+                            val command = parseCommand(
+                                data,
+                                fieldValue.startIndex,
+                                fieldValue.endIndex
+                            )
                             if (command != null) {
                                 commands += command
                                 if (command.service >= 0) referencedServices += command.service
                             } else {
-                                parseReferencedService(data, index, subEnd)
+                                parseReferencedService(
+                                    data,
+                                    fieldValue.startIndex,
+                                    fieldValue.endIndex
+                                )
                                     ?.let(referencedServices::add)
                             }
                         }
                     }
-                    index = subEnd
+                    index = fieldValue.endIndex
                 }
 
                 WIRE_FIXED64 -> {
@@ -301,19 +304,18 @@ internal class RtBuddyHeartRateDecoder {
                 }
 
                 WIRE_LENGTH_DELIMITED -> {
-                    val length = readVarint(data, index, end) ?: return null
-                    index = length.nextIndex
-                    if (length.value > Int.MAX_VALUE) return null
-                    val subEnd = index + length.value.toInt()
-                    if (subEnd < index || subEnd > end) return null
+                    val fieldValue = readLengthDelimited(data, index, end) ?: return null
                     if (field == 3) {
                         if (payload != null) {
                             duplicatePayload = true
                         } else {
-                            payload = data.copyOfRange(index, subEnd)
+                            payload = data.copyOfRange(
+                                fieldValue.startIndex,
+                                fieldValue.endIndex
+                            )
                         }
                     }
-                    index = subEnd
+                    index = fieldValue.endIndex
                 }
 
                 WIRE_FIXED64 -> {
@@ -353,11 +355,8 @@ internal class RtBuddyHeartRateDecoder {
                 }
 
                 WIRE_LENGTH_DELIMITED -> {
-                    val length = readVarint(data, index, end) ?: return null
-                    if (length.value > Int.MAX_VALUE) return null
-                    val nextIndex = length.nextIndex + length.value.toInt()
-                    if (nextIndex < length.nextIndex || nextIndex > end) return null
-                    index = nextIndex
+                    val fieldValue = readLengthDelimited(data, index, end) ?: return null
+                    index = fieldValue.endIndex
                 }
 
                 WIRE_FIXED64 -> {
@@ -391,6 +390,22 @@ internal class RtBuddyHeartRateDecoder {
         return null
     }
 
+    private fun readLengthDelimited(
+        data: ByteArray,
+        start: Int,
+        end: Int
+    ): LengthDelimitedRead? {
+        val length = readVarint(data, start, end) ?: return null
+        if (length.value > Int.MAX_VALUE) return null
+
+        val valueEnd = length.nextIndex + length.value.toInt()
+        if (valueEnd < length.nextIndex || valueEnd > end) return null
+        return LengthDelimitedRead(
+            startIndex = length.nextIndex,
+            endIndex = valueEnd
+        )
+    }
+
     private data class SensorDataWx(
         val sequence: Int,
         val logType: Int,
@@ -411,6 +426,11 @@ internal class RtBuddyHeartRateDecoder {
     private data class VarintRead(
         val value: Long,
         val nextIndex: Int
+    )
+
+    private data class LengthDelimitedRead(
+        val startIndex: Int,
+        val endIndex: Int
     )
 
     private companion object {
@@ -445,13 +465,6 @@ internal class RtBuddyHeartRateDecoder {
 private fun ByteArray.readLe16(offset: Int): Int =
     this[offset].toInt().and(0xFF) or (this[offset + 1].toInt().and(0xFF) shl 8)
 
-private fun ByteArray.startsWithPrefix(prefix: ByteArray): Boolean {
-    if (size < prefix.size) return false
-    for (index in prefix.indices) {
-        if (this[index] != prefix[index]) return false
-    }
-    return true
-}
 
 private fun ByteArray.indexOfPrefix(prefix: ByteArray, startIndex: Int): Int {
     if (prefix.isEmpty()) return startIndex.coerceAtMost(size)

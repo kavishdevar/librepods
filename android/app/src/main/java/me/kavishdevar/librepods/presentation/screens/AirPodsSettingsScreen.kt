@@ -343,6 +343,7 @@ fun AirPodsSettingsScreen(
                     streaming = state.heartRateStreaming,
                     connected = state.isLocallyConnected,
                     latestSample = state.heartRateSamples.lastOrNull(),
+                    heartRateSamples = state.heartRateSamples,
                     onMonitoringChanged = setHeartRateMonitoringEnabled,
                     onOpenDetails = navigateToHeartRateTest
                 )

@@ -242,6 +242,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     private val heartRateScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val heartRateLock = Any()
+    private val transportRecoveryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val transportRecoveryLock = Any()
+    private var aacpReconnectJob: Job? = null
+    private var aacpReconnectSuppressed = false
     private var heartRateStartJob: Job? = null
     private var heartRateSessionRequested = false
     private var heartRateStartCommandSent = false
@@ -279,6 +283,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         private const val HEART_RATE_FIRST_SAMPLE_TIMEOUT_MILLIS = 12_000L
         private const val HEART_RATE_STALL_TIMEOUT_MILLIS = 6_000L
         private const val HEART_RATE_WATCHDOG_INTERVAL_MILLIS = 1_000L
+        private const val AACP_RECONNECT_DELAY_MILLIS = 750L
+        private const val EXTRA_AACP_TRANSPORT_FAILURE =
+            "me.kavishdevar.librepods.extra.AACP_TRANSPORT_FAILURE"
         private val HEART_RATE_RETRY_BACKOFF_MILLIS = longArrayOf(500L, 1_000L, 2_000L)
 
         init {
@@ -719,6 +726,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         connectionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == AirPodsNotifications.AIRPODS_CONNECTION_DETECTED) {
+                    cancelAacpReconnect(
+                        source = "connection-detected",
+                        suppressFutureReconnects = false
+                    )
+                    synchronized(transportRecoveryLock) {
+                        aacpReconnectSuppressed = false
+                    }
                     device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         intent.getParcelableExtra("device", BluetoothDevice::class.java)!!
                     } else {
@@ -747,14 +761,20 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 //                    }
 
                 } else if (intent?.action == AirPodsNotifications.AIRPODS_DISCONNECTED) {
+                    val isLocalTransportFailure = intent.getBooleanExtra(
+                        EXTRA_AACP_TRANSPORT_FAILURE,
+                        false
+                    )
+                    if (!isLocalTransportFailure) {
+                        suppressAacpReconnect("physical-disconnect-broadcast")
+                        clearAacpTransport(
+                            source = "physical-disconnect-broadcast",
+                            expectedSocket = null
+                        )
+                    }
                     device = null
 //                    isConnectedLocally = false
                     popupShown = false
-                    updateNotificationContent(false)
-                    stopHeartRateMonitoring()
-                    aacpManager.disconnected()
-                    BluetoothConnectionManager.aacpSocket = null
-                    BluetoothConnectionManager.attSocket = null
                 }
             }
         }
@@ -2888,37 +2908,53 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
                             } else if (bytesRead == -1) {
                                 Log.d("AirPodsService", "socket closed (bytesRead = -1)")
-                                sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
-                                    setPackage(packageName)
-                                })
-                                handleHeartRateDisconnected()
-                                aacpManager.disconnected()
+                                if (handleAacpTransportFailure(
+                                        failedSocket = socket,
+                                        reconnectDevice = device,
+                                        source = "reader-eof"
+                                    )
+                                ) {
+                                    broadcastAacpTransportFailure()
+                                }
                                 return@launch
                             }
                         } catch (e: Exception) {
-                            Log.w(TAG, "Error reading data, we have probably disconnected.")
-                            e.printStackTrace()
-                            sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
-                                setPackage(packageName)
-                            })
-                            handleHeartRateDisconnected()
-                            aacpManager.disconnected()
+                            Log.w(TAG, "AACP transport failure source=reader-exception: ${e.message}", e)
+                            if (handleAacpTransportFailure(
+                                    failedSocket = socket,
+                                    reconnectDevice = device,
+                                    source = "reader-exception"
+                                )
+                            ) {
+                                broadcastAacpTransportFailure()
+                            }
                             return@launch
                         }
 
                     }
                     Log.d("AirPods Service", "socket closed")
 //                        isConnectedLocally = false
-                    handleHeartRateDisconnected()
-                    aacpManager.disconnected()
-                    updateNotificationContent(false)
-                    sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
-                        setPackage(packageName)
-                    })
+                    if (handleAacpTransportFailure(
+                            failedSocket = socket,
+                            reconnectDevice = device,
+                            source = "reader-loop-ended"
+                        )
+                    ) {
+                        broadcastAacpTransportFailure()
+                    }
                 }
             }
         } catch (e: Exception) {
-            handleHeartRateDisconnected()
+            if (handleAacpTransportFailure(
+                    failedSocket = socket,
+                    reconnectDevice = device,
+                    source = "connection-setup-exception"
+                )
+            ) {
+                broadcastAacpTransportFailure()
+            } else {
+                handleHeartRateDisconnected()
+            }
             e.printStackTrace()
             Log.d(TAG, "Failed to connect to BluetoothConnectionManager.aacpSocket?: ${e.message}")
             showSocketConnectionFailureNotification("Failed to establish connection: ${e.localizedMessage}")
@@ -2931,7 +2967,138 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 //        }
     }
 
+    private fun closeSocketQuietly(socket: BluetoothSocket?, label: String) {
+        if (socket == null) return
+        try {
+            socket.close()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to close $label: ${e.message}")
+        }
+    }
+
+    /**
+     * Removes a dead AACP transport without sending any more packets through it. The expected
+     * socket check prevents an old reader from tearing down a newer connection.
+     */
+    private fun clearAacpTransport(
+        source: String,
+        expectedSocket: BluetoothSocket?
+    ): Boolean {
+        val aacpSocketToClose: BluetoothSocket?
+        val attSocketToClose: BluetoothSocket?
+        synchronized(transportRecoveryLock) {
+            val currentSocket = BluetoothConnectionManager.aacpSocket
+            if (expectedSocket != null && currentSocket !== expectedSocket) {
+                Log.i(TAG, "Ignoring stale AACP cleanup source=$source")
+                return false
+            }
+
+            aacpSocketToClose = currentSocket
+            attSocketToClose = BluetoothConnectionManager.attSocket
+            BluetoothConnectionManager.aacpSocket = null
+            BluetoothConnectionManager.attSocket = null
+        }
+
+        closeSocketQuietly(aacpSocketToClose, "AACP socket")
+        closeSocketQuietly(attSocketToClose, "ATT socket")
+        handleHeartRateDisconnected()
+        aacpManager.disconnected()
+        updateNotificationContent(false)
+        Log.w(
+            TAG,
+            "AACP transport cleaned source=$source socketId=" +
+                aacpSocketToClose?.let { System.identityHashCode(it) }
+        )
+        return aacpSocketToClose != null
+    }
+
+    private fun handleAacpTransportFailure(
+        failedSocket: BluetoothSocket,
+        reconnectDevice: BluetoothDevice,
+        source: String
+    ): Boolean {
+        val cleared = clearAacpTransport(source, expectedSocket = failedSocket)
+        if (cleared) {
+            scheduleAacpReconnect(reconnectDevice, source)
+        }
+        return cleared
+    }
+
+    private fun broadcastAacpTransportFailure() {
+        sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DISCONNECTED).apply {
+            putExtra(EXTRA_AACP_TRANSPORT_FAILURE, true)
+            setPackage(packageName)
+        })
+    }
+
+    private fun scheduleAacpReconnect(reconnectDevice: BluetoothDevice, source: String) {
+        synchronized(transportRecoveryLock) {
+            if (aacpReconnectSuppressed || aacpReconnectJob?.isActive == true) {
+                Log.i(TAG, "Skipping AACP reconnect source=$source")
+                return
+            }
+
+            val job = transportRecoveryScope.launch(start = CoroutineStart.LAZY) {
+                val currentJob = coroutineContext[Job] ?: return@launch
+                try {
+                    delay(AACP_RECONNECT_DELAY_MILLIS)
+                    val shouldReconnect = synchronized(transportRecoveryLock) {
+                        aacpReconnectJob === currentJob &&
+                            !aacpReconnectSuppressed &&
+                            BluetoothConnectionManager.aacpSocket == null
+                    }
+                    if (!shouldReconnect) return@launch
+
+                    Log.i(TAG, "AACP reconnect starting source=$source")
+                    val adapter = getSystemService(BluetoothManager::class.java).adapter
+                    connectToSocket(adapter, reconnectDevice)
+
+                    val reconnectWasCancelled = synchronized(transportRecoveryLock) {
+                        aacpReconnectJob !== currentJob || aacpReconnectSuppressed
+                    }
+                    if (reconnectWasCancelled) {
+                        clearAacpTransport(
+                            source = "cancelled-reconnect",
+                            expectedSocket = BluetoothConnectionManager.aacpSocket
+                        )
+                    }
+                    Log.i(
+                        TAG,
+                        "AACP reconnect result source=$source success=" +
+                            (BluetoothConnectionManager.aacpSocket?.isConnected == true)
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "AACP reconnect failed source=$source: ${e.message}", e)
+                } finally {
+                    synchronized(transportRecoveryLock) {
+                        if (aacpReconnectJob === currentJob) {
+                            aacpReconnectJob = null
+                        }
+                    }
+                }
+            }
+            aacpReconnectJob = job
+            job.start()
+        }
+    }
+
+    private fun cancelAacpReconnect(source: String, suppressFutureReconnects: Boolean) {
+        val job = synchronized(transportRecoveryLock) {
+            if (suppressFutureReconnects) aacpReconnectSuppressed = true
+            aacpReconnectJob.also { aacpReconnectJob = null }
+        }
+        if (job?.isActive == true) {
+            Log.i(TAG, "Cancelling pending AACP reconnect source=$source")
+            job.cancel()
+        }
+    }
+
+    private fun suppressAacpReconnect(source: String) {
+        cancelAacpReconnect(source, suppressFutureReconnects = true)
+    }
+
     fun disconnectForCD() {
+        suppressAacpReconnect("cross-device-disconnect")
         stopHeartRateMonitoring()
         BluetoothConnectionManager.aacpSocket?.close()
         MediaController.pausedWhileTakingOver = false
@@ -3236,6 +3403,8 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             runBlocking { heartRateExporter.closeAndFlush() }
         }
         heartRateScope.cancel()
+        suppressAacpReconnect("service-destroyed")
+        transportRecoveryScope.cancel()
 //        isConnectedLocally = false
 //        CrossDevice.isAvailable = true
         super.onDestroy()
@@ -3438,31 +3607,42 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             canContinueHeartRateMonitoring() && sendFrame()
         }
 
-    private fun stopHeartRateSessionLocked(forceStop: Boolean = false) {
+    private fun stopHeartRateSessionLocked(
+        forceStop: Boolean = false,
+        sendStopFrame: Boolean = true
+    ) {
         val shouldStop =
             forceStop || heartRateSessionRequested || heartRateStartCommandSent
         heartRateSessionRequested = false
         heartRateStartCommandSent = false
         _heartRateStreaming.value = false
 
-        if (shouldStop && BluetoothConnectionManager.aacpSocket?.isConnected == true) {
+        if (sendStopFrame && shouldStop &&
+            BluetoothConnectionManager.aacpSocket?.isConnected == true
+        ) {
             aacpManager.sendHeartRateStopFrame()
         }
     }
 
-    private fun stopHeartRateMonitoring(forceStop: Boolean = false) {
+    private fun stopHeartRateMonitoring(
+        forceStop: Boolean = false,
+        sendStopFrame: Boolean = true
+    ) {
         synchronized(heartRateLock) {
             val jobWasActive = heartRateStartJob?.isActive == true
             heartRateStartJob?.cancel()
             heartRateStartJob = null
             lastValidHeartRateSampleElapsedRealtime = null
-            stopHeartRateSessionLocked(forceStop = forceStop || jobWasActive)
+            stopHeartRateSessionLocked(
+                forceStop = forceStop || jobWasActive,
+                sendStopFrame = sendStopFrame
+            )
         }
     }
 
     private fun handleHeartRateDisconnected() {
         if (::heartRateExporter.isInitialized) heartRateExporter.flushAsync()
-        stopHeartRateMonitoring()
+        stopHeartRateMonitoring(sendStopFrame = false)
     }
 
     var isHeadTrackingActive = false
