@@ -90,6 +90,14 @@ class AACPManager {
             0x08, 0xED.toByte(), 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
             0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00
         )
+        private val HEART_RATE_START_PACKET = HEADER_BYTES + HEART_RATE_START_1S
+        private val HEART_RATE_STOP_PACKET = HEADER_BYTES + HEART_RATE_STOP
+
+        private const val HEART_RATE_DIAGNOSTIC_LOG_INTERVAL_MILLIS = 10_000L
+        private const val HEART_RATE_DIAGNOSTIC_REJECTION_THRESHOLD = 10
+        private const val HEART_RATE_DIAGNOSTIC_COUNT_LIMIT = 1_000
+        private const val HEART_RATE_DIAGNOSTIC_STRUCTURE_LIMIT = 4
+        private const val HEART_RATE_DIAGNOSTIC_OVERFLOW_KEY = "other_structures"
 
         data class ControlCommandStatus(
             val identifier: ControlCommandIdentifiers, val value: ByteArray
@@ -311,6 +319,14 @@ class AACPManager {
 
     private var callback: PacketCallback? = null
     private val heartRateDecoder = RtBuddyHeartRateDecoder()
+    private val heartRateDiagnosticLock = Any()
+    private var heartRateAcceptedSampleLogged = false
+    private var heartRateDiagnosticWindowStartedAtMillis = 0L
+    private var heartRateDiagnosticRelatedFrames = 0
+    private var heartRateDiagnosticRejectedFrames = 0
+    private val heartRateDiagnosticRejectionReasons =
+        mutableMapOf<HeartRateRejectionReason, Int>()
+    private val heartRateDiagnosticStructures = linkedMapOf<String, Int>()
 
     fun setPacketCallback(callback: PacketCallback) {
         this.callback = callback
@@ -442,17 +458,114 @@ class AACPManager {
 
     fun receivePacket(packet: ByteArray): Boolean {
         val heartRateResult = heartRateDecoder.feed(packet)
-        if (heartRateResult.relatedFrameCount > 0) {
-            Log.d(
-                TAG,
-                "Received RTBuddy heart-rate frames=${heartRateResult.relatedFrameCount}, " +
-                    "rejected=${heartRateResult.rejectedFrameCount}, " +
-                    "samples=${heartRateResult.samples.size}"
-            )
-        }
+        recordHeartRateDecodeDiagnostics(heartRateResult)
         heartRateResult.samples.forEach { callback?.onHeartRateReceived(it) }
         heartRateResult.passthroughPackets.forEach(::receiveStandardPacket)
         return heartRateResult.suppressRawLogging
+    }
+
+    private fun recordHeartRateDecodeDiagnostics(result: HeartRateDecodeResult) {
+        if (result.relatedFrameCount == 0) return
+
+        var logAcceptedSample = false
+        var rejectionSummary: String? = null
+        synchronized(heartRateDiagnosticLock) {
+            if (result.samples.isNotEmpty() && !heartRateAcceptedSampleLogged) {
+                heartRateAcceptedSampleLogged = true
+                logAcceptedSample = true
+            }
+
+            if (result.rejectedFrameCount > 0) {
+                val now = System.currentTimeMillis()
+                if (heartRateDiagnosticWindowStartedAtMillis == 0L) {
+                    heartRateDiagnosticWindowStartedAtMillis = now
+                }
+                heartRateDiagnosticRelatedFrames = boundedDiagnosticCount(
+                    heartRateDiagnosticRelatedFrames,
+                    result.relatedFrameCount
+                )
+                heartRateDiagnosticRejectedFrames = boundedDiagnosticCount(
+                    heartRateDiagnosticRejectedFrames,
+                    result.rejectedFrameCount
+                )
+                result.rejectionReasons.forEach { (reason, count) ->
+                    heartRateDiagnosticRejectionReasons.incrementBounded(reason, count)
+                }
+                result.structuralDiagnostics.forEach { (structure, count) ->
+                    val existing = heartRateDiagnosticStructures[structure]
+                    when {
+                        existing != null -> {
+                            heartRateDiagnosticStructures.incrementBounded(structure, count)
+                        }
+
+                        heartRateDiagnosticStructures.size < HEART_RATE_DIAGNOSTIC_STRUCTURE_LIMIT -> {
+                            heartRateDiagnosticStructures[structure] = count.coerceAtMost(
+                                HEART_RATE_DIAGNOSTIC_COUNT_LIMIT
+                            )
+                        }
+
+                        else -> {
+                            heartRateDiagnosticStructures.incrementBounded(
+                                HEART_RATE_DIAGNOSTIC_OVERFLOW_KEY,
+                                count
+                            )
+                        }
+                    }
+                }
+
+                val windowElapsed = now - heartRateDiagnosticWindowStartedAtMillis >=
+                    HEART_RATE_DIAGNOSTIC_LOG_INTERVAL_MILLIS
+                val thresholdReached = heartRateDiagnosticRejectedFrames >=
+                    HEART_RATE_DIAGNOSTIC_REJECTION_THRESHOLD
+                if (windowElapsed || thresholdReached) {
+                    val reasons = heartRateDiagnosticRejectionReasons.entries
+                        .sortedBy { it.key.name }
+                        .joinToString(",") { (reason, count) ->
+                            "${reason.name.lowercase()}=$count"
+                        }
+                    val structures = heartRateDiagnosticStructures.entries
+                        .sortedByDescending { it.value }
+                        .joinToString(" || ") { (structure, count) ->
+                            "$count*$structure"
+                        }
+                        .ifEmpty { "none" }
+                    rejectionSummary =
+                        "RTBuddy heart-rate decode window frames=$heartRateDiagnosticRelatedFrames " +
+                            "rejected=$heartRateDiagnosticRejectedFrames reasons=$reasons; " +
+                            "structures=$structures; raw frame data suppressed"
+                    clearHeartRateDiagnosticWindowLocked()
+                }
+            }
+        }
+
+        if (logAcceptedSample) {
+            Log.d(TAG, "Validated first RTBuddy heart-rate sample for this AACP connection")
+        }
+        rejectionSummary?.let { Log.w(TAG, it) }
+    }
+
+    private fun boundedDiagnosticCount(current: Int, increment: Int): Int =
+        (current.toLong() + increment.toLong())
+            .coerceAtMost(HEART_RATE_DIAGNOSTIC_COUNT_LIMIT.toLong())
+            .toInt()
+
+    private fun <K> MutableMap<K, Int>.incrementBounded(key: K, increment: Int) {
+        this[key] = boundedDiagnosticCount(getOrDefault(key, 0), increment)
+    }
+
+    private fun clearHeartRateDiagnosticWindowLocked() {
+        heartRateDiagnosticWindowStartedAtMillis = 0L
+        heartRateDiagnosticRelatedFrames = 0
+        heartRateDiagnosticRejectedFrames = 0
+        heartRateDiagnosticRejectionReasons.clear()
+        heartRateDiagnosticStructures.clear()
+    }
+
+    private fun resetHeartRateDiagnostics() {
+        synchronized(heartRateDiagnosticLock) {
+            heartRateAcceptedSampleLogged = false
+            clearHeartRateDiagnosticWindowLocked()
+        }
     }
 
     @OptIn(ExperimentalStdlibApi::class)
@@ -1332,14 +1445,14 @@ class AACPManager {
         )
     }
 
-    private fun isHeartRateRtBuddyPacket(packet: ByteArray): Boolean {
-        return packet.contentEquals(HEADER_BYTES + HEART_RATE_START_1S) ||
-            packet.contentEquals(HEADER_BYTES + HEART_RATE_STOP)
-    }
+    private fun isHeartRateRtBuddyPacket(packet: ByteArray): Boolean =
+        packet.contentEquals(HEART_RATE_START_PACKET) ||
+            packet.contentEquals(HEART_RATE_STOP_PACKET)
 
     fun disconnected() {
         Log.d(TAG, "Disconnected, clearing state")
         heartRateDecoder.reset()
+        resetHeartRateDiagnostics()
         controlCommandStatusList.clear()
         controlCommandListeners.clear()
         owns = false

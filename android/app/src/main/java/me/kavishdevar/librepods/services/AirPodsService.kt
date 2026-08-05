@@ -256,11 +256,25 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     private var heartRateSessionRequested = false
     private var heartRateStartCommandSent = false
     private var lastValidHeartRateSampleElapsedRealtime: Long? = null
+    private var heartRateSamplesToDiscardAfterRefresh = 0
+    private var activeHeartRateRefreshReason: HeartRateRefreshReason? = null
+    private var heartRateRefreshAttemptCount = 0
+    private var heartRateRefreshAttemptStartedAt: Long? = null
+
+    private enum class HeartRateRefreshReason(val diagnosticName: String) {
+        FIRST_SAMPLE_TIMEOUT("first-sample-timeout"),
+        STREAM_STALLED("stream-stalled")
+    }
 
     private enum class HeartRateStreamFailure {
         FIRST_SAMPLE_TIMEOUT,
         STREAM_STALLED
     }
+
+    private data class HeartRateRefreshCompletion(
+        val reason: HeartRateRefreshReason,
+        val attempt: Int
+    )
 
     private val _heartRateMonitoringEnabled = MutableStateFlow(false)
     val heartRateMonitoringEnabled: StateFlow<Boolean> get() = _heartRateMonitoringEnabled
@@ -289,6 +303,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         private const val HEART_RATE_FIRST_SAMPLE_TIMEOUT_MILLIS = 12_000L
         private const val HEART_RATE_STALL_TIMEOUT_MILLIS = 6_000L
         private const val HEART_RATE_WATCHDOG_INTERVAL_MILLIS = 1_000L
+        private const val HEART_RATE_REFRESH_SAMPLES_TO_DISCARD = 3
         private const val AACP_INITIAL_RESPONSE_TIMEOUT_MILLIS = 12_000L
         private const val AACP_IDLE_PROBE_INTERVAL_MILLIS = 60_000L
         private const val AACP_PROBE_RESPONSE_TIMEOUT_MILLIS = 5_000L
@@ -1164,22 +1179,50 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             }
 
             override fun onHeartRateReceived(sample: HeartRateSample) {
+                var completedRefresh: HeartRateRefreshCompletion? = null
+                var shouldPublish = false
                 val accepted = synchronized(heartRateLock) {
                     if (!_heartRateMonitoringEnabled.value ||
                         BluetoothConnectionManager.aacpSocket?.isConnected != true
                     ) {
                         false
                     } else {
-                        lastValidHeartRateSampleElapsedRealtime = SystemClock.elapsedRealtime()
+                        val receivedAt = SystemClock.elapsedRealtime()
+                        lastValidHeartRateSampleElapsedRealtime = receivedAt
                         if (heartRateStartCommandSent && heartRateStartJob?.isActive == true) {
                             _heartRateStreaming.value = true
+                        }
+
+                        if (heartRateSamplesToDiscardAfterRefresh > 0) {
+                            heartRateSamplesToDiscardAfterRefresh--
+                        } else {
+                            val refreshAttemptStartedAt = heartRateRefreshAttemptStartedAt
+                            val refreshReason = activeHeartRateRefreshReason
+                            if (refreshReason != null && refreshAttemptStartedAt != null &&
+                                receivedAt >= refreshAttemptStartedAt
+                            ) {
+                                completedRefresh = HeartRateRefreshCompletion(
+                                    reason = refreshReason,
+                                    attempt = heartRateRefreshAttemptCount
+                                )
+                                clearActiveHeartRateRefreshLocked()
+                            }
+                            shouldPublish = true
                         }
                         true
                     }
                 }
-                if (!accepted) return
+                if (!accepted || !shouldPublish) return
 
-                _heartRateSamples.value = (_heartRateSamples.value + sample).takeLast(MAX_HEART_RATE_SAMPLES)
+                completedRefresh?.let { refresh ->
+                    Log.i(
+                        TAG,
+                        "RTBuddy heart-rate refresh succeeded " +
+                            "reason=${refresh.reason.diagnosticName} attempt=${refresh.attempt}"
+                    )
+                }
+                _heartRateSamples.value =
+                    (_heartRateSamples.value + sample).takeLast(MAX_HEART_RATE_SAMPLES)
                 heartRateExporter.enqueue(
                     sample = sample,
                     deviceModel = config.airpodsModelNumber.ifBlank { config.deviceName }
@@ -1344,15 +1387,25 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         )
         var justEnabledA2dp = false
         earDetectionNotification.setStatus(earDetection)
+        val data = if (earDetection.size >= 2) {
+            earDetection.copyOfRange(earDetection.size - 2, earDetection.size)
+        } else {
+            null
+        }
+        val newInEarData = data?.let {
+            listOf(it[0] == 0x00.toByte(), it[1] == 0x00.toByte())
+        }
+
+        // Do not proactively restart the heart-rate session when the ear status changes. The
+        // AirPods can keep the active session running on the remaining/primary bud; the watchdog
+        // below still refreshes it if samples actually stop arriving.
+
         if (config.earDetectionEnabled) {
-            val data = earDetection.copyOfRange(earDetection.size - 2, earDetection.size)
-            inEar = data[0] == 0x00.toByte() && data[1] == 0x00.toByte()
+            val currentData = data ?: return
+            val currentInEarData = newInEarData ?: return
+            inEar = currentData[0] == 0x00.toByte() && currentData[1] == 0x00.toByte()
 
-            val newInEarData = listOf(
-                data[0] == 0x00.toByte(), data[1] == 0x00.toByte()
-            )
-
-            if (inEarData.sorted() == listOf(false, false) && newInEarData.sorted() != listOf(
+            if (inEarData.sorted() == listOf(false, false) && currentInEarData.sorted() != listOf(
                     false, false
                 ) && islandWindow?.isVisible != true
             ) {
@@ -1366,25 +1419,25 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 )
             }
 
-            if (newInEarData == listOf(false, false) && islandWindow?.isVisible == true) {
+            if (currentInEarData == listOf(false, false) && islandWindow?.isVisible == true) {
                 islandWindow?.close()
             }
 
-            if (newInEarData.contains(true) && inEarData == listOf(false, false)) {
+            if (currentInEarData.contains(true) && inEarData == listOf(false, false)) {
                 connectAudio(this@AirPodsService, device)
                 justEnabledA2dp = true
                 registerA2dpConnectionReceiver()
                 if (MediaController.getMusicActive()) {
                     MediaController.userPlayedTheMedia = true
                 }
-            } else if (newInEarData == listOf(false, false)) {
+            } else if (currentInEarData == listOf(false, false)) {
                 MediaController.sendPause(force = true)
                 if (config.disconnectWhenNotWearing) {
                     disconnectAudio(this@AirPodsService, device)
                 }
             }
             val wasNone = inEarData == listOf(false, false)
-            val nowSingle = newInEarData.count { it } == 1
+            val nowSingle = currentInEarData.count { it } == 1
 
             if (wasNone && nowSingle) {
                 MediaController.sendPlay()
@@ -1392,22 +1445,22 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 return
             }
 
-            if (inEarData.contains(false) && newInEarData == listOf(true, true)) {
+            if (inEarData.contains(false) && currentInEarData == listOf(true, true)) {
                 Log.d("AirPodsParser", "User put in both AirPods from just one.")
                 MediaController.userPlayedTheMedia = false
             }
 
-            if (newInEarData.contains(false) && inEarData == listOf(true, true)) {
+            if (currentInEarData.contains(false) && inEarData == listOf(true, true)) {
                 Log.d("AirPodsParser", "User took one of two out.")
                 MediaController.userPlayedTheMedia = false
             }
 
             Log.d(
                 "AirPodsParser",
-                "inEarData: ${inEarData.sorted()}, newInEarData: ${newInEarData.sorted()}"
+                "inEarData: ${inEarData.sorted()}, newInEarData: ${currentInEarData.sorted()}"
             )
 
-            if (newInEarData.sorted() != inEarData.sorted()) {
+            if (currentInEarData.sorted() != inEarData.sorted()) {
                 if (inEar) {
                     if (!justEnabledA2dp) {
                         MediaController.sendPlay()
@@ -3133,6 +3186,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 .apply { setPackage(packageName) }
         )
         Log.i(TAG, "AACP transport became responsive")
+        startHeartRateMonitoringIfEnabled()
     }
 
     private fun startAacpLivenessWatchdog(socket: BluetoothSocket, connectedDevice: BluetoothDevice) {
@@ -3662,47 +3716,78 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 delay(220)
             }
 
-            var consecutiveRecoveryAttempts = 0
             while (canContinueHeartRateMonitoring()) {
                 val attemptStartedAt = startHeartRateStreamAttempt()
                 if (!canContinueHeartRateMonitoring()) return
 
                 val failure = if (attemptStartedAt == null) {
-                    synchronized(heartRateLock) {
+                    val newlyRequestedReason = synchronized(heartRateLock) {
+                        val reason = beginHeartRateRefreshLocked(
+                            HeartRateRefreshReason.FIRST_SAMPLE_TIMEOUT
+                        )
                         stopHeartRateSessionLocked()
+                        reason
                     }
+                    newlyRequestedReason?.let(::logHeartRateRefreshRequested)
                     HeartRateStreamFailure.FIRST_SAMPLE_TIMEOUT
                 } else {
                     awaitHeartRateStreamFailure(attemptStartedAt) ?: return
                 }
 
-                if (failure == HeartRateStreamFailure.STREAM_STALLED) {
-                    consecutiveRecoveryAttempts = 0
-                }
-
-                if (consecutiveRecoveryAttempts >= HEART_RATE_RETRY_BACKOFF_MILLIS.size) {
-                    Log.w(TAG, "RTBuddy heart-rate recovery retries exhausted")
-                    return
-                }
-
-                val backoffMillis =
-                    HEART_RATE_RETRY_BACKOFF_MILLIS[consecutiveRecoveryAttempts]
-                consecutiveRecoveryAttempts++
-                Log.w(
-                    TAG,
-                    "RTBuddy heart-rate ${failure.name.lowercase()} recovery " +
-                        "attempt=$consecutiveRecoveryAttempts backoff=${backoffMillis}ms"
-                )
-                delay(backoffMillis)
+                Log.d(TAG, "RTBuddy heart-rate stream event=${failure.name.lowercase()}")
+                if (!waitForNextHeartRateRefreshAttempt()) return
             }
         } finally {
             synchronized(heartRateLock) {
                 if (heartRateStartJob === currentJob) {
                     stopHeartRateSessionLocked()
+                    clearActiveHeartRateRefreshLocked()
                     heartRateStartJob = null
                 }
             }
         }
+    }
+
+    private suspend fun waitForNextHeartRateRefreshAttempt(): Boolean {
+        var refreshReason: HeartRateRefreshReason? = null
+        var refreshAttempt = 0
+        var backoffMillis = 0L
+        var retriesExhausted = false
+
+        synchronized(heartRateLock) {
+            val activeReason = activeHeartRateRefreshReason
+            if (activeReason != null) {
+                refreshReason = activeReason
+                if (heartRateRefreshAttemptCount >= HEART_RATE_RETRY_BACKOFF_MILLIS.size) {
+                    retriesExhausted = true
+                    clearActiveHeartRateRefreshLocked()
+                } else {
+                    backoffMillis =
+                        HEART_RATE_RETRY_BACKOFF_MILLIS[heartRateRefreshAttemptCount]
+                    heartRateRefreshAttemptCount++
+                    refreshAttempt = heartRateRefreshAttemptCount
+                    heartRateRefreshAttemptStartedAt = null
+                }
+            }
+        }
+
+        val reason = refreshReason ?: return canContinueHeartRateMonitoring()
+        if (retriesExhausted) {
+            Log.w(
+                TAG,
+                "RTBuddy heart-rate refresh failed reason=${reason.diagnosticName} " +
+                    "attempts=${HEART_RATE_RETRY_BACKOFF_MILLIS.size}"
+            )
+            return false
+        }
+
+        Log.w(
+            TAG,
+            "RTBuddy heart-rate refresh attempt=$refreshAttempt " +
+                "reason=${reason.diagnosticName} backoff=${backoffMillis}ms"
+        )
+        delay(backoffMillis)
+        return canContinueHeartRateMonitoring()
     }
 
     private suspend fun startHeartRateStreamAttempt(): Long? {
@@ -3732,6 +3817,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 val attemptStartedAt = SystemClock.elapsedRealtime()
                 val started = aacpManager.sendHeartRateStartFrame()
                 heartRateStartCommandSent = started
+                if (started && activeHeartRateRefreshReason != null) {
+                    heartRateRefreshAttemptStartedAt = attemptStartedAt
+                }
                 Log.d(TAG, "RTBuddy heart-rate start sent=$started")
                 if (started) attemptStartedAt else null
             }
@@ -3744,6 +3832,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         while (canContinueHeartRateMonitoring()) {
             delay(HEART_RATE_WATCHDOG_INTERVAL_MILLIS)
             val now = SystemClock.elapsedRealtime()
+            var newlyRequestedReason: HeartRateRefreshReason? = null
             val failure = synchronized(heartRateLock) {
                 if (!canContinueHeartRateMonitoring()) {
                     null
@@ -3752,12 +3841,18 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     when {
                         lastSampleAt != null && lastSampleAt >= attemptStartedAt &&
                             now - lastSampleAt >= HEART_RATE_STALL_TIMEOUT_MILLIS -> {
+                            newlyRequestedReason = beginHeartRateRefreshLocked(
+                                HeartRateRefreshReason.STREAM_STALLED
+                            )
                             stopHeartRateSessionLocked()
                             HeartRateStreamFailure.STREAM_STALLED
                         }
 
                         (lastSampleAt == null || lastSampleAt < attemptStartedAt) &&
                             now - attemptStartedAt >= HEART_RATE_FIRST_SAMPLE_TIMEOUT_MILLIS -> {
+                            newlyRequestedReason = beginHeartRateRefreshLocked(
+                                HeartRateRefreshReason.FIRST_SAMPLE_TIMEOUT
+                            )
                             stopHeartRateSessionLocked()
                             HeartRateStreamFailure.FIRST_SAMPLE_TIMEOUT
                         }
@@ -3766,9 +3861,36 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     }
                 }
             }
+            newlyRequestedReason?.let(::logHeartRateRefreshRequested)
             if (failure != null) return failure
         }
         return null
+    }
+
+    private fun beginHeartRateRefreshLocked(
+        reason: HeartRateRefreshReason
+    ): HeartRateRefreshReason? {
+        if (activeHeartRateRefreshReason != null) return null
+        activeHeartRateRefreshReason = reason
+        heartRateRefreshAttemptCount = 0
+        heartRateRefreshAttemptStartedAt = null
+        heartRateSamplesToDiscardAfterRefresh = HEART_RATE_REFRESH_SAMPLES_TO_DISCARD
+        return reason
+    }
+
+    private fun clearActiveHeartRateRefreshLocked() {
+        activeHeartRateRefreshReason = null
+        heartRateRefreshAttemptCount = 0
+        heartRateRefreshAttemptStartedAt = null
+        heartRateSamplesToDiscardAfterRefresh = 0
+    }
+
+    private fun logHeartRateRefreshRequested(reason: HeartRateRefreshReason) {
+        Log.i(
+            TAG,
+            "RTBuddy heart-rate refresh requested reason=${reason.diagnosticName} " +
+                "transport=healthy"
+        )
     }
 
     private fun canContinueHeartRateMonitoring(): Boolean =
@@ -3832,6 +3954,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 forceStop = forceStop || jobWasActive,
                 sendStopFrame = sendStopFrame
             )
+            clearActiveHeartRateRefreshLocked()
         }
     }
 

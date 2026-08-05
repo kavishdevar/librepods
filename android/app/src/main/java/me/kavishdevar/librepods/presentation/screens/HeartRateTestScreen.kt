@@ -121,24 +121,15 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
             exportEnabled = state.healthConnectExportEnabled,
             detailedSamples = state.healthConnectDetailedSamples,
             onExportChanged = { enabled ->
-                if (!enabled) {
-                    viewModel.setHealthConnectExportEnabled(false)
-                } else {
-                    when (state.healthConnectExportStatus) {
-                        HealthConnectExportStatus.READY,
-                        HealthConnectExportStatus.ENABLED ->
-                            viewModel.setHealthConnectExportEnabled(true)
+                when {
+                    !enabled -> viewModel.setHealthConnectExportEnabled(false)
+                    state.healthConnectExportStatus.canEnableExport ->
+                        viewModel.setHealthConnectExportEnabled(true)
 
-                        HealthConnectExportStatus.PERMISSION_REQUIRED,
-                        HealthConnectExportStatus.PERMISSION_DENIED,
-                        HealthConnectExportStatus.ERROR ->
-                            healthConnectPermissionLauncher.launch(
-                                HealthConnectHeartRateExporter.REQUIRED_PERMISSIONS
-                            )
-
-                        HealthConnectExportStatus.UNAVAILABLE,
-                        HealthConnectExportStatus.UPDATE_REQUIRED -> Unit
-                    }
+                    state.healthConnectExportStatus.requiresPermissionRequest ->
+                        healthConnectPermissionLauncher.launch(
+                            HealthConnectHeartRateExporter.REQUIRED_PERMISSIONS
+                        )
                 }
             },
             onDetailedSamplesChanged = viewModel::setHealthConnectDetailedSamples
@@ -227,8 +218,7 @@ private fun HealthConnectControls(
     onExportChanged: (Boolean) -> Unit,
     onDetailedSamplesChanged: (Boolean) -> Unit
 ) {
-    val available = status != HealthConnectExportStatus.UNAVAILABLE &&
-        status != HealthConnectExportStatus.UPDATE_REQUIRED
+    val available = status.isAvailable
 
     StyledToggle(
         title = "Health Connect",
@@ -245,7 +235,7 @@ private fun HealthConnectControls(
         title = null,
         label = "Detailed samples",
         description = if (detailedSamples) {
-            "Export original per-second samples in 15-second batches. AirPods sampling is unchanged."
+            "Save heart-rate data every second."
         } else {
             "Export one average BPM for each minute. AirPods sampling is unchanged."
         },
@@ -265,6 +255,19 @@ private fun monitoringStatus(
     streaming -> "Streaming"
     else -> "Enabled — awaiting valid sample"
 }
+
+private val HealthConnectExportStatus.isAvailable: Boolean
+    get() = this != HealthConnectExportStatus.UNAVAILABLE &&
+        this != HealthConnectExportStatus.UPDATE_REQUIRED
+
+private val HealthConnectExportStatus.canEnableExport: Boolean
+    get() = this == HealthConnectExportStatus.READY ||
+        this == HealthConnectExportStatus.ENABLED
+
+private val HealthConnectExportStatus.requiresPermissionRequest: Boolean
+    get() = this == HealthConnectExportStatus.PERMISSION_REQUIRED ||
+        this == HealthConnectExportStatus.PERMISSION_DENIED ||
+        this == HealthConnectExportStatus.ERROR
 
 private fun healthConnectDescription(
     status: HealthConnectExportStatus,
@@ -286,7 +289,7 @@ private fun healthConnectDescription(
         "Available. Enable this to save validated samples on this device."
 
     HealthConnectExportStatus.ENABLED -> if (detailedSamples) {
-        "Validated samples are saved in 15-second batches with their original timestamps."
+        "Validated heart-rate data is saved every second."
     } else {
         "Validated samples are averaged into one Health Connect record per minute."
     }
@@ -383,17 +386,17 @@ private fun HeartRateGraph(samples: List<HeartRateSample>) {
                 if (samples.isNotEmpty()) {
                     val path = Path()
                     samples.forEachIndexed { index, sample ->
-                        val x = if (samples.size == 1) {
-                            plotLeft + plotWidth / 2f
-                        } else {
-                            plotLeft +
-                                index.toFloat() / (samples.size - 1).toFloat() * plotWidth
-                        }
-                        val normalized = (
-                            (sample.bpm.toFloat() - chartScale.minBpm) /
-                                chartScale.spanBpm
-                            ).coerceIn(0f, 1f)
-                        val y = plotBottom - normalized * plotHeight
+                        val x = sampleX(
+                            index = index,
+                            sampleCount = samples.size,
+                            plotLeft = plotLeft,
+                            plotWidth = plotWidth
+                        )
+                        val y = chartScale.bpmY(
+                            bpm = sample.bpm.toFloat(),
+                            plotBottom = plotBottom,
+                            plotHeight = plotHeight
+                        )
 
                         if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                         if (index == samples.lastIndex) {
@@ -434,6 +437,22 @@ private data class HeartRateChartScale(
 ) {
     val spanBpm: Float
         get() = maxBpm - minBpm
+
+    fun bpmY(bpm: Float, plotBottom: Float, plotHeight: Float): Float {
+        val normalized = ((bpm - minBpm) / spanBpm).coerceIn(0f, 1f)
+        return plotBottom - normalized * plotHeight
+    }
+}
+
+private fun sampleX(
+    index: Int,
+    sampleCount: Int,
+    plotLeft: Float,
+    plotWidth: Float
+): Float = if (sampleCount == 1) {
+    plotLeft + plotWidth / 2f
+} else {
+    plotLeft + index.toFloat() / (sampleCount - 1).toFloat() * plotWidth
 }
 
 private fun calculateHeartRateChartScale(bpms: List<Float>): HeartRateChartScale {
