@@ -36,10 +36,19 @@ pub trait L2capTransport: Send + Sync {
     async fn recv(&self, buf: &mut [u8]) -> io::Result<usize>;
 }
 
+/// A currently-connected Bluetooth device found during discovery.
+pub struct DiscoveredDevice {
+    pub id: DeviceId,
+    pub name: String,
+}
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::{DeviceId, LinuxPlatform as Platform, l2cap_connect};
+pub use linux::{
+    DeviceId, LinuxPlatform as Platform, find_connected_airpods, find_other_managed_devices,
+    l2cap_connect,
+};
 
 #[cfg(target_os = "windows")]
 mod windows;
