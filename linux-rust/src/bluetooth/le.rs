@@ -1,7 +1,8 @@
 use crate::bluetooth::aacp::BatteryStatus;
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
 use crate::ui::tray::MyTray;
-use crate::utils::{ah, get_devices_path, get_preferences_path};
+use crate::platform::{get_devices_path, get_preferences_path};
+use crate::utils::ah;
 use aes::Aes128;
 use aes::cipher::Array;
 use aes::cipher::{BlockCipherDecrypt, KeyInit};

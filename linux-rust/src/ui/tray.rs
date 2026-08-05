@@ -6,7 +6,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::bluetooth::aacp::{BatteryStatus, ControlCommandIdentifiers};
 use crate::ui::messages::BluetoothUIMessage;
-use crate::utils::get_app_settings_path;
+use crate::platform::get_app_settings_path;
 
 #[derive(Debug)]
 pub struct MyTray {

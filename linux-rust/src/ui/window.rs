@@ -9,7 +9,8 @@ use crate::devices::enums::{
 use crate::ui::airpods::airpods_view;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::nothing::nothing_view;
-use crate::utils::{MyTheme, get_app_settings_path, get_devices_path};
+use crate::platform::{get_app_settings_path, get_devices_path};
+use crate::utils::MyTheme;
 use bluer::{Address};
 use iced::border::Radius;
 use iced::overlay::menu;

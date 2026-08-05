@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
-use crate::utils::get_app_settings_path;
+use crate::platform::get_app_settings_path;
 
 pub struct AirPodsDevice {
     pub mac_address: Address,

@@ -1,6 +1,7 @@
 mod bluetooth;
 mod devices;
 mod media_controller;
+mod platform;
 mod ui;
 mod utils;
 
@@ -10,7 +11,7 @@ use crate::bluetooth::managers::DeviceManagers;
 use crate::devices::enums::DeviceData;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::tray::MyTray;
-use crate::utils::{get_app_settings_path, get_devices_path};
+use crate::platform::get_devices_path;
 use bluer::{Address, InternalErrorKind};
 use clap::Parser;
 use dbus::arg::{RefArg, Variant};
