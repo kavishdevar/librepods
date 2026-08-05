@@ -42,12 +42,25 @@ pub struct DiscoveredDevice {
     pub name: String,
 }
 
+/// A device connection/disconnection observed by the platform watcher
+/// (Linux: org.bluez D-Bus; Windows: WinRT DeviceWatcher).
+pub enum BtConnectionEvent {
+    Connected {
+        id: DeviceId,
+        name: String,
+        uuids: Vec<String>,
+    },
+    Disconnected {
+        id: DeviceId,
+    },
+}
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     DeviceId, LinuxPlatform as Platform, find_connected_airpods, find_other_managed_devices,
-    l2cap_connect,
+    l2cap_connect, power_on_adapter, watch_connections,
 };
 
 #[cfg(target_os = "windows")]
