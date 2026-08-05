@@ -1,0 +1,23 @@
+[package]
+name = "lp-driver-test"
+version = "0.1.0"
+edition = "2021"
+description = "Integration testers for the LibrePodsAAP Windows driver"
+
+[dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Bluetooth",
+] }
+
+[[bin]]
+name = "lp-driver-test"
+path = "src/main.rs"
+
+[profile.release]
+panic = "abort"
+strip = true
