@@ -90,7 +90,7 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
 
         let mut ticks = 0u32;
         loop {
-            if let Ok(n) = driver.recv(1000, &mut buf) {
+            if let Ok(n) = driver.recv(2000, &mut buf) {
                 if n > 0 {
                     let data = &buf[..n];
                     if let Some(b) = aap::parse_battery(data) {
@@ -114,11 +114,14 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
                     }
                 }
             }
+            // Passive session: no periodic L2CAP sends — those make Windows
+            // re-negotiate the audio profile and cut/switch the output. Detect a
+            // real disconnect via GET_STATUS, which reads a driver variable only
+            // (no L2CAP I/O, so it never disturbs the audio).
             ticks += 1;
-            if ticks >= 8 {
-                // ~every 8s: nudge a fresh battery push and check liveness.
+            if ticks >= 5 {
                 ticks = 0;
-                if driver.send(&aap::REQUEST_NOTIFS).is_err() {
+                if !driver.status().map(|s| s == 2).unwrap_or(false) {
                     state.lock().unwrap().connected = false;
                     break; // reconnect
                 }

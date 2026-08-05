@@ -31,6 +31,7 @@ const GUID_DEVINTERFACE_LIBREPODSAAP: GUID = GUID {
 const IOCTL_LP_CONNECT: u32 = 0x8000_2000;
 const IOCTL_LP_SEND: u32 = 0x8000_2008;
 const IOCTL_LP_RECEIVE: u32 = 0x8000_200C;
+const IOCTL_LP_GET_STATUS: u32 = 0x8000_2010;
 
 struct DriverHandle(HANDLE);
 unsafe impl Send for DriverHandle {}
@@ -95,6 +96,14 @@ impl Driver {
     pub fn recv(&self, timeout_ms: u32, buf: &mut [u8]) -> io::Result<usize> {
         let to = timeout_ms.to_le_bytes();
         Ok(ioctl(self.handle.0, IOCTL_LP_RECEIVE, &to, buf)? as usize)
+    }
+
+    /// Driver connection state (2 = connected). Reads a state variable only —
+    /// no L2CAP I/O, so it never disturbs the audio link.
+    pub fn status(&self) -> io::Result<u32> {
+        let mut out = [0u8; 12];
+        ioctl(self.handle.0, IOCTL_LP_GET_STATUS, &[], &mut out)?;
+        Ok(u32::from_le_bytes([out[0], out[1], out[2], out[3]]))
     }
 }
 
