@@ -334,19 +334,23 @@ fun AirPodsSettingsScreen(
                     onClick = navigateToRename,
                 )
             }
-            item(key = "spacer_heart_rate") {
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            item(key = "heart_rate") {
-                HeartRateCard(
-                    monitoringEnabled = state.heartRateMonitoringEnabled,
-                    streaming = state.heartRateStreaming,
-                    connected = state.isLocallyConnected,
-                    latestSample = state.heartRateSamples.lastOrNull(),
-                    heartRateSamples = state.heartRateSamples,
-                    onMonitoringChanged = setHeartRateMonitoringEnabled,
-                    onOpenDetails = navigateToHeartRateTest
-                )
+            val hasHeartRateCapability =
+                state.instance?.model?.capabilities?.contains(Capability.HRM) == true
+            if (hasHeartRateCapability) {
+                item(key = "spacer_heart_rate") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                item(key = "heart_rate") {
+                    HeartRateCard(
+                        monitoringEnabled = state.heartRateMonitoringEnabled,
+                        streaming = state.heartRateStreaming,
+                        connected = state.isLocallyConnected,
+                        latestSample = state.heartRateSamples.lastOrNull(),
+                        heartRateSamples = state.heartRateSamples,
+                        onMonitoringChanged = setHeartRateMonitoringEnabled,
+                        onOpenDetails = navigateToHeartRateTest
+                    )
+                }
             }
 
             val hasHearingAidCapability =
