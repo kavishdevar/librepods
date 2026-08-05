@@ -7,7 +7,7 @@ on:
     tags:
       - 'linux-v*'
     paths:
-      - 'linux-rust/**'
+      - 'crossplatform/crossplatform-rust/**'
       - '.github/workflows/linux-build.yml'
   workflow_dispatch:
 
@@ -38,11 +38,11 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            linux-rust/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('linux-rust/Cargo.lock') }}
+            crossplatform/crossplatform-rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('crossplatform/crossplatform-rust/Cargo.lock') }}
 
       - name: Build AppImage and Binary
-        working-directory: linux-rust
+        working-directory: crossplatform/crossplatform-rust
         run: |
           cargo build --release --verbose
           just
@@ -55,23 +55,23 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: librepods-x86_64.AppImage
-          path: linux-rust/dist/librepods-x86_64.AppImage
+          path: crossplatform/crossplatform-rust/dist/librepods-x86_64.AppImage
 
       - name: Upload binary artifact
         if: "!startsWith(github.ref, 'refs/tags/linux-v')"
         uses: actions/upload-artifact@v4
         with:
           name: librepods
-          path: linux-rust/dist/librepods
+          path: crossplatform/crossplatform-rust/dist/librepods
 
       - name: Create tarball for Flatpak
         if: startsWith(github.ref, 'refs/tags/linux-v')
-        working-directory: linux-rust
+        working-directory: crossplatform/crossplatform-rust
         run: |
           VERSION="${GITHUB_REF_NAME#linux-v}"
           just tarball "${VERSION}"
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "TAR_PATH=linux-rust/dist/librepods-v${VERSION}-source.tar.gz" >> $GITHUB_ENV
+          echo "TAR_PATH=crossplatform/crossplatform-rust/dist/librepods-v${VERSION}-source.tar.gz" >> $GITHUB_ENV
 
       - name: Create GitHub Release (AppImage + binary + source)
         if: startsWith(github.ref, 'refs/tags/linux-v')
@@ -79,9 +79,9 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            linux-rust/dist/librepods-v${{ env.VERSION }}-source.tar.gz
-            linux-rust/dist/librepods-x86_64.AppImage
-            linux-rust/dist/librepods
+            crossplatform/crossplatform-rust/dist/librepods-v${{ env.VERSION }}-source.tar.gz
+            crossplatform/crossplatform-rust/dist/librepods-x86_64.AppImage
+            crossplatform/crossplatform-rust/dist/librepods
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

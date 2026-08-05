@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -NoProfile -Command 'Get-PnpDevice | Where-Object { $_.InstanceId -match '\\\\''74ec2172'\\\\'' } | ForEach-Object { $p = \\(Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName '\\\\''DEVPKEY_Device_ProblemCode'\\\\'' -ErrorAction SilentlyContinue\\).Data; [PSCustomObject]@{ Name=$_.FriendlyName; Status=$_.Status; Problem=$p; Service=\\(Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName '\\\\''DEVPKEY_Device_Service'\\\\'' -ErrorAction SilentlyContinue\\).Data } } | Format-List')",
+      "Bash(\"/mnt/c/Users/Pedro Lopes/LibrePodsAAP/../../../../home/arctumn/other/librepods/windows-driver/lp-driver-test/target/x86_64-pc-windows-gnu/release/lp-driver-test.exe\" find)",
+      "Bash(./target/x86_64-pc-windows-gnu/release/lp-driver-test.exe find *)",
+      "Bash(powershell.exe -NoProfile -Command 'Get-PnpDevice | Where-Object { $_.InstanceId -match '\\\\''74ec2172'\\\\'' } | ForEach-Object { $p = \\(Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName '\\\\''DEVPKEY_Device_ProblemCode'\\\\'' -ErrorAction SilentlyContinue\\).Data; [PSCustomObject]@{ Name=$_.FriendlyName; Status=$_.Status; Problem=$p } } | Format-List')",
+      "Bash(powershell.exe -NoProfile -Command 'Get-WinEvent -FilterHashtable @{LogName='\\\\''System'\\\\''; Id=1001} -MaxEvents 2 -ErrorAction SilentlyContinue | Select-Object TimeCreated, @{n='\\\\''Msg'\\\\'';e={$_.Message}} | Format-List')",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Pedro Lopes\\\\LibrePodsAAP\\\\build-wsl.cmd\")",
+      "Bash(cmd.exe /c \"C:\\\\Users\\\\Pedro Lopes\\\\LibrePodsAAP\\\\mkcat.cmd\")",
+      "Bash(timeout 30 ./target/x86_64-pc-windows-gnu/release/lp-driver-test.exe connect)",
+      "Bash(echo \"\\(exit $?\\)\")"
+    ]
+  }
+}

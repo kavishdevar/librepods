@@ -65,13 +65,13 @@
           ];
 
           craneLib = crane.mkLib pkgs;
-          unfilteredRoot = ./linux-rust/.;
+          unfilteredRoot = ./crossplatform/crossplatform-rust/.;
           src = lib.fileset.toSource {
             root = unfilteredRoot;
             fileset = lib.fileset.unions [
               # Default files from crane (Rust and cargo files)
               (craneLib.fileset.commonCargoSources unfilteredRoot)
-              (lib.fileset.maybeMissing ./linux-rust/assets/font)
+              (lib.fileset.maybeMissing ./crossplatform/crossplatform-rust/assets/font)
             ];
           };
 
