@@ -12,6 +12,7 @@
 mod aap;
 mod bt;
 mod driver;
+mod volume;
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -132,6 +133,8 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
 }
 
 fn main() {
+    volume::init(); // COM for Core Audio, on this (main) thread
+
     let state: Shared = Arc::new(Mutex::new(State::default()));
 
     let (mac, dev_name) = match bt::find_airpods() {
@@ -154,12 +157,19 @@ fn main() {
     let m_anc = CheckMenuItem::new("Noise Cancellation", true, false, None);
     let m_trans = CheckMenuItem::new("Transparency", true, false, None);
     let m_adapt = CheckMenuItem::new("Adaptive", true, false, None);
+    let vol_line = MenuItem::new("Volume: —", false, None);
+    let m_vol_up = MenuItem::new("Volume  +", true, None);
+    let m_vol_down = MenuItem::new("Volume  −", true, None);
+    let m_mute = MenuItem::new("Mute / Unmute", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
     let off_id = m_off.id().clone();
     let anc_id = m_anc.id().clone();
     let trans_id = m_trans.id().clone();
     let adapt_id = m_adapt.id().clone();
+    let vol_up_id = m_vol_up.id().clone();
+    let vol_down_id = m_vol_down.id().clone();
+    let mute_id = m_mute.id().clone();
     let quit_id = quit.id().clone();
 
     let menu = Menu::new();
@@ -171,6 +181,11 @@ fn main() {
     menu.append(&m_anc).unwrap();
     menu.append(&m_trans).unwrap();
     menu.append(&m_adapt).unwrap();
+    menu.append(&PredefinedMenuItem::separator()).unwrap();
+    menu.append(&vol_line).unwrap();
+    menu.append(&m_vol_up).unwrap();
+    menu.append(&m_vol_down).unwrap();
+    menu.append(&m_mute).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
     menu.append(&quit).unwrap();
 
@@ -204,7 +219,18 @@ fn main() {
         m_anc.set_checked(s.anc == 2);
         m_trans.set_checked(s.anc == 3);
         m_adapt.set_checked(s.anc == 4);
-        let _ = tray.set_tooltip(Some(format!("{dev_name} · {bt} · ANC: {}", aap::anc_name(s.anc))));
+        let vol = if volume::is_muted() {
+            "muted".to_string()
+        } else {
+            volume::get()
+                .map(|p| format!("{p}%"))
+                .unwrap_or_else(|| "—".into())
+        };
+        vol_line.set_text(format!("Volume: {vol}"));
+        let _ = tray.set_tooltip(Some(format!(
+            "{dev_name} · {bt} · ANC: {} · Vol: {vol}",
+            aap::anc_name(s.anc)
+        )));
     };
 
     unsafe {
@@ -224,6 +250,15 @@ fn main() {
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
                 if ev.id == quit_id {
                     PostQuitMessage(0);
+                } else if ev.id == vol_up_id {
+                    volume::step(5);
+                    refresh();
+                } else if ev.id == vol_down_id {
+                    volume::step(-5);
+                    refresh();
+                } else if ev.id == mute_id {
+                    volume::toggle_mute();
+                    refresh();
                 } else if let Some(mode) = mode_for(&ev.id) {
                     if let Some(drv) = driver.clone() {
                         let _ = drv.send(&aap::anc_command(mode));
