@@ -12,8 +12,9 @@ fn utf16_name(buf: &[u16]) -> String {
     String::from_utf16_lossy(&buf[..end])
 }
 
-/// Address of the first paired device whose name contains "airpod".
-pub fn find_airpods() -> Option<u64> {
+/// (address, display name) of the first paired device whose name contains
+/// "airpod". The Windows " - Find My" suffix is stripped for display.
+pub fn find_airpods() -> Option<(u64, String)> {
     unsafe {
         let mut params: BLUETOOTH_DEVICE_SEARCH_PARAMS = zeroed();
         params.dwSize = size_of::<BLUETOOTH_DEVICE_SEARCH_PARAMS>() as u32;
@@ -34,7 +35,12 @@ pub fn find_airpods() -> Option<u64> {
         loop {
             let name = utf16_name(&info.szName);
             if name.to_lowercase().contains("airpod") {
-                found = Some(info.Address.Anonymous.ullLong);
+                let clean = name
+                    .trim_end_matches("- Find My")
+                    .trim_end_matches(" -")
+                    .trim()
+                    .to_string();
+                found = Some((info.Address.Anonymous.ullLong, clean));
                 break;
             }
             info.dwSize = size_of::<BLUETOOTH_DEVICE_INFO>() as u32;

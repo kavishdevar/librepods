@@ -49,7 +49,13 @@ pub fn parse_battery(data: &[u8]) -> Option<Battery> {
         if base + 3 >= payload.len() {
             break;
         }
-        let level = Some(payload[base + 2]);
+        // status 0x04 = component not connected/present -> report as unknown.
+        let status = payload[base + 3];
+        let level = if status == 0x04 {
+            None
+        } else {
+            Some(payload[base + 2])
+        };
         match payload[base] {
             0x01 => b.headphone = level,
             0x02 => b.right = level,

@@ -71,33 +71,31 @@ fn battery_text(b: &aap::Battery, connected: bool) -> String {
 }
 
 /// Background loop: keep the AAP session alive and parse pushed packets.
+/// `connected` stays true while the link is up; it only flips false when a send
+/// actually fails (a real disconnect), so the UI never flickers on idle reads.
 fn run_receiver(driver: Driver, mac: u64, state: Shared) {
+    let mut buf = [0u8; 1024];
     loop {
-        // (Re)connect + handshake.
-        let ok = driver.connect(mac, aap::PSM_AACP).unwrap_or(false);
-        if ok {
-            let _ = driver.send(&aap::HANDSHAKE);
-            thread::sleep(Duration::from_millis(300));
-            let _ = driver.send(&aap::SET_FEATURES);
-            thread::sleep(Duration::from_millis(300));
-            let _ = driver.send(&aap::REQUEST_NOTIFS);
-            state.lock().unwrap().connected = true;
-        } else {
+        if !driver.connect(mac, aap::PSM_AACP).unwrap_or(false) {
             state.lock().unwrap().connected = false;
             thread::sleep(Duration::from_secs(3));
             continue;
         }
+        let _ = driver.send(&aap::HANDSHAKE);
+        thread::sleep(Duration::from_millis(300));
+        let _ = driver.send(&aap::SET_FEATURES);
+        thread::sleep(Duration::from_millis(300));
+        let _ = driver.send(&aap::REQUEST_NOTIFS);
+        state.lock().unwrap().connected = true;
 
-        let mut buf = [0u8; 1024];
-        let mut idle = 0u32;
+        let mut ticks = 0u32;
         loop {
-            match driver.recv(1000, &mut buf) {
-                Ok(n) if n > 0 => {
-                    idle = 0;
+            if let Ok(n) = driver.recv(1000, &mut buf) {
+                if n > 0 {
                     let data = &buf[..n];
                     if let Some(b) = aap::parse_battery(data) {
                         let mut s = state.lock().unwrap();
-                        // merge (a packet may carry only some components)
+                        // merge — a packet may carry only some components
                         if b.left.is_some() {
                             s.battery.left = b.left;
                         }
@@ -115,15 +113,14 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
                         state.lock().unwrap().anc = m;
                     }
                 }
-                _ => {
-                    // timeout / no data
-                    idle += 1;
-                    if idle > 30 {
-                        // ~30s silent: assume the link dropped, reconnect.
-                        state.lock().unwrap().connected = false;
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(100));
+            }
+            ticks += 1;
+            if ticks >= 8 {
+                // ~every 8s: nudge a fresh battery push and check liveness.
+                ticks = 0;
+                if driver.send(&aap::REQUEST_NOTIFS).is_err() {
+                    state.lock().unwrap().connected = false;
+                    break; // reconnect
                 }
             }
         }
@@ -134,7 +131,10 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
 fn main() {
     let state: Shared = Arc::new(Mutex::new(State::default()));
 
-    let mac = bt::find_airpods();
+    let (mac, dev_name) = match bt::find_airpods() {
+        Some((m, n)) => (Some(m), n),
+        None => (None, "AirPods".to_string()),
+    };
     let driver = Driver::open().ok();
 
     // Start the background AAP session if we have both a device and the driver.
@@ -144,7 +144,7 @@ fn main() {
     }
 
     // --- Tray menu ---
-    let title = MenuItem::new("LibrePods — AirPods", false, None);
+    let title = MenuItem::new(&dev_name, false, None);
     let battery = MenuItem::new("Connecting…", false, None);
     let anc_header = MenuItem::new("Noise Control", false, None);
     let m_off = CheckMenuItem::new("Off", true, false, None);
@@ -197,16 +197,11 @@ fn main() {
         let s = state.lock().unwrap();
         let bt = battery_text(&s.battery, s.connected);
         battery.set_text(&bt);
-        title.set_text(if s.connected {
-            "LibrePods — AirPods (connected)"
-        } else {
-            "LibrePods — AirPods"
-        });
         m_off.set_checked(s.anc == 1);
         m_anc.set_checked(s.anc == 2);
         m_trans.set_checked(s.anc == 3);
         m_adapt.set_checked(s.anc == 4);
-        let _ = tray.set_tooltip(Some(format!("LibrePods · {bt} · ANC: {}", aap::anc_name(s.anc))));
+        let _ = tray.set_tooltip(Some(format!("{dev_name} · {bt} · ANC: {}", aap::anc_name(s.anc))));
     };
 
     unsafe {
