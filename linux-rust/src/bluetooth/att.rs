@@ -1,17 +1,15 @@
 use crate::platform::DeviceId;
-use bluer::l2cap::{SeqPacket, Socket, SocketAddr};
-use bluer::{AddressType, Error, Result};
+use bluer::{Error, Result};
 use hex;
 use log::{debug, error, info};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinSet;
-use tokio::time::{Duration, Instant, sleep};
+use tokio::time::Duration;
 
 const PSM_ATT: u16 = 0x001F;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 const OPCODE_READ_REQUEST: u8 = 0x0A;
 const OPCODE_WRITE_REQUEST: u8 = 0x12;
@@ -87,50 +85,9 @@ impl ATTManager {
             "ATTManager connecting to {} on PSM {:#06X}...",
             addr, PSM_ATT
         );
-        let target_sa = SocketAddr::new(addr, AddressType::BrEdr, PSM_ATT);
-
-        let socket = Socket::new_seq_packet()?;
-        let seq_packet_result =
-            tokio::time::timeout(CONNECT_TIMEOUT, socket.connect(target_sa)).await;
-        let seq_packet = match seq_packet_result {
-            Ok(Ok(s)) => Arc::new(s),
-            Ok(Err(e)) => {
-                error!("L2CAP connect failed: {}", e);
-                return Err(e.into());
-            }
-            Err(_) => {
-                error!("L2CAP connect timed out");
-                return Err(Error::from(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "Connection timeout",
-                )));
-            }
-        };
-
-        // Wait for connection to be fully established
-        let start = Instant::now();
-        loop {
-            match seq_packet.peer_addr() {
-                Ok(peer) if peer.cid != 0 => break,
-                Ok(_) => {}
-                Err(e) => {
-                    if e.raw_os_error() == Some(107) {
-                        // ENOTCONN
-                        error!("Peer has disconnected during connection setup.");
-                        return Err(e.into());
-                    }
-                    error!("Error getting peer address: {}", e);
-                }
-            }
-            if start.elapsed() >= CONNECT_TIMEOUT {
-                error!("Timed out waiting for L2CAP connection to be fully established.");
-                return Err(Error::from(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "Connection timeout",
-                )));
-            }
-            sleep(POLL_INTERVAL).await;
-        }
+        let transport = crate::platform::l2cap_connect(addr, PSM_ATT, CONNECT_TIMEOUT)
+            .await
+            .map_err(Error::from)?;
 
         info!("L2CAP connection established with {}", addr);
 
@@ -144,8 +101,8 @@ impl ATTManager {
 
         let manager_clone = self.clone();
         let mut tasks = self.tasks.lock().await;
-        tasks.spawn(recv_thread(manager_clone, seq_packet.clone()));
-        tasks.spawn(send_thread(rx, seq_packet));
+        tasks.spawn(recv_thread(manager_clone, transport.clone()));
+        tasks.spawn(send_thread(rx, transport));
 
         Ok(())
     }
@@ -223,7 +180,7 @@ impl ATTManager {
     }
 }
 
-async fn recv_thread(manager: ATTManager, sp: Arc<SeqPacket>) {
+async fn recv_thread(manager: ATTManager, sp: Arc<dyn crate::platform::L2capTransport>) {
     let mut buf = vec![0u8; 1024];
     loop {
         match sp.recv(&mut buf).await {
@@ -264,7 +221,7 @@ async fn recv_thread(manager: ATTManager, sp: Arc<SeqPacket>) {
     state.sender = None;
 }
 
-async fn send_thread(mut rx: mpsc::Receiver<Vec<u8>>, sp: Arc<SeqPacket>) {
+async fn send_thread(mut rx: mpsc::Receiver<Vec<u8>>, sp: Arc<dyn crate::platform::L2capTransport>) {
     while let Some(data) = rx.recv().await {
         if let Err(e) = sp.send(&data).await {
             error!("Failed to send data: {}", e);

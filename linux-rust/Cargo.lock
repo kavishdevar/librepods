@@ -2457,6 +2457,7 @@ version = "0.1.0"
 dependencies = [
  "ab_glyph",
  "aes",
+ "async-trait",
  "bluer",
  "clap",
  "dbus",
@@ -2474,6 +2475,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -23,15 +23,28 @@ pub trait AppPaths {
     fn app_settings_path() -> PathBuf;
 }
 
+use std::io;
+
+/// A connected, byte-framed L2CAP channel to a device. The AAP/ATT managers
+/// talk to the peer only through this — on Linux it wraps a `bluer` SeqPacket,
+/// on Windows it bridges to the LibrePodsAAP kernel driver via DeviceIoControl.
+#[async_trait::async_trait]
+pub trait L2capTransport: Send + Sync {
+    /// Send one packet; returns the number of bytes written.
+    async fn send(&self, data: &[u8]) -> io::Result<usize>;
+    /// Receive one packet into `buf`; `Ok(0)` means the peer closed the channel.
+    async fn recv(&self, buf: &mut [u8]) -> io::Result<usize>;
+}
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::{DeviceId, LinuxPlatform as Platform};
+pub use linux::{DeviceId, LinuxPlatform as Platform, l2cap_connect};
 
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
-pub use windows::{DeviceId, WindowsPlatform as Platform};
+pub use windows::{DeviceId, WindowsPlatform as Platform, l2cap_connect};
 
 // Backwards-compatible free functions so existing call sites stay unchanged
 // while the implementation moves behind the platform boundary.

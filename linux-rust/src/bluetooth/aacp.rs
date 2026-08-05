@@ -1,10 +1,7 @@
 use crate::devices::airpods::AirPodsInformation;
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
 use crate::platform::{DeviceId, get_devices_path};
-use bluer::{
-    AddressType, Error, Result,
-    l2cap::{SeqPacket, Socket, SocketAddr},
-};
+use bluer::{Error, Result};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -13,11 +10,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinSet;
-use tokio::time::{Instant, sleep};
+use tokio::time::sleep;
 
 const PSM: u16 = 0x1001;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const POLL_INTERVAL: Duration = Duration::from_millis(200);
 const HEADER_BYTES: [u8; 4] = [0x04, 0x00, 0x04, 0x00];
 
 pub mod opcodes {
@@ -373,55 +369,19 @@ impl AACPManager {
 
     pub async fn connect(&mut self, addr: DeviceId) {
         info!("AACPManager connecting to {} on PSM {:#06X}...", addr, PSM);
-        let target_sa = SocketAddr::new(addr, AddressType::BrEdr, PSM);
 
         {
             let mut state = self.state.lock().await;
             state.airpods_mac = Some(addr);
         }
 
-        let socket = match Socket::new_seq_packet() {
-            Ok(s) => s,
+        let transport = match crate::platform::l2cap_connect(addr, PSM, CONNECT_TIMEOUT).await {
+            Ok(t) => t,
             Err(e) => {
-                error!("Failed to create L2CAP socket: {}", e);
+                error!("L2CAP connect failed: {}", e);
                 return;
             }
         };
-
-        let seq_packet =
-            match tokio::time::timeout(CONNECT_TIMEOUT, socket.connect(target_sa)).await {
-                Ok(Ok(s)) => Arc::new(s),
-                Ok(Err(e)) => {
-                    error!("L2CAP connect failed: {}", e);
-                    return;
-                }
-                Err(_) => {
-                    error!("L2CAP connect timed out");
-                    return;
-                }
-            };
-
-        // Wait for connection to be fully established
-        let start = Instant::now();
-        loop {
-            match seq_packet.peer_addr() {
-                Ok(peer) if peer.cid != 0 => break,
-                Ok(_) => { /* still waiting */ }
-                Err(e) => {
-                    if e.raw_os_error() == Some(107) {
-                        // ENOTCONN
-                        error!("Peer has disconnected during connection setup.");
-                        return;
-                    }
-                    error!("Error getting peer address: {}", e);
-                }
-            }
-            if start.elapsed() >= CONNECT_TIMEOUT {
-                error!("Timed out waiting for L2CAP connection to be fully established.");
-                return;
-            }
-            sleep(POLL_INTERVAL).await;
-        }
 
         info!("L2CAP connection established with {}", addr);
 
@@ -434,8 +394,8 @@ impl AACPManager {
         }
 
         let mut tasks = self.tasks.lock().await;
-        tasks.spawn(recv_thread(manager_clone, seq_packet.clone()));
-        tasks.spawn(send_thread(rx, seq_packet));
+        tasks.spawn(recv_thread(manager_clone, transport.clone()));
+        tasks.spawn(send_thread(rx, transport));
     }
 
     async fn send_packet(&self, data: &[u8]) -> Result<()> {
@@ -1202,7 +1162,7 @@ impl AACPManager {
     }
 }
 
-async fn recv_thread(manager: AACPManager, sp: Arc<SeqPacket>) {
+async fn recv_thread(manager: AACPManager, sp: Arc<dyn crate::platform::L2capTransport>) {
     let mut buf = vec![0u8; 1024];
     loop {
         match sp.recv(&mut buf).await {
@@ -1232,7 +1192,7 @@ async fn recv_thread(manager: AACPManager, sp: Arc<SeqPacket>) {
     state.sender = None;
 }
 
-async fn send_thread(mut rx: mpsc::Receiver<Vec<u8>>, sp: Arc<SeqPacket>) {
+async fn send_thread(mut rx: mpsc::Receiver<Vec<u8>>, sp: Arc<dyn crate::platform::L2capTransport>) {
     while let Some(data) = rx.recv().await {
         let mut attempts = 0;
         loop {
