@@ -55,10 +55,20 @@ was linux-rust; + windows-driver + windows-app). CI = ci-crossplatform-rust.yml.
   driver via IOCTL — reuse for the app's L2CAP.
 
 ### Windows apps polish
+- [ ] **Unify into ONE app that supports both window + tray system.** Merge
+  `librepods-tray` and `librepods-ui` into a single app that has the egui
+  **window** AND a **system-tray icon**:
+  - close/minimize → hide the window to the tray (keep running in background,
+    passive AAP session stays alive so audio stays clean);
+  - tray left-click / double-click → reopen the window;
+  - tray right-click → quick menu (battery / ANC / quit);
+  - integrate `tray-icon` into the eframe/winit event loop (poll
+    `TrayIconEvent`/`MenuEvent`; `ViewportCommand::Visible` to hide/show);
+  - optional: auto-start via `shell:startup`.
 - [ ] Dedupe: the tray + ui apps each copy `driver.rs`/`aap.rs`/`bt.rs`/
-  `volume.rs`. Make a shared lib crate (`librepods-win-core`).
-- [ ] `librepods-ui`: minimize-to-tray (integrate `tray-icon` into the eframe
-  winit loop), auto-start (shell:startup), nicer theme.
+  `volume.rs`. Make a shared lib crate (`librepods-win-core`) — do this as part
+  of the unify step above (one app, one set of modules).
+- [ ] Nicer egui theme (rounded, accent colors, dark/light).
 - [ ] Heart rate (AirPods Pro 3): RE the AAP opcode — the apps already receive
   all packets; capture Mac↔AirPods with macOS PacketLogger during a workout to
   find the HR opcode/enable command. Uncertain but a cool target.
