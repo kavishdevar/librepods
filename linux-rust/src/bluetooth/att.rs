@@ -1,5 +1,6 @@
+use crate::platform::DeviceId;
 use bluer::l2cap::{SeqPacket, Socket, SocketAddr};
-use bluer::{Address, AddressType, Error, Result};
+use bluer::{AddressType, Error, Result};
 use hex;
 use log::{debug, error, info};
 use std::collections::HashMap;
@@ -81,7 +82,7 @@ impl ATTManager {
         }
     }
 
-    pub async fn connect(&mut self, addr: Address) -> Result<()> {
+    pub async fn connect(&mut self, addr: DeviceId) -> Result<()> {
         info!(
             "ATTManager connecting to {} on PSM {:#06X}...",
             addr, PSM_ATT

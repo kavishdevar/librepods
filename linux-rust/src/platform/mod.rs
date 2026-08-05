@@ -26,12 +26,12 @@ pub trait AppPaths {
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub use linux::LinuxPlatform as Platform;
+pub use linux::{DeviceId, LinuxPlatform as Platform};
 
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
-pub use windows::WindowsPlatform as Platform;
+pub use windows::{DeviceId, WindowsPlatform as Platform};
 
 // Backwards-compatible free functions so existing call sites stay unchanged
 // while the implementation moves behind the platform boundary.

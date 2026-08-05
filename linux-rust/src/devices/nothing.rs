@@ -1,8 +1,7 @@
 use crate::bluetooth::att::{ATTHandles, ATTManager};
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
 use crate::ui::messages::BluetoothUIMessage;
-use crate::platform::get_devices_path;
-use bluer::Address;
+use crate::platform::{DeviceId, get_devices_path};
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -23,7 +22,7 @@ pub struct NothingDevice {
 
 impl NothingDevice {
     pub async fn new(
-        mac_address: Address,
+        mac_address: DeviceId,
         ui_tx: mpsc::UnboundedSender<BluetoothUIMessage>,
     ) -> Self {
         let mut att_manager = ATTManager::new();

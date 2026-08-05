@@ -3,17 +3,16 @@ use crate::bluetooth::aacp::{AACPEvent, AACPManager, AirPodsLEKeys, ProximityKey
 use crate::media_controller::MediaController;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::tray::MyTray;
-use bluer::Address;
 use ksni::Handle;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
-use crate::platform::get_app_settings_path;
+use crate::platform::{DeviceId, get_app_settings_path};
 
 pub struct AirPodsDevice {
-    pub mac_address: Address,
+    pub mac_address: DeviceId,
     pub aacp_manager: AACPManager,
     // pub att_manager: ATTManager,
     pub media_controller: Arc<Mutex<MediaController>>,
@@ -22,7 +21,7 @@ pub struct AirPodsDevice {
 
 impl AirPodsDevice {
     pub async fn new(
-        mac_address: Address,
+        mac_address: DeviceId,
         tray_handle: Option<Handle<MyTray>>,
         ui_tx: tokio::sync::mpsc::UnboundedSender<BluetoothUIMessage>,
     ) -> Self {

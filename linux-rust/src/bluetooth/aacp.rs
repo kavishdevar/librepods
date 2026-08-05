@@ -1,8 +1,8 @@
 use crate::devices::airpods::AirPodsInformation;
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
-use crate::platform::get_devices_path;
+use crate::platform::{DeviceId, get_devices_path};
 use bluer::{
-    Address, AddressType, Error, Result,
+    AddressType, Error, Result,
     l2cap::{SeqPacket, Socket, SocketAddr},
 };
 use log::{debug, error, info};
@@ -329,7 +329,7 @@ pub struct AACPManagerState {
     pub ear_detection_status: Vec<EarDetectionStatus>,
     event_tx: Option<mpsc::UnboundedSender<AACPEvent>>,
     pub devices: HashMap<String, DeviceData>,
-    pub airpods_mac: Option<Address>,
+    pub airpods_mac: Option<DeviceId>,
 }
 
 impl AACPManagerState {
@@ -371,7 +371,7 @@ impl AACPManager {
         }
     }
 
-    pub async fn connect(&mut self, addr: Address) {
+    pub async fn connect(&mut self, addr: DeviceId) {
         info!("AACPManager connecting to {} on PSM {:#06X}...", addr, PSM);
         let target_sa = SocketAddr::new(addr, AddressType::BrEdr, PSM);
 

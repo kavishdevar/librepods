@@ -9,9 +9,8 @@ use crate::devices::enums::{
 use crate::ui::airpods::airpods_view;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::nothing::nothing_view;
-use crate::platform::{get_app_settings_path, get_devices_path};
+use crate::platform::{DeviceId, get_app_settings_path, get_devices_path};
 use crate::utils::MyTheme;
-use bluer::{Address};
 use iced::border::Radius;
 use iced::overlay::menu;
 use iced::widget::button::Style;
@@ -69,10 +68,10 @@ pub struct App {
     selected_theme: MyTheme,
     ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>>>,
     bluetooth_state: BluetoothState,
-    paired_devices: HashMap<String, Address>,
+    paired_devices: HashMap<String, DeviceId>,
     device_states: HashMap<String, DeviceState>,
     device_managers: Arc<RwLock<HashMap<String, DeviceManagers>>>,
-    pending_add_device: Option<(String, Address)>,
+    pending_add_device: Option<(String, DeviceId)>,
     device_type_state: combo_box::State<DeviceType>,
     selected_device_type: Option<DeviceType>,
     tray_text_mode: bool,
@@ -101,8 +100,8 @@ pub enum Message {
     CopyToClipboard(String),
     BluetoothMessage(BluetoothUIMessage),
     // ShowNewDialogTab,
-    GotPairedDevices(HashMap<String, Address>),
-    StartAddDevice(String, Address),
+    GotPairedDevices(HashMap<String, DeviceId>),
+    StartAddDevice(String, DeviceId),
     SelectDeviceType(DeviceType),
     ConfirmAddDevice,
     CancelAddDevice,
@@ -1317,7 +1316,7 @@ async fn wait_for_message(ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>
     }
 }
 
-// async fn load_paired_devices() -> HashMap<String, Address> {
+// async fn load_paired_devices() -> HashMap<String, DeviceId> {
 //     let mut devices = HashMap::new();
 //
 //     let session = Session::new().await.ok().unwrap();

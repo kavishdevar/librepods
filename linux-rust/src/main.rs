@@ -11,8 +11,8 @@ use crate::bluetooth::managers::DeviceManagers;
 use crate::devices::enums::DeviceData;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::tray::MyTray;
-use crate::platform::get_devices_path;
-use bluer::{Address, InternalErrorKind};
+use crate::platform::{DeviceId, get_devices_path};
+use bluer::InternalErrorKind;
 use clap::Parser;
 use dbus::arg::{RefArg, Variant};
 use dbus::blocking::Connection;
@@ -271,7 +271,7 @@ async fn async_main(
         let Ok(addr_str) = proxy.get::<String>("org.bluez.Device1", "Address") else {
             return true;
         };
-        let Ok(addr) = addr_str.parse::<Address>() else {
+        let Ok(addr) = addr_str.parse::<DeviceId>() else {
             return true;
         };
         if is_connected==0 {

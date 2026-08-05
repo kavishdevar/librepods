@@ -1,13 +1,13 @@
 use crate::bluetooth::aacp::BatteryStatus;
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
 use crate::ui::tray::MyTray;
-use crate::platform::{get_devices_path, get_preferences_path};
+use crate::platform::{DeviceId, get_devices_path, get_preferences_path};
 use crate::utils::ah;
 use aes::Aes128;
 use aes::cipher::Array;
 use aes::cipher::{BlockCipherDecrypt, KeyInit};
 use bluer::monitor::{Monitor, MonitorEvent, Pattern};
-use bluer::{Address, Session};
+use bluer::Session;
 use futures::StreamExt;
 use hex;
 use log::{debug, info};
@@ -57,9 +57,9 @@ pub async fn start_le_monitor(tray_handle: Option<ksni::Handle<MyTray>>) -> blue
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
-    let mut verified_macs: HashMap<Address, String> = HashMap::new();
-    let mut failed_macs: HashSet<Address> = HashSet::new();
-    let connecting_macs = Arc::new(Mutex::new(HashSet::<Address>::new()));
+    let mut verified_macs: HashMap<DeviceId, String> = HashMap::new();
+    let mut failed_macs: HashSet<DeviceId> = HashSet::new();
+    let connecting_macs = Arc::new(Mutex::new(HashSet::<DeviceId>::new()));
 
     let pattern = Pattern {
         data_type: 0xFF, // Manufacturer specific data
@@ -188,7 +188,7 @@ pub async fn start_le_monitor(tray_handle: Option<ksni::Handle<MyTray>>) -> blue
                                             );
                                             if auto_connect {
                                                 let real_address =
-                                                    Address::from_str(&addr_str).unwrap();
+                                                    DeviceId::from_str(&addr_str).unwrap();
                                                 let mut cm = connecting_macs_clone.lock().await;
                                                 if cm.contains(&real_address) {
                                                     info!(
