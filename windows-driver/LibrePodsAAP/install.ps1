@@ -39,8 +39,18 @@ foreach ($name in 'Root', 'TrustedPublisher') {
 $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
     Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1).FullName
 Write-Host "==> Signing with $signtool"
-& $signtool sign /v /fd SHA256 /sha1 $cert.Thumbprint $sys
-& $signtool sign /v /fd SHA256 /sha1 $cert.Thumbprint $cat
+& $signtool sign /v /fd SHA256 /sm /s My /sha1 $cert.Thumbprint $sys
+& $signtool sign /v /fd SHA256 /sm /s My /sha1 $cert.Thumbprint $cat
+
+Write-Host "==> Removing any previously installed LibrePodsAAP package..."
+$oem = $null
+pnputil /enum-drivers | ForEach-Object {
+    if ($_ -match 'Published Name\s*:\s*(oem\d+\.inf)') { $oem = $matches[1] }
+    if ($_ -match 'Original Name\s*:\s*LibrePodsAAP\.inf' -and $oem) {
+        Write-Host "    deleting $oem"
+        pnputil /delete-driver $oem /uninstall /force | Out-Null
+    }
+}
 
 Write-Host "==> Installing driver package..."
 pnputil /add-driver $inf /install

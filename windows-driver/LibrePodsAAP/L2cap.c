@@ -14,22 +14,44 @@ LpSubmitBrbSync(
     _Inout_ PBRB            Brb
 )
 {
-    WDF_MEMORY_DESCRIPTOR desc;
+    NTSTATUS                 status;
+    WDFREQUEST               request;
+    PIRP                     irp;
+    PIO_STACK_LOCATION       stack;
+    WDF_REQUEST_SEND_OPTIONS options;
 
     if (Ctx->IoTarget == NULL) {
         return STATUS_DEVICE_NOT_READY;
     }
 
-    WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&desc, Brb, Brb->BrbHeader.Length);
+    status = WdfRequestCreate(WDF_NO_OBJECT_ATTRIBUTES, Ctx->IoTarget, &request);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
 
-    return WdfIoTargetSendInternalIoctlSynchronously(
-        Ctx->IoTarget,
-        NULL,
-        IOCTL_INTERNAL_BTH_SUBMIT_BRB,
-        &desc,
-        NULL,
-        NULL,
-        NULL);
+    // bthport reads the BRB pointer from Parameters.Others.Argument1 of the
+    // IOCTL_INTERNAL_BTH_SUBMIT_BRB IRP. Set it explicitly on the next stack
+    // location (the WDF memory-descriptor path left Argument1 NULL, so bthport
+    // dereferenced a NULL BRB -> bugcheck 0x3B in BTHport!IOTracing::TraceStart).
+    irp = WdfRequestWdmGetIrp(request);
+    stack = IoGetNextIrpStackLocation(irp);
+    stack->MajorFunction = IRP_MJ_INTERNAL_DEVICE_CONTROL;
+    stack->MinorFunction = 0;
+    stack->Parameters.DeviceIoControl.IoControlCode = IOCTL_INTERNAL_BTH_SUBMIT_BRB;
+    stack->Parameters.Others.Argument1 = Brb;
+
+    WDF_REQUEST_SEND_OPTIONS_INIT(
+        &options, WDF_REQUEST_SEND_OPTION_SYNCHRONOUS | WDF_REQUEST_SEND_OPTION_TIMEOUT);
+    WDF_REQUEST_SEND_OPTIONS_SET_TIMEOUT(&options, WDF_REL_TIMEOUT_IN_SEC(10));
+
+    if (WdfRequestSend(request, Ctx->IoTarget, &options)) {
+        status = WdfRequestGetStatus(request);
+    } else {
+        status = WdfRequestGetStatus(request);
+    }
+
+    WdfObjectDelete(request);
+    return status;
 }
 
 //
