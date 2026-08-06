@@ -18,6 +18,10 @@
 // labels the frames 48000. Feeding that 64 kHz content as 48 kHz played ~0.75x
 // slow (deep) and overfed the ring. Resample from the true 64 kHz instead.
 #define IN_RATE 64000
+// The AirPods mic runs a few dB quiet with lots of headroom; a make-up gain
+// brings it up to a comfortable level (applied on the float before resampling,
+// so swr clamps cleanly if a loud transient would exceed full scale).
+#define GAIN 3.0f
 
 typedef struct {
     AVCodecContext *ctx;
@@ -71,6 +75,13 @@ int eld_decode(void *handle, const uint8_t *au, int au_len, int16_t *out, int ou
                                 IN_RATE, 0, NULL);
             swr_init(d->swr);
             d->in_rate = d->frame->sample_rate;
+        }
+        // Make-up gain on the decoded float samples (mono plane 0).
+        if (d->frame->format == AV_SAMPLE_FMT_FLTP || d->frame->format == AV_SAMPLE_FMT_FLT) {
+            float *pf = (float *)d->frame->data[0];
+            for (int i = 0; i < d->frame->nb_samples; i++) {
+                pf[i] *= GAIN;
+            }
         }
         uint8_t *outp = (uint8_t *)(out + total);
         int room = out_cap - total;

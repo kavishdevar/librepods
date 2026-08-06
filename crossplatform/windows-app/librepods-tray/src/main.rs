@@ -201,12 +201,12 @@ fn run_receiver(
                                 decoder = eld::Decoder::new();
                                 pipe = micpipe::MicPipe::open();
                                 if let Some(pp) = pipe.as_ref() {
-                                    // Prime the ring with a short silence cushion:
-                                    // we feed in per-packet bursts (~80 ms) while
-                                    // the capture drains steadily, so without a
-                                    // head start the ring underran between bursts
-                                    // (a click per packet). ~150 ms absorbs it.
-                                    pp.write(&[0i16; 7200]);
+                                    // Prime the ring with a small silence cushion:
+                                    // we feed in ~30 ms per-packet bursts while the
+                                    // capture drains steadily, so a head start
+                                    // avoids underruns between bursts. 80 ms is
+                                    // enough and keeps the added latency low.
+                                    pp.write(&[0i16; 3840]);
                                 }
                                 let msg = match (decoder.is_some(), pipe.is_some()) {
                                     (true, true) => "Hi-res mic: streaming to the mic",
