@@ -39,11 +39,15 @@ windows-sys = { version = "0.59", features = [
     "Win32_Security",
     "Win32_Devices_DeviceAndDriverInstallation",
 ] }
-# Full COM/WinRT: SMTC media control + Core Audio (WASAPI) volume.
+# Full COM/WinRT: SMTC media control + Core Audio (WASAPI) volume + WinRT
+# Bluetooth (LE advertisement watcher, adapter address).
 windows = { version = "0.58", features = [
     "Foundation",
     "Foundation_Collections",
     "Media_Control",
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Advertisement",
+    "Storage_Streams",
     "Win32_System_Com",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",

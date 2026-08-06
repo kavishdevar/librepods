@@ -1,19 +1,32 @@
 //! Windows adapter power + connection watcher.
 //!
-//! STUB (Phase I): signatures only, so the crate compiles for Windows. Real
-//! backend (WinRT `BluetoothAdapter` + `DeviceWatcher`) lands in Phase J.
+//! `local_adapter_address` is real (WinRT `BluetoothAdapter`). The
+//! connect/disconnect watcher is still a STUB (Phase J = WinRT `DeviceWatcher`).
 
-use crate::platform::BtConnectionEvent;
+use crate::platform::{BtConnectionEvent, DeviceId};
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
+use windows::Devices::Bluetooth::BluetoothAdapter;
+use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
 
 /// Windows manages the Bluetooth radio itself; nothing to power on here.
 pub async fn power_on_adapter() -> Result<(), String> {
     Ok(())
 }
 
-/// Local adapter MAC. STUB (Phase J = WinRT `BluetoothAdapter.BluetoothAddress`).
+/// The local Bluetooth adapter's MAC (our identity in the AAP hijack exchange),
+/// via WinRT `BluetoothAdapter.BluetoothAddress`.
 pub async fn local_adapter_address() -> Option<String> {
-    None
+    tokio::task::spawn_blocking(|| {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let adapter = BluetoothAdapter::GetDefaultAsync().ok()?.get().ok()?;
+        let addr = adapter.BluetoothAddress().ok()?;
+        Some(DeviceId::from(addr).to_string())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// Returns a receiver that stays open but never emits yet. Leaking the sender
