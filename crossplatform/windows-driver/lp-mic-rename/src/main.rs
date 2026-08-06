@@ -1,19 +1,20 @@
-//! Rename the LibrePods virtual microphone endpoint to a given name (e.g. the
+//! Rename the LibrePods virtual microphone endpoint(s) to a given name (e.g. the
 //! connected device's name — "AirPods Pro de Pedro", "Beats Studio Buds", …), so
-//! it shows that in Discord/Teams/Zoom instead of the driver's generic
-//! "LibrePods". MUST run elevated (writes HKLM\...\MMDevices).
+//! it shows that in Discord/Teams/Zoom instead of the driver's generic name.
+//! MUST run elevated (writes HKLM\...\MMDevices).
 //!
 //!   lp-mic-rename "AirPods Pro de Pedro"
 //!
-//! IPolicyConfig::SetPropertyValue returns E_ACCESSDENIED even elevated (the
-//! FriendlyName property is protected against it), so we write the endpoint's
-//! PKEY_Device_FriendlyName registry blob directly (as SoundVolumeView does) and
-//! restart the audio endpoint service so apps pick it up.
+//! IPolicyConfig::SetPropertyValue returns E_ACCESSDENIED even elevated, so we
+//! write the endpoint's PKEY_Device_FriendlyName registry blob directly (as
+//! SoundVolumeView does) and restart the audio endpoint service. Reinstalls leave
+//! several stale "LibrePods" capture endpoints, so we rename ALL of them (the
+//! active one is the one that shows up).
 
 use std::ffi::c_void;
 use std::process::Command;
 
-use windows::core::PCWSTR;
+use windows::core::{GUID, PCWSTR};
 use windows::Win32::Media::Audio::{
     eCapture, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
 };
@@ -25,11 +26,14 @@ use windows::Win32::System::Registry::{
     REG_BINARY, REG_OPTION_NON_VOLATILE,
 };
 use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
-use windows::core::GUID;
 
 const PKEY_DEVICE_FRIENDLYNAME: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
     pid: 14,
+};
+const PKEY_DEVICE_DEVICEDESC: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
+    pid: 2,
 };
 const VT_LPWSTR: u16 = 31;
 
@@ -71,6 +75,39 @@ fn log(s: &str) {
     }
 }
 
+/// Write PKEY_Device_FriendlyName (VT_LPWSTR REG_BINARY: 0x1F + UTF-16LE + NUL)
+/// under the endpoint's registry Properties. Returns true on success.
+unsafe fn write_friendly(guid: &str, name: &str) -> bool {
+    let subkey = wide(&format!(
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\{guid}\\Properties"
+    ));
+    let mut hkey = HKEY::default();
+    let rc = RegCreateKeyExW(
+        HKEY_LOCAL_MACHINE,
+        PCWSTR(subkey.as_ptr()),
+        0,
+        PCWSTR::null(),
+        REG_OPTION_NON_VOLATILE,
+        KEY_SET_VALUE,
+        None,
+        &mut hkey,
+        None,
+    );
+    if rc.is_err() {
+        log(&format!("RegCreateKeyEx {guid} failed: {rc:?}"));
+        return false;
+    }
+    let mut blob: Vec<u8> = vec![VT_LPWSTR as u8, 0, 0, 0];
+    for w in wide(name) {
+        blob.extend_from_slice(&w.to_le_bytes());
+    }
+    let valname = wide("{a45c254e-df1c-4efd-8020-67d146a850e0},14");
+    let rc = RegSetValueExW(hkey, PCWSTR(valname.as_ptr()), 0, REG_BINARY, Some(&blob));
+    let _ = RegCloseKey(hkey);
+    log(&format!("wrote {guid}: {rc:?}"));
+    rc.is_ok()
+}
+
 fn main() {
     let name = std::env::args().nth(1).unwrap_or_else(|| {
         eprintln!("usage: lp-mic-rename \"<new microphone name>\"");
@@ -86,21 +123,10 @@ fn main() {
             .expect("EnumAudioEndpoints");
         let count = collection.GetCount().unwrap_or(0);
 
-        // Find our virtual mic and grab its endpoint id.
-        let mut endpoint_id = String::new();
-        for i in 0..count {
-            let device = match collection.Item(i) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            let id = match device.GetId() {
-                Ok(id) => id,
-                Err(_) => continue,
-            };
-            let friendly = device
-                .OpenPropertyStore(STGM_READ)
+        let read = |dev: &windows::Win32::Media::Audio::IMMDevice, key: &PROPERTYKEY| -> String {
+            dev.OpenPropertyStore(STGM_READ)
                 .ok()
-                .and_then(|s| s.GetValue(&PKEY_DEVICE_FRIENDLYNAME).ok())
+                .and_then(|s| s.GetValue(key).ok())
                 .map(|pv| {
                     let raw = &pv as *const _ as *const PropVariantStr;
                     if (*raw).vt == VT_LPWSTR {
@@ -109,61 +135,45 @@ fn main() {
                         String::new()
                     }
                 })
-                .unwrap_or_default();
-            if friendly.contains("LibrePods") || friendly.contains("AudioCodec") {
-                endpoint_id = wide_ptr_to_string(id.0);
-                CoTaskMemFree(Some(id.0 as *const c_void));
-                println!("Found the virtual mic: \"{friendly}\"");
-                break;
+                .unwrap_or_default()
+        };
+
+        // Rename EVERY LibrePods capture endpoint (match on the constant
+        // DeviceDesc so it works even after a previous rename), so the active one
+        // is covered regardless of stale duplicates.
+        let mut renamed = 0;
+        for i in 0..count {
+            let dev = match collection.Item(i) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            let id = match dev.GetId() {
+                Ok(id) => id,
+                Err(_) => continue,
+            };
+            let desc = read(&dev, &PKEY_DEVICE_DEVICEDESC);
+            let friendly = read(&dev, &PKEY_DEVICE_FRIENDLYNAME);
+            let is_ours = desc.contains("LibrePods")
+                || desc.contains("AudioCodec")
+                || friendly.contains("LibrePods")
+                || friendly.contains("AudioCodec");
+            if is_ours {
+                let id_str = wide_ptr_to_string(id.0);
+                if let Some(guid) = id_str.rsplit('.').next() {
+                    log(&format!("match {guid} desc='{desc}' friendly='{friendly}'"));
+                    if write_friendly(guid, &name) {
+                        renamed += 1;
+                    }
+                }
             }
             CoTaskMemFree(Some(id.0 as *const c_void));
         }
 
-        if endpoint_id.is_empty() {
-            eprintln!("Could not find the LibrePods capture endpoint. Is the driver installed?");
+        if renamed == 0 {
+            eprintln!("No LibrePods capture endpoint found (or write denied — run elevated).");
             std::process::exit(1);
         }
-        // Endpoint id looks like "{0.0.1.00000000}.{<endpoint-guid>}"; the registry
-        // subkey is that trailing "{<endpoint-guid>}".
-        let guid = endpoint_id.rsplit('.').next().unwrap_or("");
-        log(&format!("id={endpoint_id} guid={guid}"));
 
-        // Write PKEY_Device_FriendlyName as a VT_LPWSTR REG_BINARY blob:
-        // 4-byte type (0x1F) + UTF-16LE string + NUL.
-        let subkey = wide(&format!(
-            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\{guid}\\Properties"
-        ));
-        let mut hkey = HKEY::default();
-        let rc = RegCreateKeyExW(
-            HKEY_LOCAL_MACHINE,
-            PCWSTR(subkey.as_ptr()),
-            0,
-            PCWSTR::null(),
-            REG_OPTION_NON_VOLATILE,
-            KEY_SET_VALUE,
-            None,
-            &mut hkey,
-            None,
-        );
-        if rc.is_err() {
-            log(&format!("RegCreateKeyEx failed: {rc:?}"));
-            eprintln!("RegCreateKeyEx failed ({rc:?}) — run elevated (admin).");
-            std::process::exit(3);
-        }
-        let mut blob: Vec<u8> = vec![VT_LPWSTR as u8, 0, 0, 0];
-        for w in wide(&name) {
-            blob.extend_from_slice(&w.to_le_bytes());
-        }
-        let valname = wide("{a45c254e-df1c-4efd-8020-67d146a850e0},14");
-        let rc = RegSetValueExW(hkey, PCWSTR(valname.as_ptr()), 0, REG_BINARY, Some(&blob));
-        let _ = RegCloseKey(hkey);
-        log(&format!("RegSetValueEx rc={rc:?}"));
-        if rc.is_err() {
-            eprintln!("RegSetValueEx failed ({rc:?}) — run elevated (admin).");
-            std::process::exit(4);
-        }
-
-        // Refresh the audio endpoint service so the new name shows immediately.
         let _ = Command::new("powershell")
             .args([
                 "-NoProfile",
@@ -172,6 +182,6 @@ fn main() {
             ])
             .status();
 
-        println!("Renamed the virtual microphone to \"{name}\".");
+        println!("Renamed {renamed} LibrePods mic endpoint(s) to \"{name}\".");
     }
 }
