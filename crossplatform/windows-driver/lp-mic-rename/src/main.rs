@@ -1,39 +1,38 @@
-//! Rename the LibrePodsMic virtual microphone endpoint's friendly name — e.g. to
-//! the connected AirPods' name, so it shows as "AirPods Pro de Pedro" in Discord,
-//! Teams, Zoom, etc. instead of the driver's static "CustomName2 (AudioCodec
-//! Device)".
-//!
-//! It enumerates active capture endpoints, finds the one whose name contains
-//! "AudioCodec", and sets its PKEY_Device_FriendlyName via IPolicyConfig
-//! (CPolicyConfigClient) — the same runtime API MagicPods & co. use. User-mode,
-//! no admin, no reboot.
+//! Rename the LibrePods virtual microphone endpoint to a given name (e.g. the
+//! connected device's name — "AirPods Pro de Pedro", "Beats Studio Buds", …), so
+//! it shows that in Discord/Teams/Zoom instead of the driver's generic
+//! "LibrePods". MUST run elevated (writes HKLM\...\MMDevices).
 //!
 //!   lp-mic-rename "AirPods Pro de Pedro"
+//!
+//! IPolicyConfig::SetPropertyValue returns E_ACCESSDENIED even elevated (the
+//! FriendlyName property is protected against it), so we write the endpoint's
+//! PKEY_Device_FriendlyName registry blob directly (as SoundVolumeView does) and
+//! restart the audio endpoint service so apps pick it up.
 
 use std::ffi::c_void;
+use std::process::Command;
 
-use windows::core::{Interface, IUnknown, IUnknown_Vtbl, GUID, HRESULT, PWSTR};
+use windows::core::PCWSTR;
 use windows::Win32::Media::Audio::{
     eCapture, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
 };
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
 };
+use windows::Win32::System::Registry::{
+    RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_SET_VALUE,
+    REG_BINARY, REG_OPTION_NON_VOLATILE,
+};
 use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
+use windows::core::GUID;
 
-const CLSID_POLICY_CONFIG_CLIENT: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
-
-// PKEY_Device_FriendlyName = {a45c254e-df1c-4efd-8020-67d146a850e0}, 14
 const PKEY_DEVICE_FRIENDLYNAME: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
     pid: 14,
 };
-
 const VT_LPWSTR: u16 = 31;
 
-// A PROPVARIANT holding a VT_LPWSTR — laid out to match the real 24-byte x64
-// PROPVARIANT (vt + 3 reserved u16, then the pointer union). We only ever set
-// the string case, so the rest is padding.
 #[repr(C)]
 struct PropVariantStr {
     vt: u16,
@@ -44,43 +43,19 @@ struct PropVariantStr {
     _pad: u64,
 }
 
-// IPolicyConfig (CPolicyConfigClient), IID f8679f50-850a-41cf-9c72-430f290290c8.
-// We only need SetPropertyValue (the 10th method); everything before it is an
-// opaque slot so the vtable offset is right.
-#[repr(transparent)]
-#[derive(Clone)]
-struct IPolicyConfig(IUnknown);
-
-#[repr(C)]
-#[allow(non_snake_case)]
-struct IPolicyConfig_Vtbl {
-    base__: IUnknown_Vtbl,
-    GetMixFormat: usize,
-    GetDeviceFormat: usize,
-    ResetDeviceFormat: usize,
-    SetDeviceFormat: usize,
-    GetProcessingPeriod: usize,
-    SetProcessingPeriod: usize,
-    GetShareMode: usize,
-    SetShareMode: usize,
-    GetPropertyValue: usize,
-    // SetPropertyValue(PCWSTR name, BOOL bFxStore, const PROPERTYKEY& key, PROPVARIANT* pv)
-    SetPropertyValue: unsafe extern "system" fn(
-        *mut c_void,
-        *const u16,
-        i32,
-        *const c_void,
-        *const c_void,
-    ) -> HRESULT,
-}
-
-unsafe impl Interface for IPolicyConfig {
-    type Vtable = IPolicyConfig_Vtbl;
-    const IID: GUID = GUID::from_u128(0xf8679f50_850a_41cf_9c72_430f290290c8);
-}
-
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+unsafe fn wide_ptr_to_string(p: *const u16) -> String {
+    if p.is_null() {
+        return String::new();
+    }
+    let mut len = 0isize;
+    while *p.offset(len) != 0 {
+        len += 1;
+    }
+    String::from_utf16_lossy(std::slice::from_raw_parts(p, len as usize))
 }
 
 fn log(s: &str) {
@@ -96,19 +71,6 @@ fn log(s: &str) {
     }
 }
 
-/// Read a null-terminated wide (UTF-16) string from a raw pointer.
-unsafe fn wide_ptr_to_string(p: *const u16) -> String {
-    if p.is_null() {
-        return String::new();
-    }
-    let mut len = 0isize;
-    while *p.offset(len) != 0 {
-        len += 1;
-    }
-    let slice = std::slice::from_raw_parts(p, len as usize);
-    String::from_utf16_lossy(slice)
-}
-
 fn main() {
     let name = std::env::args().nth(1).unwrap_or_else(|| {
         eprintln!("usage: lp-mic-rename \"<new microphone name>\"");
@@ -117,7 +79,6 @@ fn main() {
 
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).expect("MMDeviceEnumerator");
         let collection = enumerator
@@ -125,7 +86,8 @@ fn main() {
             .expect("EnumAudioEndpoints");
         let count = collection.GetCount().unwrap_or(0);
 
-        let mut target: Option<PWSTR> = None;
+        // Find our virtual mic and grab its endpoint id.
+        let mut endpoint_id = String::new();
         for i in 0..count {
             let device = match collection.Item(i) {
                 Ok(d) => d,
@@ -138,11 +100,8 @@ fn main() {
             let friendly = device
                 .OpenPropertyStore(STGM_READ)
                 .ok()
-                .and_then(|store| store.GetValue(&PKEY_DEVICE_FRIENDLYNAME).ok())
+                .and_then(|s| s.GetValue(&PKEY_DEVICE_FRIENDLYNAME).ok())
                 .map(|pv| {
-                    // PROPVARIANT holding the friendly name (VT_LPWSTR). Read the
-                    // pointer directly via the matching layout; `pv` clears itself
-                    // on drop.
                     let raw = &pv as *const _ as *const PropVariantStr;
                     if (*raw).vt == VT_LPWSTR {
                         wide_ptr_to_string((*raw).pwsz)
@@ -151,71 +110,68 @@ fn main() {
                     }
                 })
                 .unwrap_or_default();
-
             if friendly.contains("LibrePods") || friendly.contains("AudioCodec") {
-                log(&format!("found: {friendly}"));
+                endpoint_id = wide_ptr_to_string(id.0);
+                CoTaskMemFree(Some(id.0 as *const c_void));
                 println!("Found the virtual mic: \"{friendly}\"");
-                target = Some(id);
                 break;
             }
             CoTaskMemFree(Some(id.0 as *const c_void));
         }
 
-        let id = match target {
-            Some(id) => id,
-            None => {
-                eprintln!(
-                    "Could not find the AudioCodec capture endpoint. Is the LibrePodsMic \
-                     driver installed and the virtual mic present?"
-                );
-                std::process::exit(1);
-            }
-        };
-
-        log("creating CPolicyConfigClient");
-        let policy: IPolicyConfig =
-            match CoCreateInstance(&CLSID_POLICY_CONFIG_CLIENT, None, CLSCTX_ALL) {
-                Ok(p) => p,
-                Err(e) => {
-                    log(&format!("CoCreateInstance failed: {e:?}"));
-                    eprintln!("CPolicyConfigClient not available: {e:?}");
-                    std::process::exit(2);
-                }
-            };
-        log("policy created; reading vtable");
-
-        let wname = wide(&name);
-        let pv = PropVariantStr {
-            vt: VT_LPWSTR,
-            r1: 0,
-            r2: 0,
-            r3: 0,
-            pwsz: wname.as_ptr() as *mut u16,
-            _pad: 0,
-        };
-
-        // Read the vtable pointer manually and call SetPropertyValue at the known
-        // slot (index 12 = 3 IUnknown + 9 IPolicyConfig methods).
-        let raw = policy.as_raw();
-        let vtbl = *(raw as *const *const IPolicyConfig_Vtbl);
-        log("calling SetPropertyValue");
-        let set = (*vtbl).SetPropertyValue;
-        let hr = set(
-            raw,
-            id.0,
-            0, // bFxStore = FALSE
-            &PKEY_DEVICE_FRIENDLYNAME as *const _ as *const c_void,
-            &pv as *const _ as *const c_void,
-        );
-        log(&format!("SetPropertyValue returned hr={:#x}", hr.0));
-
-        CoTaskMemFree(Some(id.0 as *const c_void));
-
-        if hr.is_ok() {
-            println!("Renamed the virtual microphone to \"{name}\".");
-        } else {
-            eprintln!("SetPropertyValue failed: {hr:?}");
+        if endpoint_id.is_empty() {
+            eprintln!("Could not find the LibrePods capture endpoint. Is the driver installed?");
             std::process::exit(1);
         }
+        // Endpoint id looks like "{0.0.1.00000000}.{<endpoint-guid>}"; the registry
+        // subkey is that trailing "{<endpoint-guid>}".
+        let guid = endpoint_id.rsplit('.').next().unwrap_or("");
+        log(&format!("id={endpoint_id} guid={guid}"));
+
+        // Write PKEY_Device_FriendlyName as a VT_LPWSTR REG_BINARY blob:
+        // 4-byte type (0x1F) + UTF-16LE string + NUL.
+        let subkey = wide(&format!(
+            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\{guid}\\Properties"
+        ));
+        let mut hkey = HKEY::default();
+        let rc = RegCreateKeyExW(
+            HKEY_LOCAL_MACHINE,
+            PCWSTR(subkey.as_ptr()),
+            0,
+            PCWSTR::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut hkey,
+            None,
+        );
+        if rc.is_err() {
+            log(&format!("RegCreateKeyEx failed: {rc:?}"));
+            eprintln!("RegCreateKeyEx failed ({rc:?}) — run elevated (admin).");
+            std::process::exit(3);
+        }
+        let mut blob: Vec<u8> = vec![VT_LPWSTR as u8, 0, 0, 0];
+        for w in wide(&name) {
+            blob.extend_from_slice(&w.to_le_bytes());
+        }
+        let valname = wide("{a45c254e-df1c-4efd-8020-67d146a850e0},14");
+        let rc = RegSetValueExW(hkey, PCWSTR(valname.as_ptr()), 0, REG_BINARY, Some(&blob));
+        let _ = RegCloseKey(hkey);
+        log(&format!("RegSetValueEx rc={rc:?}"));
+        if rc.is_err() {
+            eprintln!("RegSetValueEx failed ({rc:?}) — run elevated (admin).");
+            std::process::exit(4);
+        }
+
+        // Refresh the audio endpoint service so the new name shows immediately.
+        let _ = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                "Restart-Service AudioEndpointBuilder -Force",
+            ])
+            .status();
+
+        println!("Renamed the virtual microphone to \"{name}\".");
     }
 }
