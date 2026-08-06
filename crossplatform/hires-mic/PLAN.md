@@ -92,10 +92,16 @@ the sink.
   receive loop confirmed the **0x58 uplink audio packets flow** ("receiving
   audio" card). Constants + `is_audio_packet` in `aap.rs`; protocol in
   [[hires-mic-protocol]].
-- **Phase 3b — next (the hard part)**: decode the 0x58 packets' **AAC-ELD** to
-  PCM and feed `\\.\LibrePodsMic`. Parse AUs (header 22, AU len at `off+4`,
-  payload `off+5`), decode AAC-ELD (64000/480/mono, ASC `F8 E6 30 00`) → f32 →
-  i16. **Blocker: the decoder on Windows/mingw** — FFmpeg libavcodec (native
-  AAC-ELD, LGPL) or libfdk-aac, cross-compiled for `x86_64-pc-windows-gnu` or
-  linked against prebuilt DLLs. Plus the A2DP reset to restore stereo playback.
+- **Phase 3b — DONE** ✅ (validated on hardware, user's voice recorded clean &
+  in tune). The tray decodes the 0x58 AUs (AAC-ELD) via an FFmpeg libavcodec
+  shim (LGPL, `eld_shim.c`), resamples, and streams to `\\.\LibrePodsMic`. Key
+  fixes: mic frames are **480 samples @ 64 kHz** (not 48 kHz — the 4-byte ASC
+  lies; confirmed by the +180/AU timestamp = a 24 kHz clock over 7.5 ms frames),
+  so resample **64000 → 48000**; capture circuit restricted to **48 kHz only**;
+  and a **~150 ms silence cushion** on the ring to absorb the bursty per-packet
+  feed. Pitch went ~105 → ~122 Hz (ref ~148), zero click/gap artifacts. Audio is
+  a bit quiet (a gain stage would help) and mono (single mic capsule).
+- **Phase 4 — polish (next)**: A2DP reset so playback restores to stereo after
+  the mic stops (today it needs a BT restart); the 2 s stall watchdog; optional
+  gain/AGC; auto enable/disable when an app opens the mic; dynamic endpoint name.
 - Phase 3 (protocol from PR #655 + AAC-ELD) and Phase 4 (integration) to follow.
