@@ -50,16 +50,29 @@ was linux-rust; + windows-driver + windows-app). CI = ci-crossplatform-rust.yml.
   `bluetoothctl connect` shell-out moved to `platform::connect_device(&DeviceId)`.
   `start_le_monitor` no longer returns `bluer::Result`. Linux `cargo check` green,
   no new warnings. Windows = WinRT `BluetoothLEAdvertisementWatcher` (Phase I/J).
-- [ ] **Phase F/G** — `media_controller.rs`: `AudioRouter` (libpulse) +
-  `MediaControl` (MPRIS). Windows: WASAPI + SMTC (or no-op audio; media via SMTC).
-- [ ] **Phase H** — tray: abstract `ksni` (`ui/tray.rs`). Windows = `tray-icon`.
-- [ ] **Phase I** — move `bluer`/`dbus`/`libpulse`/`ksni` under
-  `[target.'cfg(target_os="linux")']`; add Windows stubs so
-  `cargo check --target x86_64-pc-windows-msvc` compiles. THEN the crate builds
-  for Windows.
-- [ ] Windows backends for D–H (WinRT adapter/watcher/LE, SMTC, tray-icon) +
-  wire the app entrypoint. `platform/windows/transport.rs` already bridges to the
-  driver via IOCTL — reuse for the app's L2CAP.
+- [x] **Phase F done** — `AudioRouter` trait; libpulse (A2DP profile + sink
+  volume) moved to `platform/linux/audio.rs`. `media_controller.rs` delegates.
+- [x] **Phase G done** — `MediaControl` trait; MPRIS moved to
+  `platform/linux/media.rs`. `media_controller.rs` has zero direct dbus/libpulse.
+- [x] **Phase H done** — `TrayHandle` type + `platform::spawn_tray`; ksni isolated
+  to Linux-gated code (`ui/tray.rs` impl + `platform/linux/tray.rs`).
+- [x] **Phase I done — THE CRATE COMPILES FOR WINDOWS.**
+  `cargo check --target x86_64-pc-windows-gnu` = 0 errors, Linux still green.
+  `bluer`/`dbus`/`libpulse`/`ksni` gated to `cfg(target_os="linux")`; Windows
+  stub backends for every trait in `platform/windows/{watcher,discovery,le_scan,
+  audio,media,tray}.rs`; `aacp.rs`/`att.rs` use `std::io::{Error,Result}` not
+  bluer; local MAC via `platform::local_adapter_address()`.
+
+### Phase J — real Windows backends (replace the stubs) + app entrypoint
+- [ ] `platform/windows/transport.rs` already bridges L2CAP to the LibrePodsAAP
+  driver via IOCTL — verify `l2cap_connect` works end-to-end from the main crate.
+- [ ] WinRT `BluetoothLEAdvertisementWatcher` (le_scan), `BluetoothAdapter` +
+  `DeviceWatcher` (watcher/discovery), `BluetoothAdapter.BluetoothAddress`
+  (local_adapter_address).
+- [ ] SMTC media control (reuse the proven `librepods-tray/src/media.rs`) +
+  WASAPI volume (reuse `librepods-tray/src/volume.rs`) for `AudioRouter`.
+- [ ] `tray-icon` backend for `WindowsTrayHandle`/`spawn_tray` (render `MyTray`).
+- [ ] Wire the Windows app entrypoint (the iced GUI should already cross-compile).
 
 ### Windows apps — features
 - [x] **Ear-detection auto-pause (SMTC) — VALIDATED ON HARDWARE** in
