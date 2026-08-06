@@ -79,9 +79,12 @@ fn battery_text(b: &aap::Battery, connected: bool) -> String {
 fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
     let mut buf = [0u8; 1024];
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause on this thread
-    let mut was_connected = false;
     let mut last_anc = 0u8;
     let mut last_case_present: Option<bool> = None;
+    // Set on every (re)connect; the first battery packet then shows a card. A
+    // lid-open wakes the buds and reconnects, so this is our reliable
+    // "case opened" popup (with battery), not the case-present transition.
+    let mut pending_card = false;
     loop {
         if !driver.connect(mac, aap::PSM_AACP).unwrap_or(false) {
             state.lock().unwrap().connected = false;
@@ -98,10 +101,7 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
         // profile and cut the sound, so we never poll it.
         let _ = driver.send(&aap::REQUEST_NOTIFS);
         state.lock().unwrap().connected = true;
-        if !was_connected {
-            overlay::show(&dev_name, "Connected");
-        }
-        was_connected = true;
+        pending_card = true;
 
         // Ear-detection auto-pause state: we only resume media that WE paused,
         // so we never fight a user who paused it themselves.
@@ -132,7 +132,13 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
                         let present = s.battery.case.is_some();
                         let batt = battery_text(&s.battery, s.connected);
                         drop(s);
-                        if last_case_present.is_some_and(|prev| prev != present) {
+                        if pending_card {
+                            // First battery after a (re)connect = we just came
+                            // back / the case was opened. Show a battery card.
+                            overlay::show(&dev_name, &batt);
+                            pending_card = false;
+                        } else if last_case_present.is_some_and(|prev| prev != present) {
+                            // Buds docked/undocked while the session stayed up.
                             let ev = if present { "Case opened" } else { "Case closed" };
                             overlay::show(&dev_name, &format!("{ev}  ·  {batt}"));
                         }
@@ -172,6 +178,10 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
                 ticks = 0;
                 if !driver.status().map(|s| s == 2).unwrap_or(false) {
                     state.lock().unwrap().connected = false;
+                    // Reset per-session state so the next connect (e.g. lid
+                    // reopened) re-fires the battery card + ANC/case events.
+                    last_anc = 0;
+                    last_case_present = None;
                     break; // reconnect
                 }
             }
