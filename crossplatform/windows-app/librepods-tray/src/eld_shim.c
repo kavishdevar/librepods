@@ -8,6 +8,7 @@
 #include <libavutil/frame.h>
 #include <libavutil/mem.h>
 #include <libswresample/swresample.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,11 +77,13 @@ int eld_decode(void *handle, const uint8_t *au, int au_len, int16_t *out, int ou
             swr_init(d->swr);
             d->in_rate = d->frame->sample_rate;
         }
-        // Make-up gain on the decoded float samples (mono plane 0).
+        // Make-up gain with a soft limiter (tanh): normal speech keeps the ~x3
+        // gain (nearly linear at low levels), while loud transients saturate
+        // smoothly instead of hard-clipping (which sounded blown out).
         if (d->frame->format == AV_SAMPLE_FMT_FLTP || d->frame->format == AV_SAMPLE_FMT_FLT) {
             float *pf = (float *)d->frame->data[0];
             for (int i = 0; i < d->frame->nb_samples; i++) {
-                pf[i] *= GAIN;
+                pf[i] = tanhf(pf[i] * GAIN);
             }
         }
         uint8_t *outp = (uint8_t *)(out + total);
