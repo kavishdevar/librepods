@@ -16,7 +16,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetSystemMetrics, KillTimer, LWA_ALPHA, PostMessageW,
+    CreateWindowExW, DefWindowProcW, GetSystemMetrics, KillTimer, LWA_COLORKEY, PostMessageW,
     RegisterClassW, SM_CXSCREEN, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SetLayeredWindowAttributes,
     SetTimer, SetWindowPos, ShowWindow, WM_APP, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
@@ -82,7 +82,10 @@ pub fn init() {
         if hwnd.is_null() {
             return;
         }
-        SetLayeredWindowAttributes(hwnd, 0, 235, LWA_ALPHA); // ~92% opaque
+        // Color-key pure black to transparent: the window fills black (invisible)
+        // and only the non-black rounded card + text show — so it's a floating
+        // pill, not a black square.
+        SetLayeredWindowAttributes(hwnd, 0x0000_0000, 0, LWA_COLORKEY);
         let _ = HWND_CELL.set(hwnd as usize);
     }
 }

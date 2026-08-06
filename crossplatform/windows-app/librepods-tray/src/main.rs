@@ -247,6 +247,7 @@ fn main() {
     let m_vol_up = MenuItem::new("Volume  +", true, None);
     let m_vol_down = MenuItem::new("Volume  −", true, None);
     let m_mute = MenuItem::new("Mute / Unmute", true, None);
+    let m_open = MenuItem::new("Open App", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
     let off_id = m_off.id().clone();
@@ -256,6 +257,7 @@ fn main() {
     let vol_up_id = m_vol_up.id().clone();
     let vol_down_id = m_vol_down.id().clone();
     let mute_id = m_mute.id().clone();
+    let open_id = m_open.id().clone();
     let quit_id = quit.id().clone();
 
     let menu = Menu::new();
@@ -273,6 +275,7 @@ fn main() {
     menu.append(&m_vol_down).unwrap();
     menu.append(&m_mute).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
+    menu.append(&m_open).unwrap();
     menu.append(&quit).unwrap();
 
     let tray = TrayIconBuilder::new()
@@ -339,6 +342,16 @@ fn main() {
             }
             while let Ok(ev) = MenuEvent::receiver().try_recv() {
                 if ev.id == quit_id {
+                    PostQuitMessage(0);
+                } else if ev.id == open_id {
+                    // Launch the full app (sibling librepods.exe) and quit the
+                    // tray so the app can take the single-handle driver.
+                    if let Ok(exe) = std::env::current_exe() {
+                        if let Some(dir) = exe.parent() {
+                            let _ =
+                                std::process::Command::new(dir.join("librepods.exe")).spawn();
+                        }
+                    }
                     PostQuitMessage(0);
                 } else if ev.id == vol_up_id {
                     volume::step(5);
