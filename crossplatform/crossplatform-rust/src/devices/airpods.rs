@@ -3,13 +3,12 @@ use crate::bluetooth::aacp::{AACPEvent, AACPManager, AirPodsLEKeys, ProximityKey
 use crate::media_controller::MediaController;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::tray::MyTray;
-use ksni::Handle;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, sleep};
-use crate::platform::{DeviceId, get_app_settings_path};
+use crate::platform::{DeviceId, TrayHandle, get_app_settings_path};
 
 pub struct AirPodsDevice {
     pub mac_address: DeviceId,
@@ -22,7 +21,7 @@ pub struct AirPodsDevice {
 impl AirPodsDevice {
     pub async fn new(
         mac_address: DeviceId,
-        tray_handle: Option<Handle<MyTray>>,
+        tray_handle: Option<TrayHandle>,
         ui_tx: tokio::sync::mpsc::UnboundedSender<BluetoothUIMessage>,
     ) -> Self {
         info!("Creating new AirPodsDevice for {}", mac_address);

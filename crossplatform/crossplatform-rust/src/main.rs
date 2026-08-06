@@ -13,7 +13,6 @@ use crate::ui::tray::MyTray;
 use crate::platform::{find_connected_airpods, find_other_managed_devices, get_devices_path};
 use clap::Parser;
 use devices::airpods::AirPodsDevice;
-use ksni::TrayMethods;
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::env;
@@ -139,8 +138,7 @@ async fn async_main(
             command_tx: None,
             ui_tx: Some(ui_tx.clone()),
         };
-        let handle = tray.spawn().await.unwrap();
-        Some(handle)
+        crate::platform::spawn_tray(tray).await
     };
 
     if let Err(e) = crate::platform::power_on_adapter().await {

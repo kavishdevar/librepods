@@ -1,11 +1,17 @@
-// use ksni::TrayMethods; // provides the spawn method
-
-use ab_glyph::{Font, ScaleFont};
-use ksni::{Icon, ToolTip};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::bluetooth::aacp::{BatteryStatus, ControlCommandIdentifiers};
 use crate::ui::messages::BluetoothUIMessage;
+
+// The system-tray *rendering* (menu + battery icon) is Linux-only, via the
+// StatusNotifier protocol (ksni). The MyTray struct below is the
+// platform-neutral view-model; a Windows tray backend renders the same fields
+// through the `tray-icon` crate.
+#[cfg(target_os = "linux")]
+use ab_glyph::{Font, ScaleFont};
+#[cfg(target_os = "linux")]
+use ksni::{Icon, ToolTip};
+#[cfg(target_os = "linux")]
 use crate::platform::get_app_settings_path;
 
 #[derive(Debug)]
@@ -26,6 +32,7 @@ pub struct MyTray {
     pub ui_tx: Option<UnboundedSender<BluetoothUIMessage>>,
 }
 
+#[cfg(target_os = "linux")]
 impl ksni::Tray for MyTray {
     fn id(&self) -> String {
         env!("CARGO_PKG_NAME").into()
@@ -193,6 +200,7 @@ impl ksni::Tray for MyTray {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn generate_icon(text: &str, text_mode: bool, charging: bool) -> Icon {
     use ab_glyph::{FontRef, PxScale};
     use image::{ImageBuffer, Rgba};

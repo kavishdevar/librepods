@@ -109,9 +109,15 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     DeviceId, LinuxPlatform as Platform, audio_router, connect_device, find_connected_airpods,
-    find_other_managed_devices, l2cap_connect, media_control, power_on_adapter, watch_connections,
-    watch_le_advertisements,
+    find_other_managed_devices, l2cap_connect, media_control, power_on_adapter, spawn_tray,
+    watch_connections, watch_le_advertisements,
 };
+
+/// Handle to the running system tray. Callers hold `Option<TrayHandle>` and
+/// refresh the tray via `handle.update(|t: &mut MyTray| ...).await`. On Linux
+/// this is the ksni handle; the Windows backend mirrors the same API.
+#[cfg(target_os = "linux")]
+pub type TrayHandle = ksni::Handle<crate::ui::tray::MyTray>;
 
 #[cfg(target_os = "windows")]
 mod windows;

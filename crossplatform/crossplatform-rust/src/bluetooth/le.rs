@@ -1,7 +1,8 @@
 use crate::bluetooth::aacp::BatteryStatus;
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
 use crate::platform::{
-    DeviceId, connect_device, get_devices_path, get_preferences_path, watch_le_advertisements,
+    DeviceId, TrayHandle, connect_device, get_devices_path, get_preferences_path,
+    watch_le_advertisements,
 };
 use crate::ui::tray::MyTray;
 use crate::utils::ah;
@@ -45,7 +46,7 @@ fn verify_rpa(addr: &str, irk: &[u8; 16]) -> bool {
     hash == computed_hash
 }
 
-pub async fn start_le_monitor(tray_handle: Option<ksni::Handle<MyTray>>) {
+pub async fn start_le_monitor(tray_handle: Option<TrayHandle>) {
     let all_devices: HashMap<String, DeviceData> = std::fs::read_to_string(get_devices_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
