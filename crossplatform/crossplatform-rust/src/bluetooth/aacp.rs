@@ -571,9 +571,15 @@ impl AACPManager {
                         hex::encode(&value)
                     );
                 } else {
-                    error!(
-                        "Unknown Control Command identifier: {:#04x}",
-                        identifier_byte
+                    // Unmapped control command. Not an error — just a setting we
+                    // don't decode yet. Log its value + raw bytes so it can be
+                    // reverse-engineered: change one setting on another device and
+                    // watch which id's value changes here.
+                    info!(
+                        "Unmapped Control Command id={:#04x}, value={}, raw={}",
+                        identifier_byte,
+                        hex::encode(&value),
+                        hex::encode(payload)
                     );
                 }
             }
