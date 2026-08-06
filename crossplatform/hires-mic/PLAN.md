@@ -73,7 +73,19 @@ the sink.
   Windows shows a virtual **"Microphone (AudioCodec Device)"** (confirmed on
   hardware). The audio source is still the sample's dummy; feeding real audio is
   next.
-- **Phase 2 — next**: IOCTL/ring bridge so user mode can push PCM into the
-  capture circuit (`Common/CaptureCircuit.cpp` / `WaveReader.cpp`); test with a
-  tone/WAV heard on the virtual mic.
+- **Phase 1b — DONE** ✅ (`522f9e8`): trimmed to **capture-only** — dropped the
+  render (speaker) circuit in `Device.cpp` (create/add/remove) so only a mic
+  endpoint exists (no phantom speaker grabbing default output). Builds clean.
+  `install.ps1` now `devcon remove`s any prior device before installing so
+  re-running updates in place.
+- **Phase 2 — DONE** ✅ (`87ed69f`, validated on hardware): `Common/MicPipe.{h,cpp}`
+  — a spin-locked global PCM ring buffer + a control device `\\.\LibrePodsMic`
+  exposing `IOCTL_LIBREPODS_MIC_WRITE_PCM` (0x0022A000). `StreamEngine.cpp`
+  `ProcessPacket` drains the ring instead of the WAV/tone dummy. Proven end to
+  end: `lp-mic-test` (a user-mode tone feeder, `windows-driver/lp-mic-test/`)
+  pushed a 440 Hz sine and it was **recorded and audible** on "Microphone
+  (AudioCodec Device)". The audio-driver de-risk is complete.
+- **Phase 3 — next**: replace the tone with the real thing — the AAP command
+  that enables the AirPods hi-res mic + AAC-ELD decode (FFmpeg) from PR #655,
+  pushing decoded PCM into `\\.\LibrePodsMic`.
 - Phase 3 (protocol from PR #655 + AAC-ELD) and Phase 4 (integration) to follow.
