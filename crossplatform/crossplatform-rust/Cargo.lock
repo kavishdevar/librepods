@@ -2475,6 +2475,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "windows 0.58.0",
  "windows-sys 0.59.0",
 ]
 
