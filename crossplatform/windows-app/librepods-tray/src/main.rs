@@ -341,6 +341,10 @@ fn main() {
     // read by the receive loop.
     let mic_on = Arc::new(AtomicBool::new(false));
 
+    // Auto mode (default): the poll auto-enables/disables the mic on recording.
+    // Users who prefer can turn it off and drive the mic manually.
+    let auto_mode = Arc::new(AtomicBool::new(true));
+
     // The single (exclusive) handle to the virtual-mic control device, shared by
     // the receive thread (writes decoded audio) and the poll thread (reads the
     // capture-activity counter).
@@ -365,6 +369,7 @@ fn main() {
         let poll_mic = mic_on.clone();
         let poll_cell = driver_cell.clone();
         let poll_name = dev_name.clone();
+        let poll_auto = auto_mode.clone();
         thread::spawn(move || {
             let mut prev = poll_pipe.as_ref().map(|p| p.status()).unwrap_or(0);
             let mut idle = 0u32;
@@ -377,6 +382,12 @@ fn main() {
                 };
                 let capturing = cur != prev;
                 prev = cur;
+                // Manual mode: don't auto-manage (but keep `prev` fresh above so
+                // re-enabling auto doesn't fire a spurious transition).
+                if !poll_auto.load(Ordering::Relaxed) {
+                    on = poll_mic.load(Ordering::Relaxed);
+                    continue;
+                }
                 if capturing {
                     idle = 0;
                     if !on {
@@ -415,9 +426,10 @@ fn main() {
     let m_vol_up = MenuItem::new("Volume  +", true, None);
     let m_vol_down = MenuItem::new("Volume  −", true, None);
     let m_mute = MenuItem::new("Mute / Unmute", true, None);
-    // Auto-managed hi-res mic status line (enabled automatically when an app
-    // records from the virtual mic).
+    // Hi-res mic: a status line + an "auto" toggle + a manual override.
     let m_mic = MenuItem::new("Microphone: idle", false, None);
+    let m_auto = CheckMenuItem::new("Auto-enable on recording", true, true, None);
+    let m_mic_manual = CheckMenuItem::new("Hi-res microphone (manual)", true, false, None);
     let m_open = MenuItem::new("Open App", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
@@ -428,6 +440,8 @@ fn main() {
     let vol_up_id = m_vol_up.id().clone();
     let vol_down_id = m_vol_down.id().clone();
     let mute_id = m_mute.id().clone();
+    let auto_id = m_auto.id().clone();
+    let mic_manual_id = m_mic_manual.id().clone();
     let open_id = m_open.id().clone();
     let quit_id = quit.id().clone();
 
@@ -447,6 +461,8 @@ fn main() {
     menu.append(&m_mute).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
     menu.append(&m_mic).unwrap();
+    menu.append(&m_auto).unwrap();
+    menu.append(&m_mic_manual).unwrap();
     menu.append(&m_open).unwrap();
     menu.append(&quit).unwrap();
 
@@ -493,6 +509,8 @@ fn main() {
         } else {
             "Microphone: idle"
         });
+        m_auto.set_checked(auto_mode.load(Ordering::Relaxed));
+        m_mic_manual.set_checked(mic_on.load(Ordering::Relaxed));
         let _ = tray.set_tooltip(Some(format!(
             "{dev_name} · {bt} · ANC: {} · Vol: {vol}",
             aap::anc_name(s.anc)
@@ -546,6 +564,33 @@ fn main() {
                     refresh();
                 } else if ev.id == mute_id {
                     volume::toggle_mute();
+                    refresh();
+                } else if ev.id == auto_id {
+                    let on = !auto_mode.load(Ordering::Relaxed);
+                    auto_mode.store(on, Ordering::Relaxed);
+                    m_auto.set_checked(on);
+                    overlay::show(
+                        &dev_name,
+                        if on { "Microphone: auto mode" } else { "Microphone: manual mode" },
+                    );
+                } else if ev.id == mic_manual_id {
+                    // Manual override: turn the hi-res mic on/off directly.
+                    let on = !mic_on.load(Ordering::Relaxed);
+                    mic_on.store(on, Ordering::Relaxed);
+                    m_mic_manual.set_checked(on);
+                    if let Some(drv) = driver_cell.lock().unwrap().clone() {
+                        let cmd: &[u8] = if on { &aap::START_AUDIO } else { &aap::STOP_AUDIO };
+                        let _ = drv.send(cmd);
+                    }
+                    if !on {
+                        if let Some(m) = mac {
+                            thread::spawn(move || a2dp::reset(m));
+                        }
+                    }
+                    overlay::show(
+                        &dev_name,
+                        if on { "Hi-res mic on" } else { "Hi-res mic off — restoring stereo…" },
+                    );
                     refresh();
                 } else if let Some(mode) = mode_for(&ev.id) {
                     if let Some(drv) = driver_cell.lock().unwrap().clone() {
