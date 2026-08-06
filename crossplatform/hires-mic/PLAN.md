@@ -101,7 +101,11 @@ the sink.
   and a **~150 ms silence cushion** on the ring to absorb the bursty per-packet
   feed. Pitch went ~105 → ~122 Hz (ref ~148), zero click/gap artifacts. Audio is
   a bit quiet (a gain stage would help) and mono (single mic capsule).
-- **Phase 4 — polish (next)**: A2DP reset so playback restores to stereo after
-  the mic stops (today it needs a BT restart); the 2 s stall watchdog; optional
-  gain/AGC; auto enable/disable when an app opens the mic; dynamic endpoint name.
+- **Phase 4 — in progress**: **A2DP auto-reset DONE** ✅ (`34cb610`) — on mic
+  stop the tray toggles the AirPods' **AudioSink (0x110B)** Bluetooth service
+  disable→enable (1 s settle + 2 s teardown) to reconnect A2DP and restore
+  stereo, no BT restart (0x110D gave ERROR 1060; found 0x110B via
+  BluetoothEnumerateInstalledServices). Remaining: 2 s stall watchdog; optional
+  gain/AGC (audio's a bit quiet); auto enable/disable when an app opens the mic;
+  dynamic endpoint name; and bundle it all into the dist.
 - Phase 3 (protocol from PR #655 + AAC-ELD) and Phase 4 (integration) to follow.
