@@ -13,6 +13,7 @@ mod aap;
 mod bt;
 mod driver;
 mod media;
+mod overlay;
 mod volume;
 
 use std::sync::{Arc, Mutex};
@@ -75,9 +76,12 @@ fn battery_text(b: &aap::Battery, connected: bool) -> String {
 /// Background loop: keep the AAP session alive and parse pushed packets.
 /// `connected` stays true while the link is up; it only flips false when a send
 /// actually fails (a real disconnect), so the UI never flickers on idle reads.
-fn run_receiver(driver: Driver, mac: u64, state: Shared) {
+fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
     let mut buf = [0u8; 1024];
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause on this thread
+    let mut was_connected = false;
+    let mut last_anc = 0u8;
+    let mut last_case_present: Option<bool> = None;
     loop {
         if !driver.connect(mac, aap::PSM_AACP).unwrap_or(false) {
             state.lock().unwrap().connected = false;
@@ -94,6 +98,10 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
         // profile and cut the sound, so we never poll it.
         let _ = driver.send(&aap::REQUEST_NOTIFS);
         state.lock().unwrap().connected = true;
+        if !was_connected {
+            overlay::show(&dev_name, "Connected");
+        }
+        was_connected = true;
 
         // Ear-detection auto-pause state: we only resume media that WE paused,
         // so we never fight a user who paused it themselves.
@@ -118,9 +126,25 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
                         if b.headphone.is_some() {
                             s.battery.headphone = b.headphone;
                         }
+                        // Case reports its battery only while it's "in the loop"
+                        // (buds docked / lid open) — use that transition as a
+                        // case opened/closed popup trigger.
+                        let present = s.battery.case.is_some();
+                        let batt = battery_text(&s.battery, s.connected);
+                        drop(s);
+                        if last_case_present.is_some_and(|prev| prev != present) {
+                            let ev = if present { "Case opened" } else { "Case closed" };
+                            overlay::show(&dev_name, &format!("{ev}  ·  {batt}"));
+                        }
+                        last_case_present = Some(present);
                     }
                     if let Some(m) = aap::parse_anc_mode(data) {
                         state.lock().unwrap().anc = m;
+                        // Pop up on an actual mode change (not the first report).
+                        if last_anc != 0 && m != last_anc {
+                            overlay::show(&dev_name, aap::anc_name(m));
+                        }
+                        last_anc = m;
                     }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
                         let wearing = primary.in_ear() || secondary.in_ear();
@@ -158,6 +182,7 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
 
 fn main() {
     volume::init(); // COM for Core Audio, on this (main) thread
+    overlay::init(); // create the (hidden) centered popup window on this thread
 
     let state: Shared = Arc::new(Mutex::new(State::default()));
 
@@ -170,7 +195,8 @@ fn main() {
     // Start the background AAP session if we have both a device and the driver.
     if let (Some(mac), Some(drv)) = (mac, driver.clone()) {
         let st = state.clone();
-        thread::spawn(move || run_receiver(drv, mac, st));
+        let name = dev_name.clone();
+        thread::spawn(move || run_receiver(drv, mac, st, name));
     }
 
     // --- Tray menu ---
@@ -265,7 +291,11 @@ fn main() {
             if r <= 0 {
                 break; // WM_QUIT or error
             }
-            if msg.message == WM_TIMER {
+            // Our tray refresh is a thread timer (hwnd == null); the overlay's
+            // auto-hide is a window timer (hwnd == overlay). Only the former
+            // triggers refresh; everything else (incl. the overlay's WM_TIMER,
+            // WM_PAINT, show request) must be dispatched to its window proc.
+            if msg.message == WM_TIMER && msg.hwnd.is_null() {
                 refresh();
             } else {
                 TranslateMessage(&msg);
