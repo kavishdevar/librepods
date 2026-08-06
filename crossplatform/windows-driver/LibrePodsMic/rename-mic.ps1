@@ -38,13 +38,14 @@ Get-ChildItem $base | ForEach-Object {
     $desc = if ($p.$descKey) { Decode-PropStr $p.$descKey } else { '' }
     $fn   = if ($p.$fnKey)   { Decode-PropStr $p.$fnKey }   else { '' }
     Write-Host ("    [{0}] desc='{1}' friendly='{2}'" -f $_.PSChildName, $desc, $fn)
-    if ($desc -like '*AudioCodec*' -or $fn -like '*AudioCodec*') {
+    if ($desc -like '*LibrePods*' -or $fn -like '*LibrePods*' -or
+        $desc -like '*AudioCodec*' -or $fn -like '*AudioCodec*') {
         $target = $props
     }
 }
 
 if (-not $target) {
-    Write-Host 'No AudioCodec capture endpoint matched. Is the LibrePodsMic driver installed?'
+    Write-Host 'No LibrePods capture endpoint matched. Is the LibrePodsMic driver installed?'
     exit 1
 }
 
