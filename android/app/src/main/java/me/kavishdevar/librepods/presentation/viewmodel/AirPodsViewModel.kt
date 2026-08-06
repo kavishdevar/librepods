@@ -56,6 +56,7 @@ import me.kavishdevar.librepods.data.StemAction
 import me.kavishdevar.librepods.data.XposedRemotePrefProvider
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
 import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.services.HeartRateMonitoringStatus
 
 @Suppress("ArrayInDataClass")
 data class AirPodsUiState(
@@ -84,6 +85,8 @@ data class AirPodsUiState(
 
     val heartRateMonitoringEnabled: Boolean = false,
     val heartRateStreaming: Boolean = false,
+    val heartRateMonitoringStatus: HeartRateMonitoringStatus =
+        HeartRateMonitoringStatus.OFF,
     val heartRateSamples: List<HeartRateSample> = emptyList(),
     val healthConnectExportEnabled: Boolean = false,
     val healthConnectExportStatus: HealthConnectExportStatus = HealthConnectExportStatus.UNAVAILABLE,
@@ -481,6 +484,11 @@ class AirPodsViewModel(
             }
         }
         viewModelScope.launch {
+            service.heartRateMonitoringStatus.collect { status ->
+                _uiState.update { it.copy(heartRateMonitoringStatus = status) }
+            }
+        }
+        viewModelScope.launch {
             service.heartRateSamples.collect { samples ->
                 _uiState.update { it.copy(heartRateSamples = samples) }
             }
@@ -510,6 +518,7 @@ class AirPodsViewModel(
                     isLocallyConnected = service.isAacpTransportHealthy(),
                     heartRateMonitoringEnabled = service.heartRateMonitoringEnabled.value,
                     heartRateStreaming = service.heartRateStreaming.value,
+                    heartRateMonitoringStatus = service.heartRateMonitoringStatus.value,
                     heartRateSamples = service.heartRateSamples.value,
                     healthConnectExportEnabled = service.healthConnectExportEnabled.value,
                     healthConnectExportStatus = service.healthConnectExportStatus.value,
@@ -698,12 +707,21 @@ class AirPodsViewModel(
                 it.copy(
                     heartRateMonitoringEnabled = enabled,
                     heartRateStreaming = enabled && it.isLocallyConnected,
-                    heartRateSamples = if (enabled) emptyList() else it.heartRateSamples
+                    heartRateMonitoringStatus = when {
+                        !enabled -> HeartRateMonitoringStatus.OFF
+                        it.isLocallyConnected -> HeartRateMonitoringStatus.LIVE
+                        else -> HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+                    }
                 )
             }
             return
         }
         service.setHeartRateMonitoringEnabled(enabled)
+    }
+
+    fun reconnectAacpForHeartRate() {
+        if (!isReady || isDemoMode) return
+        service.reconnectAacpForHeartRate()
     }
 
     fun refreshHealthConnectExportState() {

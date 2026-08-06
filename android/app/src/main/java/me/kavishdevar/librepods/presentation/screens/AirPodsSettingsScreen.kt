@@ -195,6 +195,7 @@ fun AirPodsSettingsRoute(
             navigateToHeartRateTest = navigateToHeartRateTest,
 
             setHeartRateMonitoringEnabled = viewModel::setHeartRateMonitoringEnabled,
+            reconnectAacpForHeartRate = viewModel::reconnectAacpForHeartRate,
 
             activateDemoMode = viewModel::activateDemoMode,
             reconnectFromSavedMac = viewModel::reconnectFromSavedMac
@@ -240,6 +241,7 @@ fun AirPodsSettingsScreen(
         navigateToHeartRateTest: () -> Unit,
 
         setHeartRateMonitoringEnabled: (Boolean) -> Unit,
+        reconnectAacpForHeartRate: () -> Unit,
 
         activateDemoMode: () -> Unit,
         reconnectFromSavedMac: () -> Unit,
@@ -343,11 +345,11 @@ fun AirPodsSettingsScreen(
                 item(key = "heart_rate") {
                     HeartRateCard(
                         monitoringEnabled = state.heartRateMonitoringEnabled,
-                        streaming = state.heartRateStreaming,
-                        connected = state.isLocallyConnected,
+                        monitoringStatus = state.heartRateMonitoringStatus,
                         latestSample = state.heartRateSamples.lastOrNull(),
                         heartRateSamples = state.heartRateSamples,
                         onMonitoringChanged = setHeartRateMonitoringEnabled,
+                        onReconnectAacp = reconnectAacpForHeartRate,
                         onOpenDetails = navigateToHeartRateTest
                     )
                 }
@@ -995,6 +997,7 @@ fun AirPodsSettingsScreenPreviewApple() {
                 navigateToHeartRateTest = {},
 
                 setHeartRateMonitoringEnabled = {},
+                reconnectAacpForHeartRate = {},
 
                 activateDemoMode = {},
                 reconnectFromSavedMac = {}
@@ -1045,6 +1048,7 @@ fun AirPodsSettingsScreenPreviewMaterial() {
                 navigateToHeartRateTest = {},
 
                 setHeartRateMonitoringEnabled = {},
+                reconnectAacpForHeartRate = {},
 
                 activateDemoMode = {},
                 reconnectFromSavedMac = {}

@@ -40,27 +40,32 @@ import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.services.HeartRateMonitoringStatus
 
 @Composable
 fun HeartRateCard(
     monitoringEnabled: Boolean,
-    streaming: Boolean,
-    connected: Boolean,
+    monitoringStatus: HeartRateMonitoringStatus,
     latestSample: HeartRateSample?,
     heartRateSamples: List<HeartRateSample>,
     onMonitoringChanged: (Boolean) -> Unit,
+    onReconnectAacp: () -> Unit,
     onOpenDetails: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val status = heartRateStatus(monitoringEnabled, connected, streaming)
+    val sampleIsDisplayable = rememberHeartRateSampleIsDisplayable(
+        sample = latestSample,
+        monitoringStatus = monitoringStatus
+    )
     val displayedBpm = latestSample
-        ?.takeIf { streaming }
+        ?.takeIf { sampleIsDisplayable }
         ?.bpm
         ?.toString()
         ?: EM_DASH
     val graphValues = remember(heartRateSamples) {
         normalizedRecentHeartRates(heartRateSamples)
     }
+    val canReconnectAacp = monitoringStatus == HeartRateMonitoringStatus.COULDNT_START
 
     Card(
         modifier = modifier
@@ -88,27 +93,33 @@ fun HeartRateCard(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = status,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HeartRateStatusChip(
+                        status = monitoringStatus,
+                        onRetry = onReconnectAacp.takeIf { canReconnectAacp }
+                    )
+                }
             }
 
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = displayedBpm,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = "BPM",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            if (!canReconnectAacp) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = displayedBpm,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "BPM",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-            Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(14.dp))
+            }
 
             when (LocalDesignSystem.current) {
                 DesignSystem.Material -> Switch(
@@ -246,17 +257,6 @@ private fun normalizedRecentHeartRates(samples: List<HeartRateSample>): List<Flo
     return recentBpms.map { bpm ->
         ((bpm - lowerBound) / span).coerceIn(0f, 1f)
     }
-}
-
-private fun heartRateStatus(
-    monitoringEnabled: Boolean,
-    connected: Boolean,
-    streaming: Boolean
-): String = when {
-    !monitoringEnabled -> "Off"
-    !connected -> "Waiting for connection"
-    streaming -> "Streaming"
-    else -> "Awaiting sample"
 }
 
 private val GRAPH_WIDTH = 60.dp

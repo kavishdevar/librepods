@@ -71,6 +71,7 @@ import androidx.annotation.RequiresPermission
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -260,15 +261,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     private var activeHeartRateRefreshReason: HeartRateRefreshReason? = null
     private var heartRateRefreshAttemptCount = 0
     private var heartRateRefreshAttemptStartedAt: Long? = null
+    private var heartRateRefreshStartedAtElapsedRealtime: Long? = null
 
     private enum class HeartRateRefreshReason(val diagnosticName: String) {
         FIRST_SAMPLE_TIMEOUT("first-sample-timeout"),
         STREAM_STALLED("stream-stalled")
-    }
-
-    private enum class HeartRateStreamFailure {
-        FIRST_SAMPLE_TIMEOUT,
-        STREAM_STALLED
     }
 
     private data class HeartRateRefreshCompletion(
@@ -281,6 +278,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     private val _heartRateStreaming = MutableStateFlow(false)
     val heartRateStreaming: StateFlow<Boolean> get() = _heartRateStreaming
+
+    private val _heartRateMonitoringStatus =
+        MutableStateFlow(HeartRateMonitoringStatus.OFF)
+    val heartRateMonitoringStatus: StateFlow<HeartRateMonitoringStatus>
+        get() = _heartRateMonitoringStatus
 
     private val _heartRateSamples = MutableStateFlow<List<HeartRateSample>>(emptyList())
     val heartRateSamples: StateFlow<List<HeartRateSample>> get() = _heartRateSamples
@@ -300,10 +302,12 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     companion object {
         private const val HEART_RATE_MONITORING_PREFERENCE = "heart_rate_monitoring_enabled"
         private const val MAX_HEART_RATE_SAMPLES = 60
-        private const val HEART_RATE_FIRST_SAMPLE_TIMEOUT_MILLIS = 12_000L
-        private const val HEART_RATE_STALL_TIMEOUT_MILLIS = 6_000L
+        private const val HEART_RATE_FIRST_SAMPLE_TIMEOUT_MILLIS = 8_000L
+        private const val HEART_RATE_RECONNECT_TIMEOUT_MILLIS = 15_000L
+        private const val HEART_RATE_MANUAL_RECONNECT_QUIET_PERIOD_MILLIS = 3_000L
+        private const val HEART_RATE_STALL_TIMEOUT_MILLIS = 2_000L
         private const val HEART_RATE_WATCHDOG_INTERVAL_MILLIS = 1_000L
-        private const val HEART_RATE_REFRESH_SAMPLES_TO_DISCARD = 3
+        private const val HEART_RATE_REFRESH_SAMPLES_TO_DISCARD = 4
         private const val AACP_INITIAL_RESPONSE_TIMEOUT_MILLIS = 12_000L
         private const val AACP_IDLE_PROBE_INTERVAL_MILLIS = 60_000L
         private const val AACP_PROBE_RESPONSE_TIMEOUT_MILLIS = 5_000L
@@ -458,6 +462,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             HEART_RATE_MONITORING_PREFERENCE,
             false
         )
+        _heartRateMonitoringStatus.value = if (_heartRateMonitoringEnabled.value) {
+            HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+        } else {
+            HeartRateMonitoringStatus.OFF
+        }
         heartRateExporter = HealthConnectHeartRateExporter(
             context = applicationContext,
             sharedPreferences = sharedPreferences,
@@ -1180,16 +1189,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
             override fun onHeartRateReceived(sample: HeartRateSample) {
                 var completedRefresh: HeartRateRefreshCompletion? = null
-                var shouldPublish = false
-                val accepted = synchronized(heartRateLock) {
+                val shouldPublish = synchronized(heartRateLock) {
                     if (!_heartRateMonitoringEnabled.value ||
                         BluetoothConnectionManager.aacpSocket?.isConnected != true
                     ) {
                         false
+                    } else if (!heartRateStartCommandSent) {
+                        false
                     } else {
                         val receivedAt = SystemClock.elapsedRealtime()
-                        lastValidHeartRateSampleElapsedRealtime = receivedAt
-                        if (!consumeHeartRateWarmupSampleLocked()) {
+                        if (consumeHeartRateWarmupSampleLocked()) {
+                            false
+                        } else {
+                            lastValidHeartRateSampleElapsedRealtime = receivedAt
                             val refreshAttemptStartedAt = heartRateRefreshAttemptStartedAt
                             val refreshReason = activeHeartRateRefreshReason
                             if (refreshReason != null && refreshAttemptStartedAt != null &&
@@ -1201,12 +1213,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                                 )
                                 clearActiveHeartRateRefreshLocked()
                             }
-                            shouldPublish = true
+                            true
                         }
-                        true
                     }
                 }
-                if (!accepted || !shouldPublish) return
+                if (!shouldPublish) return
 
                 completedRefresh?.let { refresh ->
                     Log.i(
@@ -2957,14 +2968,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 aacpManager.sendRequestProximityKeys((AACPManager.Companion.ProximityKeyType.IRK.value + AACPManager.Companion.ProximityKeyType.ENC_KEY.value).toByte())
                 CoroutineScope(Dispatchers.IO).launch {
                     delay(200)
+                    if (!isCurrentAacpConnection(socket, connectionGeneration)) return@launch
                     aacpManager.sendPacket(aacpManager.createHandshakePacket())
                     delay(200)
+                    if (!isCurrentAacpConnection(socket, connectionGeneration)) return@launch
                     aacpManager.sendSetFeatureFlagsPacket()
                     delay(200)
+                    if (!isCurrentAacpConnection(socket, connectionGeneration)) return@launch
                     aacpManager.sendNotificationRequest()
                     delay(200)
+                    if (!isCurrentAacpConnection(socket, connectionGeneration)) return@launch
                     aacpManager.sendSomePacketIDontKnowWhatItIs()
                     delay(200)
+                    if (!isCurrentAacpConnection(socket, connectionGeneration)) return@launch
                     aacpManager.sendRequestProximityKeys((AACPManager.Companion.ProximityKeyType.IRK.value + AACPManager.Companion.ProximityKeyType.ENC_KEY.value).toByte())
                     if (!handleIncomingCallOnceConnected) {
                         if (!_heartRateMonitoringEnabled.value) startHeadTracking()
@@ -2972,6 +2988,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         handleIncomingCall()
                     }
                     Handler(Looper.getMainLooper()).postDelayed({
+                        if (!isCurrentAacpConnection(socket, connectionGeneration)) {
+                            return@postDelayed
+                        }
                         aacpManager.sendPacket(aacpManager.createHandshakePacket())
                         aacpManager.sendSetFeatureFlagsPacket()
                         aacpManager.sendNotificationRequest()
@@ -2981,15 +3000,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         }
                     }, 5000)
 
+                    if (!isCurrentAacpConnection(socket, connectionGeneration)) return@launch
                     setupStemActions()
                     startHeartRateMonitoringIfEnabled()
 
-                    while (socket.isConnected) {
+                    while (isCurrentAacpConnection(socket, connectionGeneration)) {
                         try {
                             val buffer = ByteArray(1024)
                             val bytesRead = it.inputStream.read(buffer)
                             var data: ByteArray
                             if (bytesRead > 0) {
+                                if (!isCurrentAacpConnection(socket, connectionGeneration)) {
+                                    return@launch
+                                }
                                 noteAacpPacketReceived(socket, device)
                                 data = buffer.copyOfRange(0, bytesRead)
                                 sendBroadcast(Intent(AirPodsNotifications.AIRPODS_DATA).apply {
@@ -3105,6 +3128,16 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         }
     }
 
+    private fun isCurrentAacpConnection(
+        socket: BluetoothSocket,
+        connectionGeneration: Long
+    ): Boolean = synchronized(transportRecoveryLock) {
+        !aacpReconnectSuppressed &&
+            connectionGeneration == aacpConnectionGeneration &&
+            BluetoothConnectionManager.aacpSocket === socket &&
+            socket.isConnected
+    }
+
     /**
      * Removes a dead AACP transport without sending any more packets through it. The expected
      * socket check prevents an old reader from tearing down a newer connection.
@@ -3136,6 +3169,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         livenessJobToCancel?.cancel()
         closeSocketQuietly(aacpSocketToClose, "AACP socket")
         closeSocketQuietly(attSocketToClose, "ATT socket")
+        if (::attManager.isInitialized) attManager.disconnected()
         handleHeartRateDisconnected()
         aacpManager.disconnected()
         updateNotificationContent(false)
@@ -3307,8 +3341,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         }
                     }
                     Log.w(TAG, "AACP reconnect attempts exhausted source=$source")
-                } catch (e: Exception) {
-                    Log.w(TAG, "AACP reconnect failed source=$source: ${e.message}", e)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.w(TAG, "AACP reconnect failed source=$source: ${error.message}", error)
                 } finally {
                     synchronized(transportRecoveryLock) {
                         if (aacpReconnectJob === currentJob) {
@@ -3675,7 +3711,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         _heartRateMonitoringEnabled.value = enabled
 
         if (enabled) {
-            if (!wasEnabled) _heartRateSamples.value = emptyList()
+            if (!wasEnabled) {
+                _heartRateMonitoringStatus.value = if (isAacpTransportHealthy()) {
+                    HeartRateMonitoringStatus.STARTING
+                } else {
+                    HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+                }
+            }
             startHeartRateMonitoringIfEnabled()
         } else {
             if (::heartRateExporter.isInitialized) heartRateExporter.flushAsync()
@@ -3684,9 +3726,14 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     }
 
     private fun startHeartRateMonitoringIfEnabled() {
-        if (!_heartRateMonitoringEnabled.value) return
-        if (BluetoothConnectionManager.aacpSocket?.isConnected != true) {
+        if (!_heartRateMonitoringEnabled.value) {
+            _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.OFF
+            return
+        }
+        if (!isAacpTransportHealthy()) {
             _heartRateStreaming.value = false
+            _heartRateMonitoringStatus.value =
+                HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
             return
         }
 
@@ -3694,6 +3741,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             if (heartRateStartJob?.isActive == true) return
 
             _heartRateStreaming.value = false
+            _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.STARTING
             val job = heartRateScope.launch(start = CoroutineStart.LAZY) {
                 runHeartRateMonitoringWatchdog()
             }
@@ -3711,6 +3759,14 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             }
 
             while (canContinueHeartRateMonitoring()) {
+                synchronized(heartRateLock) {
+                    _heartRateMonitoringStatus.value =
+                        if (activeHeartRateRefreshReason == null) {
+                            HeartRateMonitoringStatus.STARTING
+                        } else {
+                            HeartRateMonitoringStatus.RECONNECTING
+                        }
+                }
                 val attemptStartedAt = startHeartRateStreamAttempt()
                 if (!canContinueHeartRateMonitoring()) return
 
@@ -3723,7 +3779,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         reason
                     }
                     newlyRequestedReason?.let(::logHeartRateRefreshRequested)
-                    HeartRateStreamFailure.FIRST_SAMPLE_TIMEOUT
+                    HeartRateRefreshReason.FIRST_SAMPLE_TIMEOUT
                 } else {
                     awaitHeartRateStreamFailure(attemptStartedAt) ?: return
                 }
@@ -3752,12 +3808,17 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             val activeReason = activeHeartRateRefreshReason
             if (activeReason != null) {
                 refreshReason = activeReason
-                if (heartRateRefreshAttemptCount >= HEART_RATE_RETRY_BACKOFF_MILLIS.size) {
+                val refreshStartedAt = heartRateRefreshStartedAtElapsedRealtime
+                val reconnectTimedOut = refreshStartedAt != null &&
+                    SystemClock.elapsedRealtime() - refreshStartedAt >=
+                    HEART_RATE_RECONNECT_TIMEOUT_MILLIS
+                if (reconnectTimedOut) {
                     retriesExhausted = true
                     clearActiveHeartRateRefreshLocked()
                 } else {
-                    backoffMillis =
-                        HEART_RATE_RETRY_BACKOFF_MILLIS[heartRateRefreshAttemptCount]
+                    val backoffIndex = heartRateRefreshAttemptCount
+                        .coerceAtMost(HEART_RATE_RETRY_BACKOFF_MILLIS.lastIndex)
+                    backoffMillis = HEART_RATE_RETRY_BACKOFF_MILLIS[backoffIndex]
                     heartRateRefreshAttemptCount++
                     refreshAttempt = heartRateRefreshAttemptCount
                     heartRateRefreshAttemptStartedAt = null
@@ -3772,15 +3833,33 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 "RTBuddy heart-rate refresh failed reason=${reason.diagnosticName} " +
                     "attempts=${HEART_RATE_RETRY_BACKOFF_MILLIS.size}"
             )
+            _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.COULDNT_START
+            Log.i(TAG, "Waiting for a manual AACP reconnect after heart-rate retries failed")
             return false
         }
 
+        _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.RECONNECTING
         Log.w(
             TAG,
             "RTBuddy heart-rate refresh attempt=$refreshAttempt " +
                 "reason=${reason.diagnosticName} backoff=${backoffMillis}ms"
         )
         delay(backoffMillis)
+
+        val reconnectTimedOut = synchronized(heartRateLock) {
+            val refreshStartedAt = heartRateRefreshStartedAtElapsedRealtime
+            val timedOut = activeHeartRateRefreshReason != null &&
+                refreshStartedAt != null &&
+                SystemClock.elapsedRealtime() - refreshStartedAt >=
+                HEART_RATE_RECONNECT_TIMEOUT_MILLIS
+            if (timedOut) clearActiveHeartRateRefreshLocked()
+            timedOut
+        }
+        if (reconnectTimedOut) {
+            _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.COULDNT_START
+            Log.w(TAG, "RTBuddy heart-rate reconnect window expired after 15 seconds")
+            return false
+        }
         return canContinueHeartRateMonitoring()
     }
 
@@ -3826,7 +3905,17 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     private suspend fun awaitHeartRateStreamFailure(
         attemptStartedAt: Long
-    ): HeartRateStreamFailure? {
+    ): HeartRateRefreshReason? {
+        val firstSampleTimeoutMillis = synchronized(heartRateLock) {
+            val reconnectStartedAt = heartRateRefreshStartedAtElapsedRealtime
+                .takeIf { activeHeartRateRefreshReason != null }
+            if (reconnectStartedAt == null) {
+                HEART_RATE_FIRST_SAMPLE_TIMEOUT_MILLIS
+            } else {
+                (reconnectStartedAt + HEART_RATE_RECONNECT_TIMEOUT_MILLIS - attemptStartedAt)
+                    .coerceAtLeast(0L)
+            }
+        }
         while (canContinueHeartRateMonitoring()) {
             delay(HEART_RATE_WATCHDOG_INTERVAL_MILLIS)
             val now = SystemClock.elapsedRealtime()
@@ -3843,16 +3932,16 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                                 HeartRateRefreshReason.STREAM_STALLED
                             )
                             stopHeartRateSessionLocked()
-                            HeartRateStreamFailure.STREAM_STALLED
+                            HeartRateRefreshReason.STREAM_STALLED
                         }
 
                         (lastSampleAt == null || lastSampleAt < attemptStartedAt) &&
-                            now - attemptStartedAt >= HEART_RATE_FIRST_SAMPLE_TIMEOUT_MILLIS -> {
+                            now - attemptStartedAt >= firstSampleTimeoutMillis -> {
                             newlyRequestedReason = beginHeartRateRefreshLocked(
                                 HeartRateRefreshReason.FIRST_SAMPLE_TIMEOUT
                             )
                             stopHeartRateSessionLocked()
-                            HeartRateStreamFailure.FIRST_SAMPLE_TIMEOUT
+                            HeartRateRefreshReason.FIRST_SAMPLE_TIMEOUT
                         }
 
                         else -> null
@@ -3870,16 +3959,21 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
      * Returns true when the sample belongs to the warm-up discard window.
      */
     private fun consumeHeartRateWarmupSampleLocked(): Boolean {
-        val shouldDiscard = heartRateSamplesToDiscardAfterRefresh > 0
-        if (shouldDiscard) {
+        if (heartRateSamplesToDiscardAfterRefresh > 0) {
             heartRateSamplesToDiscardAfterRefresh--
+            _heartRateStreaming.value = false
+            _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.CALIBRATING
+            return true
         }
 
         _heartRateStreaming.value =
-            heartRateStartCommandSent &&
-                heartRateStartJob?.isActive == true &&
-                heartRateSamplesToDiscardAfterRefresh == 0
-        return shouldDiscard
+            heartRateStartCommandSent && heartRateStartJob?.isActive == true
+        _heartRateMonitoringStatus.value = if (_heartRateStreaming.value) {
+            HeartRateMonitoringStatus.LIVE
+        } else {
+            HeartRateMonitoringStatus.STARTING
+        }
+        return false
     }
 
     private fun beginHeartRateRefreshLocked(
@@ -3887,8 +3981,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     ): HeartRateRefreshReason? {
         if (activeHeartRateRefreshReason != null) return null
         activeHeartRateRefreshReason = reason
+        _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.RECONNECTING
         heartRateRefreshAttemptCount = 0
         heartRateRefreshAttemptStartedAt = null
+        heartRateRefreshStartedAtElapsedRealtime = SystemClock.elapsedRealtime()
         heartRateSamplesToDiscardAfterRefresh = HEART_RATE_REFRESH_SAMPLES_TO_DISCARD
         return reason
     }
@@ -3897,6 +3993,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         activeHeartRateRefreshReason = null
         heartRateRefreshAttemptCount = 0
         heartRateRefreshAttemptStartedAt = null
+        heartRateRefreshStartedAtElapsedRealtime = null
         heartRateSamplesToDiscardAfterRefresh = 0
     }
 
@@ -3970,6 +4067,44 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 sendStopFrame = sendStopFrame
             )
             clearActiveHeartRateRefreshLocked()
+            _heartRateMonitoringStatus.value = if (_heartRateMonitoringEnabled.value) {
+                HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+            } else {
+                HeartRateMonitoringStatus.OFF
+            }
+        }
+    }
+
+    fun reconnectAacpForHeartRate() {
+        if (!_heartRateMonitoringEnabled.value) return
+        val reconnectDevice = device ?: run {
+            _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+            return
+        }
+
+        cancelAacpReconnect(
+            source = "heart-rate-manual-reconnect",
+            suppressFutureReconnects = false
+        )
+        _heartRateMonitoringStatus.value = HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+        transportRecoveryScope.launch {
+            stopHeartRateMonitoring(forceStop = true)
+            BluetoothConnectionManager.aacpSocket?.let { socket ->
+                clearAacpTransport(
+                    source = "heart-rate-manual-reconnect",
+                    expectedSocket = socket
+                )
+            }
+            Log.i(
+                TAG,
+                "Waiting ${HEART_RATE_MANUAL_RECONNECT_QUIET_PERIOD_MILLIS}ms " +
+                    "before rebuilding AACP after heart-rate reset"
+            )
+            delay(HEART_RATE_MANUAL_RECONNECT_QUIET_PERIOD_MILLIS)
+            if (!_heartRateMonitoringEnabled.value) return@launch
+            val adapter = getSystemService(BluetoothManager::class.java).adapter
+            Log.i(TAG, "Starting manual AACP reconnect for heart-rate monitoring")
+            connectToSocket(adapter, reconnectDevice, manual = true)
         }
     }
 

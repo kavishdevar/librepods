@@ -10,11 +10,14 @@
 
 package me.kavishdevar.librepods.bluetooth
 
+import android.os.SystemClock
+
 /** A validated heart-rate sample decoded from an RTBuddy SensorDataWX frame. */
 data class HeartRateSample(
     val bpm: Int,
     val sequence: Int,
-    val receivedAtMillis: Long
+    val receivedAtMillis: Long,
+    val receivedAtElapsedRealtime: Long = SystemClock.elapsedRealtime()
 )
 
 internal enum class HeartRateRejectionReason {
@@ -50,10 +53,12 @@ internal data class HeartRateDecodeResult(
 internal class RtBuddyHeartRateDecoder {
     private var carry = ByteArray(0)
 
+    @Synchronized
     fun reset() {
         carry = ByteArray(0)
     }
 
+    @Synchronized
     fun feed(chunk: ByteArray): HeartRateDecodeResult {
         if (chunk.isEmpty()) return HeartRateDecodeResult()
 
@@ -203,7 +208,8 @@ internal class RtBuddyHeartRateDecoder {
             sample = HeartRateSample(
                 bpm = payload.unsignedByteAt(HEART_RATE_BPM_OFFSET),
                 sequence = sensorData.sequence,
-                receivedAtMillis = System.currentTimeMillis()
+                receivedAtMillis = System.currentTimeMillis(),
+                receivedAtElapsedRealtime = SystemClock.elapsedRealtime()
             )
         )
     }

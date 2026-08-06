@@ -56,10 +56,14 @@ import androidx.health.connect.client.PermissionController
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
 import me.kavishdevar.librepods.health.HealthConnectHeartRateExporter
+import me.kavishdevar.librepods.presentation.components.HeartRateStatusChip
+import me.kavishdevar.librepods.presentation.components.StyledSwitch
 import me.kavishdevar.librepods.presentation.components.StyledToggle
+import me.kavishdevar.librepods.presentation.components.rememberHeartRateSampleIsDisplayable
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AirPodsViewModel
+import me.kavishdevar.librepods.services.HeartRateMonitoringStatus
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.ceil
@@ -93,12 +97,10 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
 
     val latestSample = state.heartRateSamples.lastOrNull()
-    val monitoringStatus = monitoringStatus(
-        enabled = state.heartRateMonitoringEnabled,
-        connected = state.isLocallyConnected,
-        streaming = state.heartRateStreaming
+    val sampleIsDisplayable = rememberHeartRateSampleIsDisplayable(
+        sample = latestSample,
+        monitoringStatus = state.heartRateMonitoringStatus
     )
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -109,9 +111,12 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
         Spacer(modifier = Modifier.height(topPadding))
 
         HeartRateSummaryCard(
+            monitoringEnabled = state.heartRateMonitoringEnabled,
             latestSample = latestSample,
-            connected = state.isLocallyConnected,
-            monitoringStatus = monitoringStatus
+            sampleIsDisplayable = sampleIsDisplayable,
+            monitoringStatus = state.heartRateMonitoringStatus,
+            onReconnectAacp = viewModel::reconnectAacpForHeartRate,
+            onMonitoringChanged = viewModel::setHeartRateMonitoringEnabled
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -144,6 +149,13 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
+        Text(
+            text = formatGraphSummary(state.heartRateSamples),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+
         HeartRateGraph(samples = state.heartRateSamples)
 
         Spacer(modifier = Modifier.height(bottomPadding))
@@ -152,9 +164,12 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
 
 @Composable
 private fun HeartRateSummaryCard(
+    monitoringEnabled: Boolean,
     latestSample: HeartRateSample?,
-    connected: Boolean,
-    monitoringStatus: String
+    sampleIsDisplayable: Boolean,
+    monitoringStatus: HeartRateMonitoringStatus,
+    onReconnectAacp: () -> Unit,
+    onMonitoringChanged: (Boolean) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -172,7 +187,7 @@ private fun HeartRateSummaryCard(
             ) {
                 Column {
                     Text(
-                        text = latestSample?.bpm?.toString() ?: EM_DASH,
+                        text = latestSample?.takeIf { sampleIsDisplayable }?.bpm?.toString() ?: EM_DASH,
                         style = MaterialTheme.typography.displayMedium,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -183,26 +198,23 @@ private fun HeartRateSummaryCard(
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = if (connected) "Connected" else "Disconnected",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (connected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
+                    Box(modifier = Modifier.padding(end = 4.dp, bottom = 8.dp)) {
+                        StyledSwitch(
+                            checked = monitoringEnabled,
+                            onCheckedChange = onMonitoringChanged
+                        )
+                    }
+                    HeartRateStatusChip(
+                        status = monitoringStatus,
+                        onRetry = onReconnectAacp.takeIf {
+                            monitoringStatus == HeartRateMonitoringStatus.COULDNT_START
                         }
-                    )
-                    Text(
-                        text = monitoringStatus,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.End
                     )
                 }
             }
 
             Text(
-                text = "Last update: ${formatLastUpdate(latestSample)}",
+                text = formatLastReading(latestSample),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -235,25 +247,14 @@ private fun HealthConnectControls(
         title = null,
         label = "Detailed samples",
         description = if (detailedSamples) {
-            "Save heart-rate data every second."
+            "Save one BPM record every second."
         } else {
-            "Export one average BPM for each minute. AirPods sampling is unchanged."
+            "Save one average BPM record every minute."
         },
         checked = detailedSamples,
         enabled = available,
         onCheckedChange = onDetailedSamplesChanged
     )
-}
-
-private fun monitoringStatus(
-    enabled: Boolean,
-    connected: Boolean,
-    streaming: Boolean
-): String = when {
-    !enabled -> "Disabled"
-    !connected -> "Enabled — waiting for connection"
-    streaming -> "Streaming"
-    else -> "Enabled — awaiting valid sample"
 }
 
 private val HealthConnectExportStatus.isAvailable: Boolean
@@ -430,6 +431,15 @@ private fun HeartRateGraph(samples: List<HeartRateSample>) {
     }
 }
 
+private fun formatGraphSummary(samples: List<HeartRateSample>): String {
+    if (samples.isEmpty()) return "Min $EM_DASH · Avg $EM_DASH · Max $EM_DASH BPM"
+
+    val min = samples.minOf { it.bpm }
+    val max = samples.maxOf { it.bpm }
+    val average = samples.sumOf { it.bpm }.toFloat() / samples.size
+    return "Min $min · Avg ${average.toInt()} · Max $max BPM"
+}
+
 private data class HeartRateChartScale(
     val minBpm: Float,
     val maxBpm: Float,
@@ -598,10 +608,11 @@ private fun floorToIncrement(value: Float, increment: Float): Float =
 private fun ceilToIncrement(value: Float, increment: Float): Float =
     ceil(value / increment) * increment
 
-private fun formatLastUpdate(sample: HeartRateSample?): String {
-    if (sample == null) return "No samples yet"
-    return DateFormat.getTimeInstance(DateFormat.MEDIUM)
+private fun formatLastReading(sample: HeartRateSample?): String {
+    if (sample == null) return "Last reading: $EM_DASH"
+    val time = DateFormat.getTimeInstance(DateFormat.SHORT)
         .format(Date(sample.receivedAtMillis))
+    return "Last reading: ${sample.bpm} BPM at $time"
 }
 
 private const val EM_DASH = "—"
