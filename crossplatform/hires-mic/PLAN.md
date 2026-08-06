@@ -85,7 +85,17 @@ the sink.
   end: `lp-mic-test` (a user-mode tone feeder, `windows-driver/lp-mic-test/`)
   pushed a 440 Hz sine and it was **recorded and audible** on "Microphone
   (AudioCodec Device)". The audio-driver de-risk is complete.
-- **Phase 3 — next**: replace the tone with the real thing — the AAP command
-  that enables the AirPods hi-res mic + AAC-ELD decode (FFmpeg) from PR #655,
-  pushing decoded PCM into `\\.\LibrePodsMic`.
+- **Phase 3a — DONE** ✅ (`c843d32`, validated on hardware): the AAP enable
+  command works. The tray's "Hi-res microphone (test)" toggle sends `START_AUDIO`
+  (`04 00 04 00 58 …`, from PR #655); the AirPods enter mic mode (A2DP playback
+  drops to right-only mono, as expected — needs an A2DP reset like #655), and the
+  receive loop confirmed the **0x58 uplink audio packets flow** ("receiving
+  audio" card). Constants + `is_audio_packet` in `aap.rs`; protocol in
+  [[hires-mic-protocol]].
+- **Phase 3b — next (the hard part)**: decode the 0x58 packets' **AAC-ELD** to
+  PCM and feed `\\.\LibrePodsMic`. Parse AUs (header 22, AU len at `off+4`,
+  payload `off+5`), decode AAC-ELD (64000/480/mono, ASC `F8 E6 30 00`) → f32 →
+  i16. **Blocker: the decoder on Windows/mingw** — FFmpeg libavcodec (native
+  AAC-ELD, LGPL) or libfdk-aac, cross-compiled for `x86_64-pc-windows-gnu` or
+  linked against prebuilt DLLs. Plus the A2DP reset to restore stereo playback.
 - Phase 3 (protocol from PR #655 + AAC-ELD) and Phase 4 (integration) to follow.
