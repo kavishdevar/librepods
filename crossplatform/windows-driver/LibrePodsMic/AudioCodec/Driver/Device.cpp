@@ -178,8 +178,9 @@ Return Value:
     // device context. These circuits will be added to the device when the
     // prepare hardware callback is called. 
     //
-    RETURN_NTSTATUS_IF_FAILED(CodecR_AddStaticRender(device, &CODEC_RENDER_COMPONENT_GUID, &renderCircuitName));
-
+    // LibrePodsMic is capture-only (a virtual microphone). No render/speaker
+    // circuit — so Windows never exposes a phantom output device that could grab
+    // the default output.
     RETURN_NTSTATUS_IF_FAILED(CodecC_AddStaticCapture(device, &CODEC_CAPTURE_COMPONENT_GUID, &MIC_CUSTOM_NAME, &captureCircuitName));
 
     return status;
@@ -248,9 +249,6 @@ Return Value:
     // called once). 
     //
 
-    ASSERT(devCtx->Render);
-    RETURN_NTSTATUS_IF_FAILED(AcxDeviceAddCircuit(Device, devCtx->Render));
-
     ASSERT(devCtx->Capture);
     RETURN_NTSTATUS_IF_FAILED(AcxDeviceAddCircuit(Device, devCtx->Capture));
 
@@ -294,7 +292,6 @@ Return Value:
     //
     // The driver uses this DDI to delete a circuit from the current device. 
     //
-    RETURN_NTSTATUS_IF_FAILED(AcxDeviceRemoveCircuit(Device, devCtx->Render));
     RETURN_NTSTATUS_IF_FAILED(AcxDeviceRemoveCircuit(Device, devCtx->Capture));
 
     // NOTE: Release streaming h/w resources here.

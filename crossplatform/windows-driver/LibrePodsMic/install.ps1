@@ -51,7 +51,12 @@ $pkgSys = Join-Path $pkg 'AudioCodec.sys'
 & $signtool sign /v /fd SHA256 /sm /s My /sha1 $cert.Thumbprint $cat
 
 # 3. Install the driver + create the ROOT device (devcon install does both).
+#    Remove any existing instance first so re-running updates cleanly instead of
+#    stacking a second virtual device.
 $pkgInf = Join-Path $pkg 'AudioCodec.inf'
+Write-Host '==> Removing any existing ROOT\AudioCodec device...'
+& $devcon remove 'ROOT\AudioCodec' 2>&1 | Out-Null
+Start-Sleep -Seconds 1
 Write-Host '==> Installing + creating the ROOT\AudioCodec device...'
 & $devcon install $pkgInf 'ROOT\AudioCodec'
 
