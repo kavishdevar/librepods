@@ -76,11 +76,11 @@ pub fn reset(mac: u64) -> (u32, u32) {
 
         // Let the mic-stop transition settle so the AirPods have left mic mode
         // before we touch A2DP.
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        std::thread::sleep(std::time::Duration::from_millis(400));
         let d = BluetoothSetServiceState(radio, &info, &A2DP_SERVICE, BLUETOOTH_SERVICE_DISABLE);
-        // Let the A2DP link fully tear down before reconnecting, else it
-        // re-establishes mid-teardown (mono/crackle) and needs another try.
-        std::thread::sleep(std::time::Duration::from_millis(2000));
+        // Let the A2DP link tear down before reconnecting, else it re-establishes
+        // mid-teardown (mono/crackle) and needs another try.
+        std::thread::sleep(std::time::Duration::from_millis(1400));
         let e = BluetoothSetServiceState(radio, &info, &A2DP_SERVICE, BLUETOOTH_SERVICE_ENABLE);
 
         CloseHandle(radio);
