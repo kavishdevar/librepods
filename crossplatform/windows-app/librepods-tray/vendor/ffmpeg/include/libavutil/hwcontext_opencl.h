@@ -75,7 +75,7 @@ typedef struct AVOpenCLDeviceContext {
     /**
      * The default command queue for this device, which will be used by all
      * frames contexts which do not have their own command queue.  If not
-     * initialised by the user, a default queue will be created on the
+     * intialised by the user, a default queue will be created on the
      * primary device.
      */
     cl_command_queue command_queue;

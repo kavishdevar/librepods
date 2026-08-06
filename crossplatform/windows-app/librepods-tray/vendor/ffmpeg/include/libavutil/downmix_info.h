@@ -21,7 +21,6 @@
 #ifndef AVUTIL_DOWNMIX_INFO_H
 #define AVUTIL_DOWNMIX_INFO_H
 
-#include "avassert.h"
 #include "frame.h"
 
 /**
@@ -104,70 +103,6 @@ typedef struct AVDownmixInfo {
  *         the structure cannot be allocated.
  */
 AVDownmixInfo *av_downmix_info_update_side_data(AVFrame *frame);
-
-/**
- * This structure describes optional metadata relevant to a downmix procedure
- * in the form of a remixing matrix allocated as an array of AVDownmixCoeff.
- * Must be allocated with @ref av_downmix_matrix_alloc.
- *
- * sizeof(AVDownmixMatrix) is not a part of the ABI and new fields may be
- * added to it.
- */
-typedef struct AVDownmixMatrix {
-    /**
-     * Type of downmix the coeffs will produce.
-     * Output channel count is derived from this value.
-     */
-    enum AVDownmixType downmix_type;
-
-    /**
-     * Input channel count.
-     */
-    int in_ch_count;
-
-    /**
-     * Amount of coefficients in the matrix.
-     */
-    unsigned int nb_coeffs;
-
-    /**
-     * Offset in bytes from the beginning of this structure at which the array
-     * of coefficients starts.
-     */
-    size_t coeffs_offset;
-} AVDownmixMatrix;
-
-/**
- * Data type for storing coefficients, which are allocated as a part of
- * AVDownmixMatrix and should be retrieved with @ref av_downmix_matrix_coeff.
- */
-typedef double AVDownmixCoeff;
-
-/**
- * Get a pointer to the coeff that represents the weight of input channel
- * {@code in} in output channel {@code out}.
- * in must be between 0 and @ref AVDownmixMatrix.in_ch_count "in_ch_count" - 1.
- * out must be between 0 and the implicit output channel count from
- * @ref AVDownmixMatrix.downmix_type "downmix_type" - 1.
- */
-static av_always_inline AVDownmixCoeff*
-av_downmix_matrix_coeff(AVDownmixMatrix *dm, unsigned int out, unsigned int in)
-{
-    AVDownmixCoeff *coeff = (AVDownmixCoeff *)((uint8_t *)dm + dm->coeffs_offset);
-    return &coeff[in + dm->in_ch_count * out];
-}
-
-/**
- * Allocates memory for AVDownmixMatrix of the given type, plus an array of
- * {@code in_ch_count} times the implicit output channel count from {@code type}
- * of AVDownmixCoeff and initializes the variables. Can be freed with a normal
- * av_free() call.
- *
- * @param out_size if non-NULL, the size in bytes of the resulting data array is
- * written here.
- */
-AVDownmixMatrix *av_downmix_matrix_alloc(enum AVDownmixType type,
-                                         int in_ch_count, size_t *out_size);
 
 /**
  * @}

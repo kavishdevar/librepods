@@ -124,7 +124,7 @@ typedef struct AVFilmGrainAOMParams {
 
 /**
  * This structure describes how to handle film grain synthesis for codecs using
- * the ITU-T H.274 Versatile supplemental enhancement information message.
+ * the ITU-T H.274 Versatile suplemental enhancement information message.
  *
  * @note The struct must be allocated as part of AVFilmGrainParams using
  *       av_film_grain_params_alloc(). Its size is not a part of the public ABI.
@@ -135,6 +135,43 @@ typedef struct AVFilmGrainH274Params {
      * 0 = Frequency filtering, 1 = Auto-regression
      */
     int model_id;
+
+#if FF_API_H274_FILM_GRAIN_VCS
+  /**
+   * TODO: On this ABI bump, please also re-order the fields in
+   * AVFilmGrainParams (see below)
+   */
+
+  /**
+   * Specifies the bit depth used for the luma component.
+   *
+   * @deprecated use AVFilmGrainParams.bit_depth_luma.
+   */
+    attribute_deprecated
+    int bit_depth_luma;
+
+    /**
+     * Specifies the bit depth used for the chroma components.
+     *
+     * @deprecated use AVFilmGrainParams.bit_depth_chroma.
+     */
+    attribute_deprecated
+    int bit_depth_chroma;
+
+    /**
+     * Specifies the video signal characteristics.
+     *
+     * @deprecated use AVFilmGrainParams.color_{range,primaries,trc,space}.
+     */
+    attribute_deprecated
+    enum AVColorRange                  color_range;
+    attribute_deprecated
+    enum AVColorPrimaries              color_primaries;
+    attribute_deprecated
+    enum AVColorTransferCharacteristic color_trc;
+    attribute_deprecated
+    enum AVColorSpace                  color_space;
+#endif
 
     /**
      * Specifies the blending mode used to blend the simulated film grain
@@ -213,6 +250,18 @@ typedef struct AVFilmGrainParams {
     uint64_t seed;
 
     /**
+     * Additional fields may be added both here and in any structure included.
+     * If a codec's film grain structure differs slightly over another
+     * codec's, fields within may change meaning depending on the type.
+     *
+     * TODO: Move this to the end of the structure, at the next ABI bump.
+     */
+    union {
+        AVFilmGrainAOMParams aom;
+        AVFilmGrainH274Params h274;
+    } codec;
+
+    /**
      * Intended display resolution. May be 0 if the codec does not specify
      * any restrictions.
      */
@@ -238,15 +287,6 @@ typedef struct AVFilmGrainParams {
     int bit_depth_luma;
     int bit_depth_chroma;
 
-    /**
-     * Additional fields may be added both here and in any structure included.
-     * If a codec's film grain structure differs slightly over another
-     * codec's, fields within may change meaning depending on the type.
-     */
-    union {
-        AVFilmGrainAOMParams aom;
-        AVFilmGrainH274Params h274;
-    } codec;
 } AVFilmGrainParams;
 
 /**

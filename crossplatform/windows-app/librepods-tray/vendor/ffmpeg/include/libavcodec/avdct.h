@@ -19,9 +19,6 @@
 #ifndef AVCODEC_AVDCT_H
 #define AVCODEC_AVDCT_H
 
-#include <stddef.h>
-#include <stdint.h>
-
 #include "libavutil/opt.h"
 
 /**

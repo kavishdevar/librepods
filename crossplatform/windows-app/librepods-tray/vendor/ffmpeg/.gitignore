@@ -1,2 +1,1 @@
-# Runtime DLLs (~75 MB) — fetched, not committed. See README / fetch note.
-bin/*.dll
+# (Minimal FFmpeg DLLs are small enough to commit — see README.)

@@ -24,9 +24,7 @@
 #include <stddef.h>
 #include "version.h"
 
-#if FF_API_CPU_FLAG_FORCE
-#define AV_CPU_FLAG_FORCE    0x80000000 /* @deprecated, should not be used */
-#endif
+#define AV_CPU_FLAG_FORCE    0x80000000 /* force usage of selected flags (OR) */
 
     /* lower 16 bits - CPU features */
 #define AV_CPU_FLAG_MMX          0x0001 ///< standard MMX
@@ -47,7 +45,6 @@
 #define AV_CPU_FLAG_SSE4         0x0100 ///< Penryn SSE4.1 functions
 #define AV_CPU_FLAG_SSE42        0x0200 ///< Nehalem SSE4.2 functions
 #define AV_CPU_FLAG_AESNI       0x80000 ///< Advanced Encryption Standard functions
-#define AV_CPU_FLAG_CLMUL      0x400000 ///< Carry-less Multiplication instruction
 #define AV_CPU_FLAG_AVX          0x4000 ///< AVX functions: requires OS support even if YMM registers aren't used
 #define AV_CPU_FLAG_AVXSLOW   0x8000000 ///< AVX supported, but slow when using YMM registers (e.g. Bulldozer)
 #define AV_CPU_FLAG_XOP          0x0400 ///< Bulldozer XOP functions
@@ -75,15 +72,7 @@
 #define AV_CPU_FLAG_VFP_VM       (1 << 7) ///< VFPv2 vector mode, deprecated in ARMv7-A and unavailable in various CPUs implementations
 #define AV_CPU_FLAG_DOTPROD      (1 << 8)
 #define AV_CPU_FLAG_I8MM         (1 << 9)
-#define AV_CPU_FLAG_SVE          (1 <<10)
-#define AV_CPU_FLAG_SVE2         (1 <<11)
-#define AV_CPU_FLAG_SME          (1 <<12)
-#define AV_CPU_FLAG_ARM_CRC      (1 <<13)
-#define AV_CPU_FLAG_SME2         (1 <<14)
-#define AV_CPU_FLAG_SME_I16I64   (1 <<15)
 #define AV_CPU_FLAG_SETEND       (1 <<16)
-#define AV_CPU_FLAG_PMULL        (1 <<17)
-#define AV_CPU_FLAG_EOR3         (1 <<18)
 
 #define AV_CPU_FLAG_MMI          (1 << 0)
 #define AV_CPU_FLAG_MSA          (1 << 1)
@@ -94,17 +83,21 @@
 
 // RISC-V extensions
 #define AV_CPU_FLAG_RVI          (1 << 0) ///< I (full GPR bank)
+#if FF_API_RISCV_FD_ZBA
+#define AV_CPU_FLAG_RVF          (1 << 1) ///< F (single precision FP)
+#define AV_CPU_FLAG_RVD          (1 << 2) ///< D (double precision FP)
+#endif
 #define AV_CPU_FLAG_RVV_I32      (1 << 3) ///< Vectors of 8/16/32-bit int's */
 #define AV_CPU_FLAG_RVV_F32      (1 << 4) ///< Vectors of float's */
 #define AV_CPU_FLAG_RVV_I64      (1 << 5) ///< Vectors of 64-bit int's */
 #define AV_CPU_FLAG_RVV_F64      (1 << 6) ///< Vectors of double's
 #define AV_CPU_FLAG_RVB_BASIC    (1 << 7) ///< Basic bit-manipulations
+#if FF_API_RISCV_FD_ZBA
+#define AV_CPU_FLAG_RVB_ADDR     (1 << 8) ///< Address bit-manipulations
+#endif
 #define AV_CPU_FLAG_RV_ZVBB      (1 << 9) ///< Vector basic bit-manipulations
 #define AV_CPU_FLAG_RV_MISALIGNED (1 <<10) ///< Fast misaligned accesses
 #define AV_CPU_FLAG_RVB          (1 <<11) ///< B (bit manipulations)
-
-// WASM extensions
-#define AV_CPU_FLAG_SIMD128      (1 << 0)
 
 /**
  * Return the flags which specify extensions supported by the CPU.

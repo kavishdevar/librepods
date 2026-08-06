@@ -279,20 +279,12 @@ typedef struct AVDOVIDmLevel11 {
     uint8_t content_type;
     uint8_t whitepoint;
     uint8_t reference_mode_flag;
-#if FF_API_DOVI_L11_INVALID_PROPS
-    attribute_deprecated
     uint8_t sharpness;
-    attribute_deprecated
     uint8_t noise_reduction;
-    attribute_deprecated
     uint8_t mpeg_noise_reduction;
-    attribute_deprecated
     uint8_t frame_rate_conversion;
-    attribute_deprecated
     uint8_t brightness;
-    attribute_deprecated
     uint8_t color;
-#endif
 } AVDOVIDmLevel11;
 
 typedef struct AVDOVIDmLevel254 {
@@ -377,10 +369,6 @@ av_dovi_get_color(const AVDOVIMetadata *data)
     return (AVDOVIColorMetadata *)((uint8_t *) data + data->color_offset);
 }
 
-/**
- * Gets the specified Dolby Vision Display Management (DM) metadata
- * @param index must be non negative and below data->num_ext_blocks
- */
 static av_always_inline AVDOVIDmData *
 av_dovi_get_ext(const AVDOVIMetadata *data, int index)
 {

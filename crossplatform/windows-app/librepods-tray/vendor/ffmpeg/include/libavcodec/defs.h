@@ -185,9 +185,6 @@
 #define AV_PROFILE_PRORES_4444      4
 #define AV_PROFILE_PRORES_XQ        5
 
-#define AV_PROFILE_PRORES_RAW       0
-#define AV_PROFILE_PRORES_RAW_HQ    1
-
 #define AV_PROFILE_ARIB_PROFILE_A 0
 #define AV_PROFILE_ARIB_PROFILE_C 1
 
@@ -196,14 +193,6 @@
 
 #define AV_PROFILE_EVC_BASELINE             0
 #define AV_PROFILE_EVC_MAIN                 1
-
-#define AV_PROFILE_APV_422_10  33
-#define AV_PROFILE_APV_422_12  44
-#define AV_PROFILE_APV_444_10  55
-#define AV_PROFILE_APV_444_12  66
-#define AV_PROFILE_APV_4444_10 77
-#define AV_PROFILE_APV_4444_12 88
-#define AV_PROFILE_APV_400_10  99
 
 
 #define AV_LEVEL_UNKNOWN                  -99
@@ -335,20 +324,6 @@ typedef struct AVProducerReferenceTime {
     int64_t wallclock;
     int flags;
 } AVProducerReferenceTime;
-
-/**
- * RTCP SR (Sender Report) information
- *
- * The received sender report information for an RTSP
- * stream, exposed as AV_PKT_DATA_RTCP_SR side data.
- */
-typedef struct AVRTCPSenderReport {
-    uint32_t ssrc; ///< Synchronization source identifier
-    uint64_t ntp_timestamp; ///< NTP time when the report was sent
-    uint32_t rtp_timestamp; ///< RTP time when the report was sent
-    uint32_t sender_nb_packets; ///< Total number of packets sent
-    uint32_t sender_nb_bytes; ///< Total number of bytes sent (excluding headers or padding)
-} AVRTCPSenderReport;
 
 /**
  * Encode extradata length to a buffer. Used by xiph codecs.

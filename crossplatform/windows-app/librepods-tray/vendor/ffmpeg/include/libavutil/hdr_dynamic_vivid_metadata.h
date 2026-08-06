@@ -83,7 +83,7 @@ typedef struct AVHDRVividColorToneMappingParams {
     AVRational targeted_system_display_maximum_luminance;
 
     /**
-     * This flag indicates that transfer the base parameter(for value of 1)
+     * This flag indicates that transfer the base paramter(for value of 1)
      */
     int base_enable_flag;
 
@@ -145,7 +145,7 @@ typedef struct AVHDRVividColorToneMappingParams {
     int base_param_k3;
 
     /**
-     * This flag indicates that delta mode of base parameter(for value of 1)
+     * This flag indicates that delta mode of base paramter(for value of 1)
      */
     int base_param_Delta_enable_mode;
 
@@ -158,7 +158,7 @@ typedef struct AVHDRVividColorToneMappingParams {
 
     /**
      * indicates 3Spline_enable_flag in the base parameter,
-     * This flag indicates that transfer three Spline of base parameter(for value of 1)
+     * This flag indicates that transfer three Spline of base paramter(for value of 1)
      */
     int three_Spline_enable_flag;
 
@@ -167,6 +167,60 @@ typedef struct AVHDRVividColorToneMappingParams {
      * of 1 to 2, inclusive.
      */
     int three_Spline_num;
+
+#if FF_API_HDR_VIVID_THREE_SPLINE
+    /**
+     * The mode of three Spline. the value shall be in the range
+     * of 0 to 3, inclusive.
+     * @deprecated Use three_spline instead
+     */
+    attribute_deprecated
+    int three_Spline_TH_mode;
+
+    /**
+     * three_Spline_TH_enable_MB is in the range of 0.0 to 1.0, inclusive
+     * and in multiples of 1.0/255.
+     * @deprecated Use three_spline instead
+     */
+    attribute_deprecated
+    AVRational three_Spline_TH_enable_MB;
+
+    /**
+     * 3Spline_TH_enable of three Spline.
+     * The value shall be in the range of 0.0 to 1.0, inclusive.
+     * and in multiples of 1.0/4095.
+     * @deprecated Use three_spline instead
+     */
+    attribute_deprecated
+    AVRational three_Spline_TH_enable;
+
+    /**
+     * 3Spline_TH_Delta1 of three Spline.
+     * The value shall be in the range of 0.0 to 0.25, inclusive,
+     * and in multiples of 0.25/1023.
+     * @deprecated Use three_spline instead
+     */
+    attribute_deprecated
+    AVRational three_Spline_TH_Delta1;
+
+    /**
+     * 3Spline_TH_Delta2 of three Spline.
+     * The value shall be in the range of 0.0 to 0.25, inclusive,
+     * and in multiples of 0.25/1023.
+     * @deprecated Use three_spline instead
+     */
+    attribute_deprecated
+    AVRational three_Spline_TH_Delta2;
+
+    /**
+     * 3Spline_enable_Strength of three Spline.
+     * The value shall be in the range of 0.0 to 1.0, inclusive,
+     * and in multiples of 1.0/255.
+     * @deprecated Use three_spline instead
+     */
+    attribute_deprecated
+    AVRational three_Spline_enable_Strength;
+#endif
 
     AVHDRVivid3SplineParams three_spline[2];
 } AVHDRVividColorToneMappingParams;

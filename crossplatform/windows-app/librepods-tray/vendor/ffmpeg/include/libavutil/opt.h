@@ -28,6 +28,7 @@
  */
 
 #include "rational.h"
+#include "avutil.h"
 #include "channel_layout.h"
 #include "dict.h"
 #include "log.h"
@@ -541,7 +542,7 @@ typedef struct AVOptionRanges {
      */
     int nb_ranges;
     /**
-     * Number of components.
+     * Number of componentes.
      */
     int nb_components;
 } AVOptionRanges;
@@ -886,6 +887,22 @@ int av_opt_set_chlayout(void *obj, const char *name, const AVChannelLayout *layo
 int av_opt_set_dict_val(void *obj, const char *name, const AVDictionary *val, int search_flags);
 
 /**
+ * Set a binary option to an integer list.
+ *
+ * @param obj    AVClass object to set options on
+ * @param name   name of the binary option
+ * @param val    pointer to an integer list (must have the correct type with
+ *               regard to the contents of the list)
+ * @param term   list terminator (usually 0 or -1)
+ * @param flags  search flags
+ */
+#define av_opt_set_int_list(obj, name, val, term, flags) \
+    (av_int_list_length(val, term) > INT_MAX / sizeof(*(val)) ? \
+     AVERROR(EINVAL) : \
+     av_opt_set_bin(obj, name, (const uint8_t *)(val), \
+                    av_int_list_length(val, term) * sizeof(*(val)), flags))
+
+/**
  * Add, replace, or remove elements for an array option. Which of these
  * operations is performed depends on the values of val and search_flags.
  *
@@ -1053,6 +1070,16 @@ int av_opt_eval_q     (void *obj, const AVOption *o, const char *val, AVRational
  */
 
 /**
+ * Gets a pointer to the requested field in a struct.
+ * This function allows accessing a struct even when its fields are moved or
+ * renamed since the application making the access has been compiled,
+ *
+ * @returns a pointer to the field, it can be cast to the correct type and read
+ *          or written to.
+ */
+void *av_opt_ptr(const AVClass *avclass, void *obj, const char *name);
+
+/**
  * Check if given option is set to its default value.
  *
  * Options o must belong to the obj. This function must not be called to check child's options state.
@@ -1103,7 +1130,7 @@ int av_opt_flag_is_set(void *obj, const char *field_name, const char *flag_name)
  * @param[in]  obj           AVClass object to serialize
  * @param[in]  opt_flags     serialize options with all the specified flags set (AV_OPT_FLAG)
  * @param[in]  flags         combination of AV_OPT_SERIALIZE_* flags
- * @param[out] buffer        Pointer to buffer that will be allocated with string containing serialized options.
+ * @param[out] buffer        Pointer to buffer that will be allocated with string containg serialized options.
  *                           Buffer must be freed by the caller when is no longer needed.
  * @param[in]  key_val_sep   character used to separate key from value
  * @param[in]  pairs_sep     character used to separate two pairs from each other
@@ -1133,7 +1160,7 @@ void av_opt_freep_ranges(AVOptionRanges **ranges);
  *
  * The result must be freed with av_opt_freep_ranges.
  *
- * @return number of components returned on success, a negative error code otherwise
+ * @return number of compontents returned on success, a negative errro code otherwise
  */
 int av_opt_query_ranges(AVOptionRanges **, void *obj, const char *key, int flags);
 
@@ -1149,7 +1176,7 @@ int av_opt_query_ranges(AVOptionRanges **, void *obj, const char *key, int flags
  *
  * The result must be freed with av_opt_free_ranges.
  *
- * @return number of components returned on success, a negative error code otherwise
+ * @return number of compontents returned on success, a negative errro code otherwise
  */
 int av_opt_query_ranges_default(AVOptionRanges **, void *obj, const char *key, int flags);
 

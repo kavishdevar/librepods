@@ -24,8 +24,6 @@
 #include <cuda.h>
 #endif
 
-#include <stdint.h>
-
 #include "pixfmt.h"
 
 /**
@@ -48,78 +46,8 @@ typedef struct AVCUDADeviceContext {
 } AVCUDADeviceContext;
 
 /**
- * CUDA frame descriptor for pool allocation of AV_PIX_FMT_CUARRAY frames.
- *
- * In user-allocated pools, AVHWFramesContext.pool must return AVBufferRefs
- * with the data pointer pointing at an object of this type describing the
- * planes of the frame.
- *
- * This has no use outside of custom allocation, and AVFrame AVBufferRef do not
- * necessarily point to an instance of this struct.
+ * AVHWFramesContext.hwctx is currently not used
  */
-typedef struct AVCUDAArrayFrameDescriptor {
-    /**
-     * The CUarray containing the frame data.
-     *
-     * Normally stored in AVFrame.data[0].
-     */
-    CUarray array;
-
-    /**
-     * The index into AVCUDAFramesContext.cuarray_surfaces, or 0 if not applicable.
-     *
-     * Normally stored in AVFrame.data[1] (cast from intptr_t).
-     */
-    intptr_t index;
-} AVCUDAArrayFrameDescriptor;
-
-/**
- * This struct is allocated as AVHWFramesContext.hwctx
- */
-typedef struct AVCUDAFramesContext {
-    /**
-     * CUDA_ARRAY3D_DESCRIPTOR CUarrays will be initialized with.
-     * Mostly used to provide external Flags.
-     *
-     * Width, Height and Format only honored if != 0.
-     * Filled with default parameters from the FramesContext otherwise.
-     *
-     * Only applicable for AV_PIX_FMT_CUARRAY.
-     */
-    CUDA_ARRAY3D_DESCRIPTOR cuarray_desc;
-
-    /**
-     * If >0, pre-allocate a fixed pool of surfaces.
-     * The surfaces will be available via cuarray_surfaces after init.
-     * Size of the pool cannot be changed afterwards.
-     *
-     * Only applicable for AV_PIX_FMT_CUARRAY.
-     */
-    int cuarray_num_surfaces;
-
-    /**
-     * If cuarray_num_surfaces is >0, this contains the array of pre-allocated surfaces.
-     *
-     * Only applicable for AV_PIX_FMT_CUARRAY.
-     */
-    CUarray *cuarray_surfaces;
-} AVCUDAFramesContext;
-
-/**
- * CUDA hardware pipeline configuration details.
- *
- * Passed to av_hwdevice_get_hwframe_constraints() to query
- * per-hw-format constraints. When provided, valid_sw_formats
- * will be filtered to only those compatible with the specified
- * hw_format.
- */
-typedef struct AVCUDAHWConfig {
-    /**
-     * The hardware pixel format to query constraints for.
-     * Must be AV_PIX_FMT_CUDA or AV_PIX_FMT_CUARRAY.
-     */
-    enum AVPixelFormat hw_format;
-} AVCUDAHWConfig;
 
 /**
  * @defgroup hwcontext_cuda Device context creation flags
