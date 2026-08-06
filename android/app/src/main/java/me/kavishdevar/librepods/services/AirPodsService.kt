@@ -1189,13 +1189,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     } else {
                         val receivedAt = SystemClock.elapsedRealtime()
                         lastValidHeartRateSampleElapsedRealtime = receivedAt
-                        if (heartRateStartCommandSent && heartRateStartJob?.isActive == true) {
-                            _heartRateStreaming.value = true
-                        }
-
-                        if (heartRateSamplesToDiscardAfterRefresh > 0) {
-                            heartRateSamplesToDiscardAfterRefresh--
-                        } else {
+                        if (!consumeHeartRateWarmupSampleLocked()) {
                             val refreshAttemptStartedAt = heartRateRefreshAttemptStartedAt
                             val refreshReason = activeHeartRateRefreshReason
                             if (refreshReason != null && refreshAttemptStartedAt != null &&
@@ -3817,8 +3811,12 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 val attemptStartedAt = SystemClock.elapsedRealtime()
                 val started = aacpManager.sendHeartRateStartFrame()
                 heartRateStartCommandSent = started
-                if (started && activeHeartRateRefreshReason != null) {
-                    heartRateRefreshAttemptStartedAt = attemptStartedAt
+                if (started) {
+                    heartRateSamplesToDiscardAfterRefresh =
+                        HEART_RATE_REFRESH_SAMPLES_TO_DISCARD
+                    if (activeHeartRateRefreshReason != null) {
+                        heartRateRefreshAttemptStartedAt = attemptStartedAt
+                    }
                 }
                 Log.d(TAG, "RTBuddy heart-rate start sent=$started")
                 if (started) attemptStartedAt else null
@@ -3865,6 +3863,23 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             if (failure != null) return failure
         }
         return null
+    }
+
+    /**
+     * Updates warm-up and streaming state for one validated heart-rate sample.
+     * Returns true when the sample belongs to the warm-up discard window.
+     */
+    private fun consumeHeartRateWarmupSampleLocked(): Boolean {
+        val shouldDiscard = heartRateSamplesToDiscardAfterRefresh > 0
+        if (shouldDiscard) {
+            heartRateSamplesToDiscardAfterRefresh--
+        }
+
+        _heartRateStreaming.value =
+            heartRateStartCommandSent &&
+                heartRateStartJob?.isActive == true &&
+                heartRateSamplesToDiscardAfterRefresh == 0
+        return shouldDiscard
     }
 
     private fun beginHeartRateRefreshLocked(
