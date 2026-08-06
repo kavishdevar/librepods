@@ -1,0 +1,22 @@
+[package]
+name = "lp-mic-rename"
+version = "0.1.0"
+edition = "2021"
+description = "Rename the LibrePodsMic virtual microphone endpoint (e.g. to the connected AirPods' name) via IPolicyConfig."
+
+[dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Media_Audio",
+    "Win32_UI_Shell_PropertiesSystem",
+] }
+
+[[bin]]
+name = "lp-mic-rename"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+strip = true
