@@ -13,6 +13,9 @@ pub use watcher::{power_on_adapter, watch_connections};
 mod le_scan;
 pub use le_scan::{connect_device, watch_le_advertisements};
 
+mod audio;
+pub use audio::audio_router;
+
 /// Bluetooth device identity. On Linux this is BlueZ's MAC address type, so
 /// the whole codebase depends on `platform::DeviceId` rather than `bluer`
 /// directly. All of `Display`/`FromStr`/`Hash`/`Serialize` carry over.

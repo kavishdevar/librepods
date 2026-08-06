@@ -36,6 +36,25 @@ pub trait L2capTransport: Send + Sync {
     async fn recv(&self, buf: &mut [u8]) -> io::Result<usize>;
 }
 
+/// Audio-output routing for the connected device. On Linux this drives
+/// PulseAudio — the AirPods' A2DP card *profile* plus the sink volume. On
+/// Windows there is no A2DP profile to toggle (the OS manages it), so the
+/// profile calls are no-ops and volume goes through WASAPI. The
+/// `MediaController` orchestration is written against this trait, not libpulse.
+#[async_trait::async_trait]
+pub trait AudioRouter: Send + Sync {
+    /// Switch the device's audio card to the best available A2DP (stereo)
+    /// profile, restarting the audio server to rediscover it if needed. No-op
+    /// where the OS manages A2DP itself.
+    async fn activate_a2dp(&self, mac: &str);
+    /// Set the device's audio card profile to "off". No-op on Windows.
+    async fn deactivate_a2dp(&self, mac: &str);
+    /// The device's current output volume as a 0..=100 percentage, if resolvable.
+    async fn get_volume(&self, mac: &str) -> Option<u32>;
+    /// Set the device's output volume from a 0..=100 percentage.
+    async fn set_volume(&self, mac: &str, percent: u32);
+}
+
 /// A currently-connected Bluetooth device found during discovery.
 pub struct DiscoveredDevice {
     pub id: DeviceId,
@@ -71,7 +90,7 @@ pub enum BtConnectionEvent {
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
-    DeviceId, LinuxPlatform as Platform, connect_device, find_connected_airpods,
+    DeviceId, LinuxPlatform as Platform, audio_router, connect_device, find_connected_airpods,
     find_other_managed_devices, l2cap_connect, power_on_adapter, watch_connections,
     watch_le_advertisements,
 };
