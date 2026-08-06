@@ -130,6 +130,19 @@ Polish / remaining:
   one-time `REQUEST_NOTIFS` at handshake is what makes the buds push 0x06 events.
   Battery/ANC merge path unchanged.
 
+### Feature idea — MagicPods-style "lid open" popup (requested)
+A centered on-screen overlay (borderless, always-on-top, click-through, fade
+in/out) that pops up like the iOS connection card when you **open/close the case
+lid** near the PC, and on **ANC-mode change**. We already have the pieces: the
+WinRT LE watcher + `le.rs` decode the case's Apple 0x004C BLE advertisement, and
+`watch_connections` + the Listening-Mode control command give the triggers.
+Remaining: (a) RE the "lid open/closed" state byte in the proximity-pairing
+advertisement (short PacketLogger session — capture while opening/closing the
+lid), (b) build the overlay window (Win32 layered `WS_EX_LAYERED|TOPMOST|
+TRANSPARENT`, or a borderless winit/eframe window) showing AirPods icon +
+battery + status, auto-hiding after a few seconds. Best home: `librepods-tray`
+(daily driver, already has the AAP session + event loop).
+
 ### Windows apps polish
 - [ ] **Unify into ONE app that supports both window + tray system.** Merge
   `librepods-tray` and `librepods-ui` into a single app that has the egui
