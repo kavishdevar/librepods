@@ -28,6 +28,8 @@ use driver::Driver;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIconBuilder};
 
+use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, MSG, PostQuitMessage, SetTimer, TranslateMessage, WM_TIMER,
 };
@@ -309,6 +311,16 @@ fn run_receiver(
 }
 
 fn main() {
+    // Single instance: if a LibrePods tray is already running, exit quietly so we
+    // never end up with two icons fighting over the single-open driver / mic pipe.
+    unsafe {
+        let name: Vec<u16> = "Local\\LibrePodsTraySingleton\0".encode_utf16().collect();
+        let _ = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            return;
+        }
+    }
+
     volume::init(); // COM for Core Audio, on this (main) thread
     overlay::init(); // create the (hidden) centered popup window on this thread
     theme::apply_menu_theme(); // dark/light Win32 context menu, per the OS theme
