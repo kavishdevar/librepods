@@ -192,3 +192,18 @@ CONFIRMED: `04 00 04 00 09 00 0D 02 00 00 00` = Listening Mode (id 0x0D) = 0x02
 not AAP — but the AirPods still echo the new state as AAP control commands, which
 is what we map. Alternative (no Mac): the multipoint/reconnect differential using
 LibrePods on Windows, which decodes the AAP opcodes directly.
+
+**RE session 2026-08-06 results — every mainstream setting maps to an
+ALREADY-KNOWN identifier (good: LibrePods already supports them, Windows port is
+feature-complete for them):** Listening Mode = 0x0D; Conversation Awareness =
+opcode 0x4B (status byte at packet[9], 1=start/2/3/4=end, drives volume ducking);
+Personalized Volume = 0x26 (AdaptiveVolumeConfig; Apple's UI name differs);
+Adaptive Audio noise slider = 0x2E (AutoAncStrength, value 0..100, 0x32=50=mid);
+Head Gestures = **GATT** (ATT handle 0x1B) not AAP — captures showed only reads,
+not the toggle write, so its control path is unconfirmed (would need a GATT-write
+path in LibrePods, if writable at all). The still-unmapped ids `0x37/0x38/0x3b/
+0x3e` are between AllowAutoConnect(0x36)/StemConfig(0x39) and after — likely
+**Pro 3-exclusive automatic features with no simple Settings toggle**: heart rate
+(capture during a workout — HrmState 0x30 already appears), Live Translation
+(region/language-restricted, may be unavailable), Hearing Health. Chase them in
+those specific scenarios.
