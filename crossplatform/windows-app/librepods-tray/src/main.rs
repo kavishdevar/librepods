@@ -592,7 +592,7 @@ fn main() {
                         let cell = driver_cell.clone();
                         let name = dev_name.clone();
                         thread::spawn(move || {
-                            thread::sleep(Duration::from_millis(1500));
+                            thread::sleep(Duration::from_millis(3500));
                             mic.store(false, Ordering::Relaxed);
                             if let Some(drv) = cell.lock().unwrap().clone() {
                                 let _ = drv.send(&aap::STOP_AUDIO);

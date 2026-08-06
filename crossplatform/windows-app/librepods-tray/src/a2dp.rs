@@ -83,6 +83,10 @@ pub fn reset(mac: u64) -> (u32, u32) {
         // handshake after ENABLE is Windows/BT — we can't speed that part up.)
         std::thread::sleep(std::time::Duration::from_millis(1000));
         let e = BluetoothSetServiceState(radio, &info, &A2DP_SERVICE, BLUETOOTH_SERVICE_ENABLE);
+        // ENABLE returns immediately but the A2DP reconnect handshake runs after
+        // it in the BT stack; wait for it so the caller's "restored" card lands
+        // when the stereo is actually back (not before).
+        std::thread::sleep(std::time::Duration::from_millis(1500));
 
         CloseHandle(radio);
         BluetoothFindRadioClose(hfind);
