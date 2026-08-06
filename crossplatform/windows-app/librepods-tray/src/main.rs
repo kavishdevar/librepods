@@ -513,9 +513,11 @@ fn main() {
                     if !on {
                         // The mic mode degraded A2DP to mono; reconnect the A2DP
                         // service to restore stereo (off the UI thread — it waits
-                        // ~0.6 s between disable/enable).
+                        // ~1.5 s between disable/enable). Report the result codes.
                         if let Some(m) = mac {
-                            thread::spawn(move || a2dp::reset(m));
+                            thread::spawn(move || {
+                                a2dp::reset(m);
+                            });
                         }
                     }
                     overlay::show(

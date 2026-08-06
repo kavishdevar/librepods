@@ -14,9 +14,10 @@ use windows_sys::Win32::Devices::Bluetooth::{
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::core::GUID;
 
-// AdvancedAudioDistribution (A2DP) profile service.
+// AudioSink (A2DP) — the service the AirPods actually expose for audio (0x110B).
+// (0x110D AdvancedAudioDistribution isn't an installed service here -> ERROR 1060.)
 const A2DP_SERVICE: GUID = GUID {
-    data1: 0x0000_110D,
+    data1: 0x0000_110B,
     data2: 0x0000,
     data3: 0x1000,
     data4: [0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB],
@@ -57,28 +58,33 @@ fn find_device(mac: u64) -> Option<BLUETOOTH_DEVICE_INFO> {
 }
 
 /// Reconnect the AirPods' A2DP service (disable then enable) to restore stereo.
-/// Best-effort: any failure (e.g. needs elevation) is silently ignored — the
-/// user can still recover by toggling Bluetooth.
-pub fn reset(mac: u64) {
+/// Returns the (disable, enable) Win32 result codes: 0 = success, 5 = access
+/// denied (needs elevation), 0xFFFFFFFF = device not found, 0xFFFFFFFE = no radio.
+pub fn reset(mac: u64) -> (u32, u32) {
     unsafe {
         let info = match find_device(mac) {
             Some(i) => i,
-            None => return,
+            None => return (0xFFFF_FFFF, 0),
         };
-
         let mut rparams: BLUETOOTH_FIND_RADIO_PARAMS = zeroed();
         rparams.dwSize = size_of::<BLUETOOTH_FIND_RADIO_PARAMS>() as u32;
         let mut radio: HANDLE = std::ptr::null_mut();
         let hfind = BluetoothFindFirstRadio(&rparams, &mut radio);
         if hfind.is_null() {
-            return;
+            return (0xFFFF_FFFE, 0);
         }
 
-        BluetoothSetServiceState(radio, &info, &A2DP_SERVICE, BLUETOOTH_SERVICE_DISABLE);
-        std::thread::sleep(std::time::Duration::from_millis(600));
-        BluetoothSetServiceState(radio, &info, &A2DP_SERVICE, BLUETOOTH_SERVICE_ENABLE);
+        // Let the mic-stop transition settle so the AirPods have left mic mode
+        // before we touch A2DP.
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let d = BluetoothSetServiceState(radio, &info, &A2DP_SERVICE, BLUETOOTH_SERVICE_DISABLE);
+        // Let the A2DP link fully tear down before reconnecting, else it
+        // re-establishes mid-teardown (mono/crackle) and needs another try.
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+        let e = BluetoothSetServiceState(radio, &info, &A2DP_SERVICE, BLUETOOTH_SERVICE_ENABLE);
 
         CloseHandle(radio);
         BluetoothFindRadioClose(hfind);
+        (d, e)
     }
 }
