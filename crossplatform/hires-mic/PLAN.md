@@ -101,11 +101,18 @@ the sink.
   and a **~150 ms silence cushion** on the ring to absorb the bursty per-packet
   feed. Pitch went ~105 → ~122 Hz (ref ~148), zero click/gap artifacts. Audio is
   a bit quiet (a gain stage would help) and mono (single mic capsule).
-- **Phase 4 — in progress**: **A2DP auto-reset DONE** ✅ (`34cb610`) — on mic
-  stop the tray toggles the AirPods' **AudioSink (0x110B)** Bluetooth service
-  disable→enable (1 s settle + 2 s teardown) to reconnect A2DP and restore
-  stereo, no BT restart (0x110D gave ERROR 1060; found 0x110B via
-  BluetoothEnumerateInstalledServices). Remaining: 2 s stall watchdog; optional
-  gain/AGC (audio's a bit quiet); auto enable/disable when an app opens the mic;
-  dynamic endpoint name; and bundle it all into the dist.
+- **Phase 4 — essentially COMPLETE** ✅ (plug-and-play). Done:
+  - **A2DP auto-reset** — toggle the AirPods' AudioSink (0x110B) service to
+    restore stereo after the mic stops (0x110D gave ERROR 1060; found via
+    BluetoothEnumerateInstalledServices), with a persistent "Restoring stereo…"
+    card through the reconnect.
+  - **Auto-enable** — the driver's capture-activity counter
+    (IOCTL_LIBREPODS_MIC_STATUS) lets the tray auto-start the hi-res stream when
+    an app records and auto-stop (debounced) when it finishes. + a manual mode.
+  - **Make-up gain** (×3, tanh soft-limit) so the mic isn't quiet.
+  - **Minimal FFmpeg** (7.1, aac-only) — avcodec 69 MB → 0.7 MB.
+  - **Name** "LibrePods" (device-agnostic).
+  - Single-instance guard.
+  - Follow-ups: exact per-device dynamic name (IPolicyConfig, needs a debugger),
+    VendorID spoofing (Apple DID), 2 s stall watchdog, apple-wireshark RE.
 - Phase 3 (protocol from PR #655 + AAC-ELD) and Phase 4 (integration) to follow.
