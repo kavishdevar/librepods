@@ -15,12 +15,14 @@ windows-sys = { version = "0.59", features = [
     "Win32_Devices_Bluetooth",
     "Win32_UI_WindowsAndMessaging",
 ] }
-# `windows` (full COM) for Core Audio volume control.
+# `windows` (full COM/WinRT) for Core Audio volume control + SMTC media control.
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
+    "Foundation",       # IAsyncOperation::get() for the WinRT SMTC calls
+    "Media_Control",    # GlobalSystemMediaTransportControlsSession* (auto-pause)
 ] }
 
 [[bin]]

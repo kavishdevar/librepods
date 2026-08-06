@@ -12,6 +12,7 @@
 mod aap;
 mod bt;
 mod driver;
+mod media;
 mod volume;
 
 use std::sync::{Arc, Mutex};
@@ -76,6 +77,7 @@ fn battery_text(b: &aap::Battery, connected: bool) -> String {
 /// actually fails (a real disconnect), so the UI never flickers on idle reads.
 fn run_receiver(driver: Driver, mac: u64, state: Shared) {
     let mut buf = [0u8; 1024];
+    media::init(); // COM (MTA) for the SMTC ear-detection auto-pause on this thread
     loop {
         if !driver.connect(mac, aap::PSM_AACP).unwrap_or(false) {
             state.lock().unwrap().connected = false;
@@ -86,9 +88,16 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
         thread::sleep(Duration::from_millis(300));
         let _ = driver.send(&aap::SET_FEATURES);
         thread::sleep(Duration::from_millis(300));
+        // One-time notifications enable — this is what makes the AirPods push
+        // ear-detection (and battery/ANC) events. It is sent ONCE at handshake;
+        // repeating it periodically is what used to re-negotiate the audio
+        // profile and cut the sound, so we never poll it.
         let _ = driver.send(&aap::REQUEST_NOTIFS);
         state.lock().unwrap().connected = true;
 
+        // Ear-detection auto-pause state: we only resume media that WE paused,
+        // so we never fight a user who paused it themselves.
+        let mut we_paused = false;
         let mut ticks = 0u32;
         loop {
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -112,6 +121,21 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared) {
                     }
                     if let Some(m) = aap::parse_anc_mode(data) {
                         state.lock().unwrap().anc = m;
+                    }
+                    if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
+                        let wearing = primary.in_ear() || secondary.in_ear();
+                        if !wearing {
+                            // Both buds out of the ears (or in the case): pause,
+                            // but only if something was actually playing.
+                            if media::is_playing() {
+                                media::pause();
+                                we_paused = true;
+                            }
+                        } else if we_paused {
+                            // A bud went back in: resume what we paused.
+                            media::play();
+                            we_paused = false;
+                        }
                     }
                 }
             }

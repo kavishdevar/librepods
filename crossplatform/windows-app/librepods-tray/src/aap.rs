@@ -67,6 +67,40 @@ pub fn parse_battery(data: &[u8]) -> Option<Battery> {
     Some(b)
 }
 
+/// In-ear state of one earbud, as reported by the AAP ear-detection packet.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EarStatus {
+    InEar,
+    OutOfEar,
+    InCase,
+    Disconnected,
+}
+
+impl EarStatus {
+    fn from_byte(b: u8) -> EarStatus {
+        match b {
+            0x00 => EarStatus::InEar,
+            0x02 => EarStatus::InCase,
+            0x03 => EarStatus::Disconnected,
+            _ => EarStatus::OutOfEar, // 0x01 and anything unexpected
+        }
+    }
+    pub fn in_ear(self) -> bool {
+        self == EarStatus::InEar
+    }
+}
+
+/// If `data` is an ear-detection packet (opcode 0x06), return the (primary,
+/// secondary) earbud statuses. Which physical bud is "primary" varies, so
+/// callers should treat them symmetrically (e.g. "is any bud in ear").
+pub fn parse_ear_detection(data: &[u8]) -> Option<(EarStatus, EarStatus)> {
+    if data.len() >= 8 && data[..4] == HEADER && data[4] == 0x06 {
+        Some((EarStatus::from_byte(data[6]), EarStatus::from_byte(data[7])))
+    } else {
+        None
+    }
+}
+
 /// If `data` reports the listening mode (control command 0x09, id 0x0D),
 /// return the mode value.
 pub fn parse_anc_mode(data: &[u8]) -> Option<u8> {

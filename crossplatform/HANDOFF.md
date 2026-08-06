@@ -61,6 +61,17 @@ was linux-rust; + windows-driver + windows-app). CI = ci-crossplatform-rust.yml.
   wire the app entrypoint. `platform/windows/transport.rs` already bridges to the
   driver via IOCTL — reuse for the app's L2CAP.
 
+### Windows apps — features
+- [~] **Ear-detection auto-pause (SMTC)** in `librepods-tray` — pauses media when
+  both AirPods leave your ears, resumes when one goes back in (MagicPods-style;
+  no A2DP toggle, Windows manages that). `aap::parse_ear_detection` (opcode 0x06,
+  bytes [6]/[7]) + `media.rs` (WinRT `GlobalSystemMediaTransportControlsSession`
+  Pause/Play/PlaybackStatus) + a `we_paused` state machine in `run_receiver`
+  (only resumes what WE paused). The one-time `REQUEST_NOTIFS` at handshake is
+  what makes the buds push 0x06 events. Built + deployed to the user's machine;
+  ⏳ **not yet hardware-validated** (user was on a call). Battery/ANC merge path
+  unchanged.
+
 ### Windows apps polish
 - [ ] **Unify into ONE app that supports both window + tray system.** Merge
   `librepods-tray` and `librepods-ui` into a single app that has the egui
