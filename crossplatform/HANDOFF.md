@@ -93,13 +93,25 @@ Audio + WinRT Bluetooth) and `Win32_Devices_Bluetooth` on windows-sys.
   Finished (iced/wgpu/winit all link on the gnu toolchain). Output:
   `target/x86_64-pc-windows-gnu/debug/librepods.exe`.
 
-Remaining (runtime, needs a Windows box + hardware):
-- [ ] Run it and verify `platform/windows/transport.rs` `l2cap_connect` drives the
-  LibrePodsAAP driver end-to-end (connect → battery/ANC → ear-detection auto-pause).
-  ⚠️ The driver is EXCLUSIVE — quit the auto-started `librepods-tray` first (it
-  holds the driver), or the main app's connect will fail.
-- [ ] Smoke-test the tray + iced window on real hardware. NOTE: nothing in Phase J
-  is hardware-tested yet — it all compiles + links but is unverified at runtime.
+- [x] **✅ VALIDATED ON HARDWARE (headless `--no-tray`)** — driver → transport
+  IOCTL → AAP works end-to-end on real AirPods Pro: battery (L20/R17), ear
+  detection, ANC state, proximity keys, and **ear-detection auto-pause via SMTC**
+  (remove a bud → pauses, reinsert → resumes). The recv fix (cec20cf) made the
+  session hold; the dedup guard fired. Test flow: quit `librepods-tray` (driver is
+  EXCLUSIVE), reconnect the AirPods for a fresh channel (avoids the 0xC00000B5
+  connect-timeout that rapid restarts cause), then `librepods.exe --no-tray`.
+
+Polish / remaining:
+- [ ] Smoke-test the **iced GUI** + **tray-icon** on hardware (only the headless
+  Bluetooth path is validated; the GUI renders but wasn't functionally tested).
+- [ ] Provision the config dir + empty `devices.json` at startup so the GUI stops
+  spamming "Failed to read devices file" every frame (this accumulation drove the
+  debug build to ~5.6GB; a fresh run is ~200MB; `--no-tray` avoids it entirely).
+- [ ] Only insert into `device_managers` on a SUCCESSFUL connect — a failed
+  initial connect currently blocks the watcher's retry via the dedup guard.
+- [ ] Build a **release** exe (opt-level=s/lto/strip already set) — the real light
+  deliverable (the tray release was 400KB vs the 580MB debug).
+- [ ] Handle unknown AAP opcodes 0x3e/0x37/0x38/0x3b gracefully (logged as errors).
 
 ### Windows apps — features
 - [x] **Ear-detection auto-pause (SMTC) — VALIDATED ON HARDWARE** in
