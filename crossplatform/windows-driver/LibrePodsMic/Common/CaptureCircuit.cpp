@@ -211,7 +211,7 @@ Return Value:
 
     PAGED_CODE();
 
-    return RtlUnicodeStringPrintf(Name, L"CustomName2");
+    return RtlUnicodeStringPrintf(Name, L"LibrePods");
 }
 
 VOID
