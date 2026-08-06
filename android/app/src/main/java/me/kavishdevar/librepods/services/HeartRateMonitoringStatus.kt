@@ -10,6 +10,8 @@
 
 package me.kavishdevar.librepods.services
 
+import me.kavishdevar.librepods.bluetooth.HeartRateSample
+
 enum class HeartRateMonitoringStatus {
     OFF,
     WAITING_FOR_AIRPODS,
@@ -18,4 +20,13 @@ enum class HeartRateMonitoringStatus {
     LIVE,
     RECONNECTING,
     COULDNT_START
+}
+
+data class HeartRateMonitoringState(
+    val enabled: Boolean = false,
+    val status: HeartRateMonitoringStatus = HeartRateMonitoringStatus.OFF,
+    val samples: List<HeartRateSample> = emptyList()
+) {
+    val latestSample: HeartRateSample?
+        get() = samples.lastOrNull()
 }

@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
+import me.kavishdevar.librepods.health.HealthConnectExportState
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
 import me.kavishdevar.librepods.health.HealthConnectHeartRateExporter
 import me.kavishdevar.librepods.presentation.components.HeartRateStatusChip
@@ -64,13 +66,12 @@ import me.kavishdevar.librepods.presentation.components.rememberHeartRateSampleI
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AirPodsViewModel
+import me.kavishdevar.librepods.services.HeartRateMonitoringState
 import me.kavishdevar.librepods.services.HeartRateMonitoringStatus
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.round
 
 @Composable
 fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
@@ -97,10 +98,11 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
     }
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
 
-    val latestSample = state.heartRateSamples.lastOrNull()
+    val heartRate = state.heartRate
+    val healthConnect = state.healthConnect
     val sampleIsDisplayable = rememberHeartRateSampleIsDisplayable(
-        sample = latestSample,
-        monitoringStatus = state.heartRateMonitoringStatus
+        sample = heartRate.latestSample,
+        monitoringStatus = heartRate.status
     )
     Column(
         modifier = Modifier
@@ -112,10 +114,8 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
         Spacer(modifier = Modifier.height(topPadding))
 
         HeartRateSummaryCard(
-            monitoringEnabled = state.heartRateMonitoringEnabled,
-            latestSample = latestSample,
+            state = heartRate,
             sampleIsDisplayable = sampleIsDisplayable,
-            monitoringStatus = state.heartRateMonitoringStatus,
             onReconnectAacp = viewModel::reconnectAacpForHeartRate,
             onMonitoringChanged = viewModel::setHeartRateMonitoringEnabled
         )
@@ -123,16 +123,14 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
 
         HealthConnectControls(
-            status = state.healthConnectExportStatus,
-            exportEnabled = state.healthConnectExportEnabled,
-            detailedSamples = state.healthConnectDetailedSamples,
+            state = healthConnect,
             onExportChanged = { enabled ->
                 when {
                     !enabled -> viewModel.setHealthConnectExportEnabled(false)
-                    state.healthConnectExportStatus.canEnableExport ->
+                    healthConnect.status.canEnableExport ->
                         viewModel.setHealthConnectExportEnabled(true)
 
-                    state.healthConnectExportStatus.requiresPermissionRequest ->
+                    healthConnect.status.requiresPermissionRequest ->
                         healthConnectPermissionLauncher.launch(
                             HealthConnectHeartRateExporter.REQUIRED_PERMISSIONS
                         )
@@ -151,13 +149,13 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
         )
 
         Text(
-            text = formatGraphSummary(state.heartRateSamples),
+            text = formatGraphSummary(heartRate.samples),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
-        HeartRateGraph(samples = state.heartRateSamples)
+        HeartRateGraph(samples = heartRate.samples)
 
         Spacer(modifier = Modifier.height(bottomPadding))
     }
@@ -165,86 +163,127 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
 
 @Composable
 private fun HeartRateSummaryCard(
-    monitoringEnabled: Boolean,
-    latestSample: HeartRateSample?,
+    state: HeartRateMonitoringState,
     sampleIsDisplayable: Boolean,
-    monitoringStatus: HeartRateMonitoringStatus,
     onReconnectAacp: () -> Unit,
     onMonitoringChanged: (Boolean) -> Unit
 ) {
+    val materialDesign = LocalDesignSystem.current == DesignSystem.Material
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(if (materialDesign) 24.dp else 28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(if (materialDesign) 12.dp else 14.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Column {
-                    Text(
-                        text = latestSample?.takeIf { sampleIsDisplayable }?.bpm?.toString() ?: EM_DASH,
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = "BPM",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Box(modifier = Modifier.padding(end = 4.dp, bottom = 8.dp)) {
-                        when (LocalDesignSystem.current) {
-                            DesignSystem.Material -> Switch(
-                                checked = monitoringEnabled,
-                                onCheckedChange = onMonitoringChanged
+            when (LocalDesignSystem.current) {
+                DesignSystem.Material -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = state.latestSample?.takeIf { sampleIsDisplayable }?.bpm?.toString() ?: EM_DASH,
+                                style = MaterialTheme.typography.displayMedium,
+                                fontWeight = FontWeight.SemiBold
                             )
+                            Text(
+                                text = "BPM",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = state.enabled,
+                            onCheckedChange = onMonitoringChanged,
+                            modifier = Modifier.scale(MATERIAL_SWITCH_SCALE)
+                        )
+                    }
 
-                            DesignSystem.Apple -> StyledSwitch(
-                                checked = monitoringEnabled,
-                                onCheckedChange = onMonitoringChanged
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = formatLastReading(state.latestSample),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        HeartRateStatusChip(
+                            status = state.status,
+                            onRetry = onReconnectAacp.takeIf {
+                                state.status == HeartRateMonitoringStatus.COULDNT_START
+                            },
+                            compact = true
+                        )
+                    }
+                }
+
+                DesignSystem.Apple -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Column {
+                            Text(
+                                text = state.latestSample?.takeIf { sampleIsDisplayable }?.bpm?.toString() ?: EM_DASH,
+                                style = MaterialTheme.typography.displayMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "BPM",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Box(modifier = Modifier.padding(end = 4.dp, bottom = 8.dp)) {
+                                StyledSwitch(
+                                    checked = state.enabled,
+                                    onCheckedChange = onMonitoringChanged
+                                )
+                            }
+                            HeartRateStatusChip(
+                                status = state.status,
+                                onRetry = onReconnectAacp.takeIf {
+                                    state.status == HeartRateMonitoringStatus.COULDNT_START
+                                }
                             )
                         }
                     }
-                    HeartRateStatusChip(
-                        status = monitoringStatus,
-                        onRetry = onReconnectAacp.takeIf {
-                            monitoringStatus == HeartRateMonitoringStatus.COULDNT_START
-                        }
+
+                    Text(
+                        text = formatLastReading(state.latestSample),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-
-            Text(
-                text = formatLastReading(latestSample),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
 
 @Composable
 private fun HealthConnectControls(
-    status: HealthConnectExportStatus,
-    exportEnabled: Boolean,
-    detailedSamples: Boolean,
+    state: HealthConnectExportState,
     onExportChanged: (Boolean) -> Unit,
     onDetailedSamplesChanged: (Boolean) -> Unit
 ) {
-    val available = status.isAvailable
+    val available = state.status.isAvailable
 
     StyledToggle(
         title = "Health Connect",
         label = "Save heart-rate samples",
-        description = healthConnectDescription(status, detailedSamples),
-        checked = exportEnabled,
+        description = healthConnectDescription(state.status, state.detailedSamples),
+        checked = state.enabled,
         enabled = available,
         onCheckedChange = onExportChanged
     )
@@ -254,12 +293,12 @@ private fun HealthConnectControls(
     StyledToggle(
         title = null,
         label = "Detailed samples",
-        description = if (detailedSamples) {
+        description = if (state.detailedSamples) {
             "Save one BPM record every second."
         } else {
             "Save one average BPM record every minute."
         },
-        checked = detailedSamples,
+        checked = state.detailedSamples,
         enabled = available,
         onCheckedChange = onDetailedSamplesChanged
     )
@@ -475,146 +514,46 @@ private fun sampleX(
 
 private fun calculateHeartRateChartScale(bpms: List<Float>): HeartRateChartScale {
     if (bpms.isEmpty()) {
-        return createHeartRateChartScale(
+        return HeartRateChartScale(
             minBpm = CHART_DEFAULT_MIN_BPM,
-            maxBpm = CHART_DEFAULT_MAX_BPM
+            maxBpm = CHART_DEFAULT_MAX_BPM,
+            gridLines = listOf(60f, 70f, 80f, 90f, 100f)
         )
     }
 
-    val dataMin = bpms.minOrNull()!!
-    val dataMax = bpms.maxOrNull()!!
-    val dataRange = dataMax - dataMin
-    val margin = max(CHART_MIN_MARGIN_BPM, dataRange * CHART_MARGIN_FRACTION)
-    val requiredSpan = dataRange + margin * 2f
+    val dataMin = bpms.minOrNull() ?: CHART_DEFAULT_MIN_BPM
+    val dataMax = bpms.maxOrNull() ?: CHART_DEFAULT_MAX_BPM
+    val paddedMin = dataMin - CHART_MARGIN_BPM
+    val paddedMax = dataMax + CHART_MARGIN_BPM
+    val requestedSpan = maxOf(paddedMax - paddedMin, CHART_MIN_SPAN_BPM)
+    val center = (paddedMin + paddedMax) / 2f
+    val roughMin = center - requestedSpan / 2f
+    val roughMax = center + requestedSpan / 2f
+    val tickStep = niceTickStep(requestedSpan / CHART_TARGET_GRID_INTERVALS)
 
-    val initialBounds = if (requiredSpan <= CHART_MIN_SPAN_BPM) {
-        val center = (dataMin + dataMax) / 2f
-        val roundedCenter = roundToIncrement(center, CHART_NARROW_CENTER_INCREMENT_BPM)
-        val halfSpan = CHART_MIN_SPAN_BPM / 2f
-        roundedCenter - halfSpan to roundedCenter + halfSpan
-    } else {
-        val boundIncrement = if (requiredSpan <= CHART_FINE_BOUND_THRESHOLD_BPM) {
-            CHART_FINE_BOUND_INCREMENT_BPM
-        } else {
-            CHART_COARSE_BOUND_INCREMENT_BPM
+    var minBpm = floor(roughMin / tickStep) * tickStep
+    var maxBpm = ceil(roughMax / tickStep) * tickStep
+    if (minBpm < CHART_OUTER_MIN_BPM) {
+        maxBpm -= minBpm - CHART_OUTER_MIN_BPM
+        minBpm = CHART_OUTER_MIN_BPM
+    }
+    if (maxBpm > CHART_OUTER_MAX_BPM) {
+        minBpm -= maxBpm - CHART_OUTER_MAX_BPM
+        maxBpm = CHART_OUTER_MAX_BPM
+    }
+
+    val gridLines = buildList {
+        var value = minBpm
+        while (value <= maxBpm + 0.01f) {
+            add(value)
+            value += tickStep
         }
-        floorToIncrement(dataMin - margin, boundIncrement) to
-            ceilToIncrement(dataMax + margin, boundIncrement)
     }
-
-    val constrainedBounds = constrainHeartRateBounds(
-        minBpm = initialBounds.first,
-        maxBpm = initialBounds.second,
-        dataMin = dataMin,
-        dataMax = dataMax
-    )
-
-    return createHeartRateChartScale(
-        minBpm = constrainedBounds.first,
-        maxBpm = constrainedBounds.second
-    )
+    return HeartRateChartScale(minBpm, maxBpm, gridLines)
 }
 
-private fun constrainHeartRateBounds(
-    minBpm: Float,
-    maxBpm: Float,
-    dataMin: Float,
-    dataMax: Float
-): Pair<Float, Float> {
-    val preferredBounds = fitBoundsWithinLimits(
-        minBpm = minBpm,
-        maxBpm = maxBpm,
-        dataMin = dataMin,
-        dataMax = dataMax,
-        limitMin = CHART_SAFETY_MIN_BPM,
-        limitMax = CHART_SAFETY_MAX_BPM
-    )
-    return fitBoundsWithinLimits(
-        minBpm = preferredBounds.first,
-        maxBpm = preferredBounds.second,
-        dataMin = dataMin,
-        dataMax = dataMax,
-        limitMin = CHART_OUTER_MIN_BPM,
-        limitMax = CHART_OUTER_MAX_BPM
-    )
-}
-
-private fun fitBoundsWithinLimits(
-    minBpm: Float,
-    maxBpm: Float,
-    dataMin: Float,
-    dataMax: Float,
-    limitMin: Float,
-    limitMax: Float
-): Pair<Float, Float> {
-    val safetyInset = CHART_MIN_MARGIN_BPM
-    if (dataMin < limitMin + safetyInset || dataMax > limitMax - safetyInset) {
-        return minBpm to maxBpm
-    }
-
-    val span = maxBpm - minBpm
-    val limitSpan = limitMax - limitMin
-    if (span >= limitSpan) {
-        return limitMin to limitMax
-    }
-
-    var adjustedMin = minBpm
-    var adjustedMax = maxBpm
-    if (adjustedMin < limitMin) {
-        val shift = limitMin - adjustedMin
-        adjustedMin += shift
-        adjustedMax += shift
-    }
-    if (adjustedMax > limitMax) {
-        val shift = adjustedMax - limitMax
-        adjustedMin -= shift
-        adjustedMax -= shift
-    }
-    return adjustedMin to adjustedMax
-}
-
-private fun createHeartRateChartScale(
-    minBpm: Float,
-    maxBpm: Float
-): HeartRateChartScale {
-    val span = (maxBpm - minBpm).coerceAtLeast(CHART_MIN_SPAN_BPM)
-    val adjustedMax = minBpm + span
-    val tickStep = calculateHeartRateTickStep(span)
-    val intervalCount = floor(span / tickStep).toInt()
-    val gridLines = (0..intervalCount).map { index ->
-        minBpm + index * tickStep
-    }
-
-    return HeartRateChartScale(
-        minBpm = minBpm,
-        maxBpm = adjustedMax,
-        gridLines = gridLines
-    )
-}
-
-private fun calculateHeartRateTickStep(spanBpm: Float): Float {
-    val rawStep = spanBpm / CHART_TARGET_GRID_INTERVALS
-    val increment = if (rawStep <= CHART_FINE_TICK_THRESHOLD_BPM) {
-        CHART_FINE_TICK_INCREMENT_BPM
-    } else {
-        CHART_COARSE_TICK_INCREMENT_BPM
-    }
-    var step = max(increment, roundToIncrement(rawStep, increment))
-
-    while (floor(spanBpm / step).toInt() + 1 > CHART_MAX_GRID_LINES) {
-        step += increment
-    }
-    return step
-}
-
-private fun roundToIncrement(value: Float, increment: Float): Float =
-    round(value / increment) * increment
-
-private fun floorToIncrement(value: Float, increment: Float): Float =
-    floor(value / increment) * increment
-
-private fun ceilToIncrement(value: Float, increment: Float): Float =
-    ceil(value / increment) * increment
+private fun niceTickStep(rawStep: Float): Float =
+    CHART_TICK_STEPS.firstOrNull { it >= rawStep } ?: CHART_TICK_STEPS.last()
 
 private fun formatLastReading(sample: HeartRateSample?): String {
     if (sample == null) return "Last reading: $EM_DASH"
@@ -624,24 +563,15 @@ private fun formatLastReading(sample: HeartRateSample?): String {
 }
 
 private const val EM_DASH = "—"
+private const val MATERIAL_SWITCH_SCALE = 0.82f
 private const val CHART_DEFAULT_MIN_BPM = 60f
 private const val CHART_DEFAULT_MAX_BPM = 100f
 private const val CHART_MIN_SPAN_BPM = 40f
-private const val CHART_MIN_MARGIN_BPM = 5f
-private const val CHART_MARGIN_FRACTION = 0.10f
-private const val CHART_NARROW_CENTER_INCREMENT_BPM = 5f
-private const val CHART_FINE_BOUND_THRESHOLD_BPM = 80f
-private const val CHART_FINE_BOUND_INCREMENT_BPM = 5f
-private const val CHART_COARSE_BOUND_INCREMENT_BPM = 10f
-private const val CHART_SAFETY_MIN_BPM = 20f
-private const val CHART_SAFETY_MAX_BPM = 240f
+private const val CHART_MARGIN_BPM = 5f
 private const val CHART_OUTER_MIN_BPM = 0f
 private const val CHART_OUTER_MAX_BPM = 260f
 private const val CHART_TARGET_GRID_INTERVALS = 5f
-private const val CHART_FINE_TICK_THRESHOLD_BPM = 25f
-private const val CHART_FINE_TICK_INCREMENT_BPM = 5f
-private const val CHART_COARSE_TICK_INCREMENT_BPM = 10f
-private const val CHART_MAX_GRID_LINES = 7
+private val CHART_TICK_STEPS = listOf(5f, 10f, 20f, 25f, 50f)
 private val CHART_AXIS_WIDTH = 42.dp
 private val CHART_AXIS_LABEL_GAP = 8.dp
 private val CHART_TOP_INSET = 20.dp

@@ -33,7 +33,8 @@ import me.kavishdevar.librepods.services.HeartRateMonitoringStatus
 fun HeartRateStatusChip(
     status: HeartRateMonitoringStatus,
     onRetry: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val containerColor = when (status) {
         HeartRateMonitoringStatus.LIVE -> MaterialTheme.colorScheme.primaryContainer
@@ -54,8 +55,15 @@ fun HeartRateStatusChip(
     ) {
         Text(
             text = if (onRetry == null) status.label else "${status.label} · Retry",
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+            style = if (compact) {
+                MaterialTheme.typography.labelMedium
+            } else {
+                MaterialTheme.typography.labelLarge
+            },
+            modifier = Modifier.padding(
+                horizontal = if (compact) 10.dp else 12.dp,
+                vertical = if (compact) 4.dp else 7.dp
+            )
         )
     }
 }

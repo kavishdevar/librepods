@@ -34,6 +34,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.BuildConfig
@@ -42,7 +43,6 @@ import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.bluetooth.AACPManager.Companion.ControlCommandIdentifiers
 import me.kavishdevar.librepods.bluetooth.ATTCCCDHandles
 import me.kavishdevar.librepods.bluetooth.ATTHandles
-import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.data.AirPodsInstance
 import me.kavishdevar.librepods.data.AirPodsModels
 import me.kavishdevar.librepods.data.AirPodsNotifications
@@ -54,8 +54,10 @@ import me.kavishdevar.librepods.data.ControlCommandRepository
 import me.kavishdevar.librepods.data.CustomEq
 import me.kavishdevar.librepods.data.StemAction
 import me.kavishdevar.librepods.data.XposedRemotePrefProvider
+import me.kavishdevar.librepods.health.HealthConnectExportState
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
 import me.kavishdevar.librepods.services.AirPodsService
+import me.kavishdevar.librepods.services.HeartRateMonitoringState
 import me.kavishdevar.librepods.services.HeartRateMonitoringStatus
 
 @Suppress("ArrayInDataClass")
@@ -83,14 +85,8 @@ data class AirPodsUiState(
     val headTrackingActive: Boolean = false,
     val headGesturesEnabled: Boolean = true,
 
-    val heartRateMonitoringEnabled: Boolean = false,
-    val heartRateStreaming: Boolean = false,
-    val heartRateMonitoringStatus: HeartRateMonitoringStatus =
-        HeartRateMonitoringStatus.OFF,
-    val heartRateSamples: List<HeartRateSample> = emptyList(),
-    val healthConnectExportEnabled: Boolean = false,
-    val healthConnectExportStatus: HealthConnectExportStatus = HealthConnectExportStatus.UNAVAILABLE,
-    val healthConnectDetailedSamples: Boolean = false,
+    val heartRate: HeartRateMonitoringState = HeartRateMonitoringState(),
+    val healthConnect: HealthConnectExportState = HealthConnectExportState(),
 
     val eqData: FloatArray = floatArrayOf(),
 
@@ -474,38 +470,10 @@ class AirPodsViewModel(
 
     private fun observeHeartRate() {
         viewModelScope.launch {
-            service.heartRateMonitoringEnabled.collect { enabled ->
-                _uiState.update { it.copy(heartRateMonitoringEnabled = enabled) }
-            }
-        }
-        viewModelScope.launch {
-            service.heartRateStreaming.collect { streaming ->
-                _uiState.update { it.copy(heartRateStreaming = streaming) }
-            }
-        }
-        viewModelScope.launch {
-            service.heartRateMonitoringStatus.collect { status ->
-                _uiState.update { it.copy(heartRateMonitoringStatus = status) }
-            }
-        }
-        viewModelScope.launch {
-            service.heartRateSamples.collect { samples ->
-                _uiState.update { it.copy(heartRateSamples = samples) }
-            }
-        }
-        viewModelScope.launch {
-            service.healthConnectExportEnabled.collect { enabled ->
-                _uiState.update { it.copy(healthConnectExportEnabled = enabled) }
-            }
-        }
-        viewModelScope.launch {
-            service.healthConnectExportStatus.collect { status ->
-                _uiState.update { it.copy(healthConnectExportStatus = status) }
-            }
-        }
-        viewModelScope.launch {
-            service.healthConnectDetailedSamples.collect { detailed ->
-                _uiState.update { it.copy(healthConnectDetailedSamples = detailed) }
+            combine(service.heartRateState, service.healthConnectState) { heartRate, export ->
+                heartRate to export
+            }.collect { (heartRate, export) ->
+                _uiState.update { it.copy(heartRate = heartRate, healthConnect = export) }
             }
         }
     }
@@ -516,13 +484,8 @@ class AirPodsViewModel(
             _uiState.update {
                 it.copy(
                     isLocallyConnected = service.isAacpTransportHealthy(),
-                    heartRateMonitoringEnabled = service.heartRateMonitoringEnabled.value,
-                    heartRateStreaming = service.heartRateStreaming.value,
-                    heartRateMonitoringStatus = service.heartRateMonitoringStatus.value,
-                    heartRateSamples = service.heartRateSamples.value,
-                    healthConnectExportEnabled = service.healthConnectExportEnabled.value,
-                    healthConnectExportStatus = service.healthConnectExportStatus.value,
-                    healthConnectDetailedSamples = service.healthConnectDetailedSamples.value,
+                    heartRate = service.heartRateState.value,
+                    healthConnect = service.healthConnectState.value,
                     battery = service.getBattery(),
                     ancMode = controlRepo.getValue(ControlCommandIdentifiers.LISTENING_MODE)?.get(0)?.toInt() ?: 1,
                     controlStates = controlRepo.getMap()
@@ -705,13 +668,14 @@ class AirPodsViewModel(
         if (isDemoMode) {
             _uiState.update {
                 it.copy(
-                    heartRateMonitoringEnabled = enabled,
-                    heartRateStreaming = enabled && it.isLocallyConnected,
-                    heartRateMonitoringStatus = when {
-                        !enabled -> HeartRateMonitoringStatus.OFF
-                        it.isLocallyConnected -> HeartRateMonitoringStatus.LIVE
-                        else -> HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
-                    }
+                    heartRate = it.heartRate.copy(
+                        enabled = enabled,
+                        status = when {
+                            !enabled -> HeartRateMonitoringStatus.OFF
+                            it.isLocallyConnected -> HeartRateMonitoringStatus.LIVE
+                            else -> HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+                        }
+                    )
                 )
             }
             return
@@ -734,12 +698,14 @@ class AirPodsViewModel(
         if (isDemoMode) {
             _uiState.update {
                 it.copy(
-                    healthConnectExportEnabled = enabled,
-                    healthConnectExportStatus = if (enabled) {
-                        HealthConnectExportStatus.ENABLED
-                    } else {
-                        HealthConnectExportStatus.READY
-                    }
+                    healthConnect = it.healthConnect.copy(
+                        enabled = enabled,
+                        status = if (enabled) {
+                            HealthConnectExportStatus.ENABLED
+                        } else {
+                            HealthConnectExportStatus.READY
+                        }
+                    )
                 )
             }
             return
@@ -750,7 +716,11 @@ class AirPodsViewModel(
     fun setHealthConnectDetailedSamples(detailed: Boolean) {
         if (!isReady) return
         if (isDemoMode) {
-            _uiState.update { it.copy(healthConnectDetailedSamples = detailed) }
+            _uiState.update {
+                it.copy(
+                    healthConnect = it.healthConnect.copy(detailedSamples = detailed)
+                )
+            }
             return
         }
         service.setHealthConnectDetailedSamples(detailed)

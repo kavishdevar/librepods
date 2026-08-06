@@ -45,6 +45,12 @@ enum class HealthConnectExportStatus {
     ERROR
 }
 
+data class HealthConnectExportState(
+    val enabled: Boolean = false,
+    val status: HealthConnectExportStatus = HealthConnectExportStatus.UNAVAILABLE,
+    val detailedSamples: Boolean = false
+)
+
 /**
  * Writes validated AirPods heart-rate samples to Health Connect at the selected interval.
  *
@@ -80,16 +86,21 @@ class HealthConnectHeartRateExporter(
     private var healthConnectClient: HealthConnectClient? = null
     private var scheduledFlush: Job? = null
 
-    private val _enabled = MutableStateFlow(false)
-    val enabled: StateFlow<Boolean> get() = _enabled
-
-    private val _detailedSamples = MutableStateFlow(
-        sharedPreferences.getBoolean(DETAILED_SAMPLES_PREFERENCE, false)
+    private val _state = MutableStateFlow(
+        HealthConnectExportState(
+            status = statusForSdk(),
+            detailedSamples = sharedPreferences.getBoolean(DETAILED_SAMPLES_PREFERENCE, false)
+        )
     )
-    val detailedSamples: StateFlow<Boolean> get() = _detailedSamples
+    val state: StateFlow<HealthConnectExportState> get() = _state
 
-    private val _status = MutableStateFlow(statusForSdk())
-    val status: StateFlow<HealthConnectExportStatus> get() = _status
+    private fun updateState(
+        enabled: Boolean = _state.value.enabled,
+        status: HealthConnectExportStatus = _state.value.status,
+        detailedSamples: Boolean = _state.value.detailedSamples
+    ) {
+        _state.value = HealthConnectExportState(enabled, status, detailedSamples)
+    }
 
     fun refresh() {
         scope.launch {
@@ -99,102 +110,80 @@ class HealthConnectHeartRateExporter(
 
     suspend fun refreshInternal() {
         mutex.withLock {
-            when (HealthConnectClient.getSdkStatus(appContext)) {
-                HealthConnectClient.SDK_AVAILABLE -> {
-                    val client = getClient()
-                    val granted = try {
-                        hasWritePermission(client)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        Log.w(TAG, "Unable to query Health Connect permissions", error)
-                        _enabled.value = false
-                        _status.value = HealthConnectExportStatus.ERROR
-                        return@withLock
-                    }
-
-                    val requested = sharedPreferences.getBoolean(EXPORT_PREFERENCE, false)
-                    val exportEnabled = requested && granted
-                    _enabled.value = exportEnabled
-                    _status.value = when {
-                        !granted -> HealthConnectExportStatus.PERMISSION_REQUIRED
-                        exportEnabled -> HealthConnectExportStatus.ENABLED
-                        else -> HealthConnectExportStatus.READY
-                    }
-
-                    if (exportEnabled && hasPendingSamplesLocked()) {
-                        scheduleFlushLocked(0L)
-                    }
-                }
-
-                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
-                    healthConnectClient = null
-                    _enabled.value = false
-                    _status.value = HealthConnectExportStatus.UPDATE_REQUIRED
-                }
-
-                else -> {
-                    healthConnectClient = null
-                    _enabled.value = false
-                    _status.value = HealthConnectExportStatus.UNAVAILABLE
-                }
+            val requested = sharedPreferences.getBoolean(EXPORT_PREFERENCE, false)
+            _state.value = resolveStateLocked(requested)
+            if (_state.value.enabled && hasPendingSamplesLocked()) {
+                scheduleFlushLocked(0L)
             }
         }
     }
 
     fun setEnabled(enabled: Boolean) {
         scope.launch {
-            setEnabledInternal(enabled)
+            mutex.withLock {
+                if (!enabled) {
+                    scheduledFlush?.cancel()
+                    scheduledFlush = null
+                    flushLocked(forcePartialInterval = true)
+                    sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, false) }
+                    _state.value = resolveStateLocked(requested = false)
+                    return@withLock
+                }
+
+                val nextState = resolveStateLocked(requested = true)
+                when (nextState.status) {
+                    HealthConnectExportStatus.ENABLED ->
+                        sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, true) }
+
+                    HealthConnectExportStatus.PERMISSION_REQUIRED ->
+                        sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, false) }
+
+                    else -> Unit
+                }
+                _state.value = nextState
+                if (nextState.enabled && hasPendingSamplesLocked()) {
+                    scheduleFlushLocked(0L)
+                }
+            }
         }
     }
 
-    private suspend fun setEnabledInternal(enabled: Boolean) {
-        mutex.withLock {
-            if (!enabled) {
-                scheduledFlush?.cancel()
-                scheduledFlush = null
-                flushLocked(forcePartialInterval = true)
-                sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, false) }
-                _enabled.value = false
-                _status.value = disabledStatus()
-                return@withLock
+    private suspend fun resolveStateLocked(requested: Boolean): HealthConnectExportState {
+        val current = _state.value
+        return when (HealthConnectClient.getSdkStatus(appContext)) {
+            HealthConnectClient.SDK_AVAILABLE -> {
+                val granted = try {
+                    hasWritePermission(getClient())
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.w(TAG, "Unable to query Health Connect permissions", error)
+                    return current.copy(enabled = false, status = HealthConnectExportStatus.ERROR)
+                }
+                current.copy(
+                    enabled = requested && granted,
+                    status = when {
+                        !granted -> HealthConnectExportStatus.PERMISSION_REQUIRED
+                        requested -> HealthConnectExportStatus.ENABLED
+                        else -> HealthConnectExportStatus.READY
+                    }
+                )
             }
 
-            when (HealthConnectClient.getSdkStatus(appContext)) {
-                HealthConnectClient.SDK_AVAILABLE -> {
-                    val granted = try {
-                        hasWritePermission(getClient())
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (error: Exception) {
-                        Log.w(TAG, "Unable to enable Health Connect export", error)
-                        _enabled.value = false
-                        _status.value = HealthConnectExportStatus.ERROR
-                        return@withLock
-                    }
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
+                healthConnectClient = null
+                current.copy(
+                    enabled = false,
+                    status = HealthConnectExportStatus.UPDATE_REQUIRED
+                )
+            }
 
-                    if (!granted) {
-                        sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, false) }
-                        _enabled.value = false
-                        _status.value = HealthConnectExportStatus.PERMISSION_REQUIRED
-                        return@withLock
-                    }
-
-                    sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, true) }
-                    _enabled.value = true
-                    _status.value = HealthConnectExportStatus.ENABLED
-                    if (hasPendingSamplesLocked()) scheduleFlushLocked(0L)
-                }
-
-                HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> {
-                    _enabled.value = false
-                    _status.value = HealthConnectExportStatus.UPDATE_REQUIRED
-                }
-
-                else -> {
-                    _enabled.value = false
-                    _status.value = HealthConnectExportStatus.UNAVAILABLE
-                }
+            else -> {
+                healthConnectClient = null
+                current.copy(
+                    enabled = false,
+                    status = HealthConnectExportStatus.UNAVAILABLE
+                )
             }
         }
     }
@@ -202,7 +191,7 @@ class HealthConnectHeartRateExporter(
     fun setDetailedSamples(detailed: Boolean) {
         scope.launch {
             mutex.withLock {
-                if (_detailedSamples.value == detailed) {
+                if (_state.value.detailedSamples == detailed) {
                     requestedDetailedSamples = null
                     return@withLock
                 }
@@ -211,7 +200,7 @@ class HealthConnectHeartRateExporter(
                 scheduledFlush?.cancel()
                 scheduledFlush = null
                 if (hasPendingSamplesLocked() &&
-                    (!_enabled.value || !flushLocked(forcePartialInterval = true))
+                    (!_state.value.enabled || !flushLocked(forcePartialInterval = true))
                 ) {
                     return@withLock
                 }
@@ -224,18 +213,20 @@ class HealthConnectHeartRateExporter(
         scope.launch {
             mutex.withLock {
                 sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, false) }
-                _enabled.value = false
-                _status.value = HealthConnectExportStatus.PERMISSION_DENIED
+                updateState(
+                    enabled = false,
+                    status = HealthConnectExportStatus.PERMISSION_DENIED
+                )
             }
         }
     }
 
     fun enqueue(sample: HeartRateSample, deviceModel: String) {
-        if (!_enabled.value) return
+        if (!_state.value.enabled) return
 
         scope.launch {
             mutex.withLock {
-                if (!_enabled.value) return@withLock
+                if (!_state.value.enabled) return@withLock
 
                 val id = clientRecordId(sample)
                 pendingSamples.putIfAbsent(
@@ -283,9 +274,9 @@ class HealthConnectHeartRateExporter(
             applyRequestedDetailLocked()
             return true
         }
-        if (!_enabled.value) return false
+        if (!_state.value.enabled) return false
 
-        while (_enabled.value && hasPendingSamplesLocked()) {
+        while (_state.value.enabled && hasPendingSamplesLocked()) {
             val record = getOrCreatePendingRecordLocked(
                 forcePartialInterval || requestedDetailedSamples != null
             )
@@ -297,14 +288,16 @@ class HealthConnectHeartRateExporter(
             try {
                 getClient().insertRecords(listOf(toRecord(record)))
                 completePendingRecordLocked(record)
-                _status.value = HealthConnectExportStatus.ENABLED
+                updateState(status = HealthConnectExportStatus.ENABLED)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: SecurityException) {
                 Log.w(TAG, "Health Connect permission was revoked", error)
                 sharedPreferences.edit { putBoolean(EXPORT_PREFERENCE, false) }
-                _enabled.value = false
-                _status.value = HealthConnectExportStatus.PERMISSION_REQUIRED
+                updateState(
+                    enabled = false,
+                    status = HealthConnectExportStatus.PERMISSION_REQUIRED
+                )
                 return false
             } catch (error: IOException) {
                 handleRetryableWriteFailureLocked(
@@ -333,7 +326,7 @@ class HealthConnectHeartRateExporter(
 
     private fun handleRetryableWriteFailureLocked(message: String, error: Exception) {
         Log.w(TAG, message, error)
-        _status.value = HealthConnectExportStatus.ERROR
+        updateState(status = HealthConnectExportStatus.ERROR)
         scheduleFlushLocked(RETRY_INTERVAL_MILLIS)
     }
 
@@ -343,7 +336,7 @@ class HealthConnectHeartRateExporter(
 
         intervalWindowStartMillis = null
         sharedPreferences.edit { putBoolean(DETAILED_SAMPLES_PREFERENCE, detailed) }
-        _detailedSamples.value = detailed
+        updateState(detailedSamples = detailed)
         requestedDetailedSamples = null
     }
 
@@ -477,7 +470,7 @@ class HealthConnectHeartRateExporter(
         }
     }
 
-    private fun exportIntervalMillis(): Long = if (_detailedSamples.value) {
+    private fun exportIntervalMillis(): Long = if (_state.value.detailedSamples) {
         SECOND_INTERVAL_MILLIS
     } else {
         MINUTE_INTERVAL_MILLIS
@@ -533,31 +526,6 @@ class HealthConnectHeartRateExporter(
             HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> HealthConnectExportStatus.UPDATE_REQUIRED
             else -> HealthConnectExportStatus.UNAVAILABLE
         }
-
-    private suspend fun disabledStatus(): HealthConnectExportStatus {
-        return when (HealthConnectClient.getSdkStatus(appContext)) {
-            HealthConnectClient.SDK_AVAILABLE -> {
-                val permissionGranted = try {
-                    hasWritePermission(getClient())
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (error: Exception) {
-                    Log.w(TAG, "Unable to query Health Connect permissions", error)
-                    return HealthConnectExportStatus.ERROR
-                }
-                if (permissionGranted) {
-                    HealthConnectExportStatus.READY
-                } else {
-                    HealthConnectExportStatus.PERMISSION_REQUIRED
-                }
-            }
-
-            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED ->
-                HealthConnectExportStatus.UPDATE_REQUIRED
-
-            else -> HealthConnectExportStatus.UNAVAILABLE
-        }
-    }
 
     private fun clientRecordId(sample: HeartRateSample): String =
         "librepods-heart-rate-v1-${sample.receivedAtMillis}-${sample.sequence}-${sample.bpm}"

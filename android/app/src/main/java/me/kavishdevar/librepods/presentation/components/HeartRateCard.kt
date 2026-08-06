@@ -30,43 +30,155 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.services.HeartRateMonitoringState
 import me.kavishdevar.librepods.services.HeartRateMonitoringStatus
 
 @Composable
 fun HeartRateCard(
-    monitoringEnabled: Boolean,
-    monitoringStatus: HeartRateMonitoringStatus,
-    latestSample: HeartRateSample?,
-    heartRateSamples: List<HeartRateSample>,
+    state: HeartRateMonitoringState,
     onMonitoringChanged: (Boolean) -> Unit,
     onReconnectAacp: () -> Unit,
     onOpenDetails: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val sampleIsDisplayable = rememberHeartRateSampleIsDisplayable(
-        sample = latestSample,
-        monitoringStatus = monitoringStatus
+        sample = state.latestSample,
+        monitoringStatus = state.status
     )
-    val displayedBpm = latestSample
+    val displayedBpm = state.latestSample
         ?.takeIf { sampleIsDisplayable }
         ?.bpm
         ?.toString()
         ?: EM_DASH
-    val graphValues = remember(heartRateSamples) {
-        normalizedRecentHeartRates(heartRateSamples)
+    val graphValues = remember(state.samples) {
+        normalizedRecentHeartRates(state.samples)
     }
-    val canReconnectAacp = monitoringStatus == HeartRateMonitoringStatus.COULDNT_START
+    val canReconnectAacp = state.status == HeartRateMonitoringStatus.COULDNT_START
 
+    when (LocalDesignSystem.current) {
+        DesignSystem.Material -> MaterialHeartRateCard(
+            displayedBpm = displayedBpm,
+            graphValues = graphValues,
+            state = state,
+            canReconnectAacp = canReconnectAacp,
+            onMonitoringChanged = onMonitoringChanged,
+            onReconnectAacp = onReconnectAacp,
+            onOpenDetails = onOpenDetails,
+            modifier = modifier
+        )
+
+        DesignSystem.Apple -> AppleHeartRateCard(
+            displayedBpm = displayedBpm,
+            graphValues = graphValues,
+            state = state,
+            canReconnectAacp = canReconnectAacp,
+            onMonitoringChanged = onMonitoringChanged,
+            onReconnectAacp = onReconnectAacp,
+            onOpenDetails = onOpenDetails,
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
+private fun MaterialHeartRateCard(
+    displayedBpm: String,
+    graphValues: List<Float>,
+    state: HeartRateMonitoringState,
+    canReconnectAacp: Boolean,
+    onMonitoringChanged: (Boolean) -> Unit,
+    onReconnectAacp: () -> Unit,
+    onOpenDetails: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenDetails),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HeartRateMiniGraph(
+                values = graphValues,
+                width = MATERIAL_GRAPH_WIDTH,
+                height = MATERIAL_GRAPH_HEIGHT
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = "Heart rate",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                HeartRateStatusChip(
+                    status = state.status,
+                    onRetry = onReconnectAacp.takeIf { canReconnectAacp },
+                    compact = true
+                )
+            }
+
+            if (!canReconnectAacp) {
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = displayedBpm,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "BPM",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Switch(
+                checked = state.enabled,
+                onCheckedChange = onMonitoringChanged,
+                modifier = Modifier.scale(MATERIAL_SWITCH_SCALE)
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppleHeartRateCard(
+    displayedBpm: String,
+    graphValues: List<Float>,
+    state: HeartRateMonitoringState,
+    canReconnectAacp: Boolean,
+    onMonitoringChanged: (Boolean) -> Unit,
+    onReconnectAacp: () -> Unit,
+    onOpenDetails: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Card(
         modifier = modifier
             .fillMaxWidth()
@@ -93,15 +205,10 @@ fun HeartRateCard(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HeartRateStatusChip(
-                        status = monitoringStatus,
-                        onRetry = onReconnectAacp.takeIf { canReconnectAacp }
-                    )
-                }
+                HeartRateStatusChip(
+                    status = state.status,
+                    onRetry = onReconnectAacp.takeIf { canReconnectAacp }
+                )
             }
 
             if (!canReconnectAacp) {
@@ -121,17 +228,10 @@ fun HeartRateCard(
                 Spacer(modifier = Modifier.width(14.dp))
             }
 
-            when (LocalDesignSystem.current) {
-                DesignSystem.Material -> Switch(
-                    checked = monitoringEnabled,
-                    onCheckedChange = onMonitoringChanged
-                )
-
-                DesignSystem.Apple -> StyledSwitch(
-                    checked = monitoringEnabled,
-                    onCheckedChange = onMonitoringChanged
-                )
-            }
+            StyledSwitch(
+                checked = state.enabled,
+                onCheckedChange = onMonitoringChanged
+            )
         }
     }
 }
@@ -139,15 +239,17 @@ fun HeartRateCard(
 @Composable
 private fun HeartRateMiniGraph(
     values: List<Float>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    width: Dp = GRAPH_WIDTH,
+    height: Dp = GRAPH_HEIGHT
 ) {
     val graphColor = MaterialTheme.colorScheme.primary
     val guideColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
 
     Canvas(
         modifier = modifier
-            .width(GRAPH_WIDTH)
-            .height(GRAPH_HEIGHT)
+            .width(width)
+            .height(height)
     ) {
         val horizontalPadding = 2.dp.toPx()
         val verticalPadding = 4.dp.toPx()
@@ -261,6 +363,9 @@ private fun normalizedRecentHeartRates(samples: List<HeartRateSample>): List<Flo
 
 private val GRAPH_WIDTH = 60.dp
 private val GRAPH_HEIGHT = 44.dp
+private val MATERIAL_GRAPH_WIDTH = 48.dp
+private val MATERIAL_GRAPH_HEIGHT = 36.dp
+private const val MATERIAL_SWITCH_SCALE = 0.82f
 private const val MAX_GRAPH_SAMPLES = 24
 private const val MIN_GRAPH_BPM_SPAN = 20f
 private const val EM_DASH = "—"

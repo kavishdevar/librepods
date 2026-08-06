@@ -96,8 +96,6 @@ class AACPManager {
         private const val HEART_RATE_DIAGNOSTIC_LOG_INTERVAL_MILLIS = 10_000L
         private const val HEART_RATE_DIAGNOSTIC_REJECTION_THRESHOLD = 10
         private const val HEART_RATE_DIAGNOSTIC_COUNT_LIMIT = 1_000
-        private const val HEART_RATE_DIAGNOSTIC_STRUCTURE_LIMIT = 4
-        private const val HEART_RATE_DIAGNOSTIC_OVERFLOW_KEY = "other_structures"
 
         data class ControlCommandStatus(
             val identifier: ControlCommandIdentifiers, val value: ByteArray
@@ -326,7 +324,6 @@ class AACPManager {
     private var heartRateDiagnosticRejectedFrames = 0
     private val heartRateDiagnosticRejectionReasons =
         mutableMapOf<HeartRateRejectionReason, Int>()
-    private val heartRateDiagnosticStructures = linkedMapOf<String, Int>()
 
     fun setPacketCallback(callback: PacketCallback) {
         this.callback = callback
@@ -467,14 +464,13 @@ class AACPManager {
     private fun recordHeartRateDecodeDiagnostics(result: HeartRateDecodeResult) {
         if (result.relatedFrameCount == 0) return
 
-        var logAcceptedSample = false
+        var acceptedFirstSample = false
         var rejectionSummary: String? = null
         synchronized(heartRateDiagnosticLock) {
             if (result.samples.isNotEmpty() && !heartRateAcceptedSampleLogged) {
                 heartRateAcceptedSampleLogged = true
-                logAcceptedSample = true
+                acceptedFirstSample = true
             }
-
             if (result.rejectedFrameCount > 0) {
                 val now = System.currentTimeMillis()
                 if (heartRateDiagnosticWindowStartedAtMillis == 0L) {
@@ -491,61 +487,36 @@ class AACPManager {
                 result.rejectionReasons.forEach { (reason, count) ->
                     heartRateDiagnosticRejectionReasons.incrementBounded(reason, count)
                 }
-                result.structuralDiagnostics.forEach { (structure, count) ->
-                    val existing = heartRateDiagnosticStructures[structure]
-                    when {
-                        existing != null -> {
-                            heartRateDiagnosticStructures.incrementBounded(structure, count)
-                        }
 
-                        heartRateDiagnosticStructures.size < HEART_RATE_DIAGNOSTIC_STRUCTURE_LIMIT -> {
-                            heartRateDiagnosticStructures[structure] = count.coerceAtMost(
-                                HEART_RATE_DIAGNOSTIC_COUNT_LIMIT
-                            )
-                        }
-
-                        else -> {
-                            heartRateDiagnosticStructures.incrementBounded(
-                                HEART_RATE_DIAGNOSTIC_OVERFLOW_KEY,
-                                count
-                            )
-                        }
-                    }
-                }
-
-                val windowElapsed = now - heartRateDiagnosticWindowStartedAtMillis >=
-                    HEART_RATE_DIAGNOSTIC_LOG_INTERVAL_MILLIS
-                val thresholdReached = heartRateDiagnosticRejectedFrames >=
-                    HEART_RATE_DIAGNOSTIC_REJECTION_THRESHOLD
-                if (windowElapsed || thresholdReached) {
+                val shouldLog =
+                    now - heartRateDiagnosticWindowStartedAtMillis >=
+                        HEART_RATE_DIAGNOSTIC_LOG_INTERVAL_MILLIS ||
+                        heartRateDiagnosticRejectedFrames >=
+                        HEART_RATE_DIAGNOSTIC_REJECTION_THRESHOLD
+                if (shouldLog) {
                     val reasons = heartRateDiagnosticRejectionReasons.entries
                         .sortedBy { it.key.name }
                         .joinToString(",") { (reason, count) ->
                             "${reason.name.lowercase()}=$count"
                         }
-                    val structures = heartRateDiagnosticStructures.entries
-                        .sortedByDescending { it.value }
-                        .joinToString(" || ") { (structure, count) ->
-                            "$count*$structure"
-                        }
-                        .ifEmpty { "none" }
                     rejectionSummary =
-                        "RTBuddy heart-rate decode window frames=$heartRateDiagnosticRelatedFrames " +
+                        "RTBuddy heart-rate decode window " +
+                            "frames=$heartRateDiagnosticRelatedFrames " +
                             "rejected=$heartRateDiagnosticRejectedFrames reasons=$reasons; " +
-                            "structures=$structures; raw frame data suppressed"
+                            "raw frame data suppressed"
                     clearHeartRateDiagnosticWindowLocked()
                 }
             }
         }
 
-        if (logAcceptedSample) {
+        if (acceptedFirstSample) {
             Log.d(TAG, "Validated first RTBuddy heart-rate sample for this AACP connection")
         }
         rejectionSummary?.let { Log.w(TAG, it) }
     }
 
     private fun boundedDiagnosticCount(current: Int, increment: Int): Int =
-        (current.toLong() + increment.toLong())
+        (current.toLong() + increment)
             .coerceAtMost(HEART_RATE_DIAGNOSTIC_COUNT_LIMIT.toLong())
             .toInt()
 
@@ -558,7 +529,6 @@ class AACPManager {
         heartRateDiagnosticRelatedFrames = 0
         heartRateDiagnosticRejectedFrames = 0
         heartRateDiagnosticRejectionReasons.clear()
-        heartRateDiagnosticStructures.clear()
     }
 
     private fun resetHeartRateDiagnostics() {

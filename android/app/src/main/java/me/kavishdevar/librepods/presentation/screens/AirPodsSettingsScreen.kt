@@ -344,10 +344,7 @@ fun AirPodsSettingsScreen(
                 }
                 item(key = "heart_rate") {
                     HeartRateCard(
-                        monitoringEnabled = state.heartRateMonitoringEnabled,
-                        monitoringStatus = state.heartRateMonitoringStatus,
-                        latestSample = state.heartRateSamples.lastOrNull(),
-                        heartRateSamples = state.heartRateSamples,
+                        state = state.heartRate,
                         onMonitoringChanged = setHeartRateMonitoringEnabled,
                         onReconnectAacp = reconnectAacpForHeartRate,
                         onOpenDetails = navigateToHeartRateTest

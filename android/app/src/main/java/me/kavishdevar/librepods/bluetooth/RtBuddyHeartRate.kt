@@ -21,7 +21,6 @@ data class HeartRateSample(
 )
 
 internal enum class HeartRateRejectionReason {
-    MALFORMED_SENSOR_DATA,
     UNSUPPORTED_LOG_TYPE,
     MISSING_HEART_RATE_PAYLOAD,
     UNRECOGNIZED_HEART_RATE_PAYLOAD
@@ -30,25 +29,21 @@ internal enum class HeartRateRejectionReason {
 internal data class HeartRateDecodeResult(
     val samples: List<HeartRateSample> = emptyList(),
     val relatedFrameCount: Int = 0,
-    val rejectedFrameCount: Int = 0,
     val rejectionReasons: Map<HeartRateRejectionReason, Int> = emptyMap(),
-    val structuralDiagnostics: Map<String, Int> = emptyMap(),
     val suppressRawLogging: Boolean = false,
     val passthroughPackets: List<ByteArray> = emptyList()
-)
+) {
+    val rejectedFrameCount: Int
+        get() = rejectionReasons.values.sum()
+}
 
 /**
- * Stateful decoder for the verified RTBuddy HEARTRATE SensorDataWX stream.
+ * Reassembles RTBuddy frames and extracts the verified HEARTRATE SensorDataWX payload.
  *
- * Socket reads are arbitrary chunks. A possible partial 0x17/0x00100000 frame is retained until
- * its declared payload is complete. Other 0x17 packets are reconstructed and passed to the normal
- * AACP parser so head tracking keeps its existing behavior.
- *
- * The known heart-rate value is accepted only from a live SensorDataWX record: an exact 18-byte
- * HEARTRATE(19) command payload with one of the observed status trailers and a BPM in the validated
- * physiological range. Firmware may use either observed live log type and may repeat command payload
- * field 3 or place that exact payload inside one or more protobuf length-delimited wrappers; those
- * structural variants are traversed without reading arbitrary offsets.
+ * The parser deliberately keeps the protocol checks that prevent control/startup frames from being
+ * interpreted as BPM: live log type, service 19, exact 18-byte payload, known status trailer, and
+ * the validated physiological range. Length-delimited wrappers are traversed only to the same
+ * bounded depth as the observed firmware variants.
  */
 internal class RtBuddyHeartRateDecoder {
     private var carry = ByteArray(0)
@@ -64,329 +59,179 @@ internal class RtBuddyHeartRateDecoder {
 
         val hadCarry = carry.isNotEmpty()
         val carryWasSensitive = carry.size >= MIN_SENSITIVE_PREFIX_LENGTH
-        val combined = if (carry.isEmpty()) chunk else carry + chunk
+        val data = if (carry.isEmpty()) chunk else carry + chunk
         carry = ByteArray(0)
 
         val samples = mutableListOf<HeartRateSample>()
         val passthroughPackets = mutableListOf<ByteArray>()
-        var relatedFrameCount = 0
-        var rejectedFrameCount = 0
         val rejectionReasons = mutableMapOf<HeartRateRejectionReason, Int>()
-        val structuralDiagnostics = linkedMapOf<String, Int>()
+        var relatedFrameCount = 0
         var suppressRawLogging = carryWasSensitive
         var cursor = 0
 
-        while (cursor < combined.size) {
-            val candidateOffset = combined.indexOfPrefix(RTBUDDY_FRAME_PREFIX, cursor)
-            if (candidateOffset < 0) {
-                val suffixLength = combined.longestSuffixMatchingPrefix(
+        while (cursor < data.size) {
+            val frameOffset = data.indexOfPrefix(RTBUDDY_FRAME_PREFIX, cursor)
+            if (frameOffset < 0) {
+                val suffixLength = data.longestSuffixMatchingPrefix(
                     prefix = RTBUDDY_FRAME_PREFIX,
                     startIndex = cursor
                 )
-                val passthroughEnd = combined.size - suffixLength
+                val passthroughEnd = data.size - suffixLength
                 if (passthroughEnd > cursor) {
-                    passthroughPackets += combined.copyOfRange(cursor, passthroughEnd)
+                    passthroughPackets += data.copyOfRange(cursor, passthroughEnd)
                 }
                 if (suffixLength > 0) {
-                    carry = combined.copyOfRange(passthroughEnd, combined.size)
-                    if (suffixLength >= MIN_SENSITIVE_PREFIX_LENGTH) {
-                        suppressRawLogging = true
-                    }
+                    carry = data.copyOfRange(passthroughEnd, data.size)
+                    suppressRawLogging = suppressRawLogging ||
+                        suffixLength >= MIN_SENSITIVE_PREFIX_LENGTH
                 }
                 break
             }
 
-            if (candidateOffset > cursor) {
-                passthroughPackets += combined.copyOfRange(cursor, candidateOffset)
+            if (frameOffset > cursor) {
+                passthroughPackets += data.copyOfRange(cursor, frameOffset)
             }
-
-            if (combined.size - candidateOffset < AACP_RTBUDDY_HEADER_LENGTH) {
-                carry = combined.copyOfRange(candidateOffset, combined.size)
+            if (data.size - frameOffset < AACP_RTBUDDY_HEADER_LENGTH) {
+                carry = data.copyOfRange(frameOffset, data.size)
                 suppressRawLogging = true
                 break
             }
 
-            val declaredLength = combined.readLe16(candidateOffset + 10)
-            if (declaredLength > MAX_RTBUDDY_PAYLOAD_LENGTH) {
-                // The exact SensorDataWX prefix is sensitive, but the length is untrusted. Drop the
-                // remainder rather than exposing it to generic packet logs or interpreting it as
-                // head tracking.
+            val payloadLength = data.readLe16(frameOffset + 10)
+            if (payloadLength > MAX_RTBUDDY_PAYLOAD_LENGTH) {
+                // The exact SensorDataWX prefix is sensitive, but the declared length is untrusted.
                 suppressRawLogging = true
                 break
             }
 
-            val frameLength = AACP_RTBUDDY_HEADER_LENGTH + declaredLength
-            if (combined.size - candidateOffset < frameLength) {
-                carry = combined.copyOfRange(candidateOffset, combined.size)
+            val frameLength = AACP_RTBUDDY_HEADER_LENGTH + payloadLength
+            if (data.size - frameOffset < frameLength) {
+                carry = data.copyOfRange(frameOffset, data.size)
                 suppressRawLogging = true
                 break
             }
 
-            val frame = combined.copyOfRange(candidateOffset, candidateOffset + frameLength)
+            val frame = data.copyOfRange(frameOffset, frameOffset + frameLength)
             val classification = classifyFrame(frame)
-            if (classification.isHeartRateRelated) {
+            if (classification.related) {
                 relatedFrameCount++
-                if (classification.sample == null) {
-                    rejectedFrameCount++
-                    classification.rejectionReason?.let { rejectionReasons.increment(it) }
-                }
-                classification.structuralDiagnostic?.let { structuralDiagnostics.increment(it) }
-                suppressRawLogging = true
+                classification.rejectionReason?.let { rejectionReasons.increment(it) }
                 classification.sample?.let(samples::add)
+                suppressRawLogging = true
             } else {
                 passthroughPackets += frame
-                if (hadCarry && candidateOffset == 0) suppressRawLogging = true
+                if (hadCarry && frameOffset == 0) suppressRawLogging = true
             }
-            cursor = candidateOffset + frameLength
+            cursor = frameOffset + frameLength
         }
 
         return HeartRateDecodeResult(
             samples = samples,
             relatedFrameCount = relatedFrameCount,
-            rejectedFrameCount = rejectedFrameCount,
             rejectionReasons = rejectionReasons,
-            structuralDiagnostics = structuralDiagnostics,
             suppressRawLogging = suppressRawLogging,
             passthroughPackets = passthroughPackets
         )
     }
 
     private fun classifyFrame(frame: ByteArray): FrameClassification {
-        val hasHeartRateReference = hasHeartRateServiceReference(
+        val topLevel = parseProtoMessage(
             frame,
             AACP_RTBUDDY_HEADER_LENGTH,
             frame.size
-        )
-        val sensorData = parseSensorDataWx(frame, AACP_RTBUDDY_HEADER_LENGTH, frame.size)
-            ?: return FrameClassification(
-                isHeartRateRelated = hasHeartRateReference,
-                rejectionReason = HeartRateRejectionReason.MALFORMED_SENSOR_DATA
-                    .takeIf { hasHeartRateReference },
-                structuralDiagnostic = MALFORMED_STRUCTURE_DIAGNOSTIC
-                    .takeIf { hasHeartRateReference }
-            )
-        val heartRateRelated = hasHeartRateReference ||
-            HEART_RATE_SERVICE in sensorData.referencedServices
-        if (!heartRateRelated) return FrameClassification()
-        if (sensorData.logType !in LIVE_SENSOR_DATA_LOG_TYPES) {
-            return FrameClassification(
-                isHeartRateRelated = true,
-                rejectionReason = HeartRateRejectionReason.UNSUPPORTED_LOG_TYPE,
-                structuralDiagnostic = buildStructuralDiagnostic(sensorData, emptyList())
-            )
-        }
+        ) ?: return FrameClassification()
 
-        val heartRateCommands = sensorData.commands.filter { it.service == HEART_RATE_SERVICE }
-        val analyses = heartRateCommands.flatMap { command ->
-            command.payloadCandidates.map { candidate ->
-                PayloadAnalysis(
-                    command = command,
-                    candidate = candidate,
-                    failures = validateHeartRatePayload(candidate.bytes)
+        val sequence = topLevel.firstVarint(FIELD_SEQUENCE)?.toInt() ?: -1
+        val logType = topLevel.firstVarint(FIELD_LOG_TYPE)?.toInt() ?: -1
+        val commands = mutableListOf<HeartRateCommand>()
+
+        topLevel.fields.forEach { field ->
+            if (field.wireType == WIRE_LENGTH_DELIMITED &&
+                field.number in SENSOR_DATA_COMMAND_FIELDS &&
+                commands.size < MAX_COMMANDS_PER_FRAME
+            ) {
+                collectHeartRateCommands(
+                    data = frame,
+                    start = field.valueStart,
+                    end = field.valueEnd,
+                    depth = 0,
+                    commands = commands
                 )
             }
         }
-        val accepted = analyses.firstOrNull { it.failures.isEmpty() }
-        if (accepted == null) {
-            val hasPayloadCandidate = heartRateCommands.any {
-                it.directPayloadCount > 0 || it.payloadCandidates.isNotEmpty()
-            }
+
+        if (commands.isEmpty()) return FrameClassification()
+        if (logType !in LIVE_SENSOR_DATA_LOG_TYPES) {
             return FrameClassification(
-                isHeartRateRelated = true,
-                rejectionReason = if (hasPayloadCandidate) {
-                    HeartRateRejectionReason.UNRECOGNIZED_HEART_RATE_PAYLOAD
-                } else {
-                    HeartRateRejectionReason.MISSING_HEART_RATE_PAYLOAD
-                },
-                structuralDiagnostic = buildStructuralDiagnostic(sensorData, analyses)
+                related = true,
+                rejectionReason = HeartRateRejectionReason.UNSUPPORTED_LOG_TYPE
             )
         }
 
-        val payload = accepted.candidate.bytes
+        val payloads = commands.flatMap { it.payloadCandidates }
+        val acceptedPayload = payloads.firstOrNull(::isValidHeartRatePayload)
+            ?: return FrameClassification(
+                related = true,
+                rejectionReason = if (payloads.isEmpty()) {
+                    HeartRateRejectionReason.MISSING_HEART_RATE_PAYLOAD
+                } else {
+                    HeartRateRejectionReason.UNRECOGNIZED_HEART_RATE_PAYLOAD
+                }
+            )
+
         return FrameClassification(
-            isHeartRateRelated = true,
+            related = true,
             sample = HeartRateSample(
-                bpm = payload.unsignedByteAt(HEART_RATE_BPM_OFFSET),
-                sequence = sensorData.sequence,
+                bpm = acceptedPayload.unsignedByteAt(HEART_RATE_BPM_OFFSET),
+                sequence = sequence,
                 receivedAtMillis = System.currentTimeMillis(),
                 receivedAtElapsedRealtime = SystemClock.elapsedRealtime()
             )
         )
     }
 
-    private fun validateHeartRatePayload(payload: ByteArray): Set<PayloadValidationFailure> {
-        if (payload.size != HEART_RATE_PAYLOAD_LENGTH) {
-            return setOf(PayloadValidationFailure.LENGTH)
-        }
-
-        val failures = linkedSetOf<PayloadValidationFailure>()
-        if (!payload.hasKnownHeartRateStatusTail()) {
-            failures += PayloadValidationFailure.STATUS_TAIL
-        }
-        if (payload.unsignedByteAt(HEART_RATE_BPM_OFFSET) !in MIN_BPM..MAX_BPM) {
-            failures += PayloadValidationFailure.BPM_RANGE
-        }
-        return failures
-    }
-
-    private fun ByteArray.hasKnownHeartRateStatusTail(): Boolean {
-        if (size != HEART_RATE_PAYLOAD_LENGTH) return false
-        return KNOWN_HEART_RATE_STATUS_TAILS.any { tail ->
-            tail.indices.all { index ->
-                this[HEART_RATE_STATUS_TAIL_OFFSET + index] == tail[index]
-            }
-        }
-    }
-
-    private fun ByteArray.unsignedByteAt(index: Int): Int = this[index].toInt().and(0xFF)
-
-    private fun <K> MutableMap<K, Int>.increment(key: K) {
-        this[key] = getOrDefault(key, 0) + 1
-    }
-
-    private fun hasHeartRateServiceReference(data: ByteArray, start: Int, end: Int): Boolean {
-        val message = parseProtoMessage(data, start, end) ?: return false
-        return message.entries.any { entry ->
-            entry.wireType == WIRE_LENGTH_DELIMITED &&
-                entry.field in SENSOR_DATA_COMMAND_FIELDS &&
-                containsServiceReference(
-                    data = data,
-                    start = entry.valueStart,
-                    end = entry.valueEnd,
-                    depth = 0
-                )
-        }
-    }
-
-    private fun containsServiceReference(
+    private fun collectHeartRateCommands(
         data: ByteArray,
         start: Int,
         end: Int,
-        depth: Int
-    ): Boolean {
-        if (depth > MAX_COMMAND_ENVELOPE_DEPTH) return false
-        val message = parseProtoMessage(data, start, end) ?: return false
-        if (message.entries.any {
-                it.field == 1 &&
-                    it.wireType == WIRE_VARINT &&
-                    it.varintValue == HEART_RATE_SERVICE.toLong()
-            }
-        ) {
-            return true
-        }
-        if (depth == MAX_COMMAND_ENVELOPE_DEPTH) return false
-        return message.entries.any { entry ->
-            entry.wireType == WIRE_LENGTH_DELIMITED &&
-                containsServiceReference(
-                    data,
-                    entry.valueStart,
-                    entry.valueEnd,
-                    depth + 1
-                )
-        }
-    }
-
-    private fun parseSensorDataWx(data: ByteArray, start: Int, end: Int): SensorDataWx? {
-        val message = parseProtoMessage(data, start, end) ?: return null
-        var sequence = -1
-        var logType = -1
-        val commands = mutableListOf<RtBuddyCommand>()
-        val referencedServices = mutableSetOf<Int>()
-        val fieldOccurrences = mutableMapOf<Int, Int>()
-
-        message.entries.forEach { entry ->
-            when {
-                entry.wireType == WIRE_VARINT && entry.field == 1 -> {
-                    sequence = entry.varintValue?.toInt() ?: sequence
-                }
-
-                entry.wireType == WIRE_VARINT && entry.field == 2 -> {
-                    logType = entry.varintValue?.toInt() ?: logType
-                }
-
-                entry.wireType == WIRE_LENGTH_DELIMITED &&
-                    entry.field in SENSOR_DATA_COMMAND_FIELDS -> {
-                    val occurrence = fieldOccurrences.getOrDefault(entry.field, 0)
-                    fieldOccurrences[entry.field] = occurrence + 1
-                    inspectCommandEnvelope(
-                        data = data,
-                        start = entry.valueStart,
-                        end = entry.valueEnd,
-                        path = "f${entry.field}[$occurrence]",
-                        depth = 0,
-                        commands = commands,
-                        referencedServices = referencedServices
-                    )
-                }
-            }
-        }
-
-        return SensorDataWx(
-            sequence = sequence,
-            logType = logType,
-            commands = commands,
-            referencedServices = referencedServices,
-            topLevelShape = message.shape
-        )
-    }
-
-    private fun inspectCommandEnvelope(
-        data: ByteArray,
-        start: Int,
-        end: Int,
-        path: String,
         depth: Int,
-        commands: MutableList<RtBuddyCommand>,
-        referencedServices: MutableSet<Int>
+        commands: MutableList<HeartRateCommand>
     ) {
         if (depth > MAX_COMMAND_ENVELOPE_DEPTH || commands.size >= MAX_COMMANDS_PER_FRAME) return
         val message = parseProtoMessage(data, start, end) ?: return
-        val service = message.entries.firstOrNull {
-            it.field == 1 && it.wireType == WIRE_VARINT
-        }?.varintValue?.toInt()
+        val service = message.firstVarint(FIELD_SERVICE)?.toInt()
 
-        if (service != null && service >= 0) {
-            referencedServices += service
-            val directPayloadEntries = message.entries.filter {
-                it.field == 3 && it.wireType == WIRE_LENGTH_DELIMITED
+        if (service == HEART_RATE_SERVICE) {
+            val payloads = mutableListOf<ByteArray>()
+            message.fields.forEach { field ->
+                if (field.number == FIELD_COMMAND_PAYLOAD &&
+                    field.wireType == WIRE_LENGTH_DELIMITED
+                ) {
+                    collectPayloadCandidates(
+                        data = data,
+                        start = field.valueStart,
+                        end = field.valueEnd,
+                        depth = 0,
+                        candidates = payloads
+                    )
+                }
             }
-            val payloadCandidates = mutableListOf<PayloadCandidate>()
-            directPayloadEntries.forEachIndexed { index, entry ->
-                collectPayloadCandidates(
-                    data = data,
-                    start = entry.valueStart,
-                    end = entry.valueEnd,
-                    path = "$path.f3[$index]",
-                    wrapperDepth = 0,
-                    candidates = payloadCandidates
-                )
-            }
-            commands += RtBuddyCommand(
-                service = service,
-                directPayloadCount = directPayloadEntries.size,
-                payloadCandidates = payloadCandidates,
-                path = path,
-                shape = message.shape
-            )
+            commands += HeartRateCommand(payloads)
         }
 
-        if (depth == MAX_COMMAND_ENVELOPE_DEPTH || commands.size >= MAX_COMMANDS_PER_FRAME) return
-        val fieldOccurrences = mutableMapOf<Int, Int>()
-        message.entries.forEach { entry ->
-            if (entry.wireType != WIRE_LENGTH_DELIMITED || commands.size >= MAX_COMMANDS_PER_FRAME) {
-                return@forEach
+        if (depth == MAX_COMMAND_ENVELOPE_DEPTH) return
+        message.fields.forEach { field ->
+            if (field.wireType == WIRE_LENGTH_DELIMITED &&
+                commands.size < MAX_COMMANDS_PER_FRAME
+            ) {
+                collectHeartRateCommands(
+                    data = data,
+                    start = field.valueStart,
+                    end = field.valueEnd,
+                    depth = depth + 1,
+                    commands = commands
+                )
             }
-            val occurrence = fieldOccurrences.getOrDefault(entry.field, 0)
-            fieldOccurrences[entry.field] = occurrence + 1
-            inspectCommandEnvelope(
-                data = data,
-                start = entry.valueStart,
-                end = entry.valueEnd,
-                path = "$path.f${entry.field}[$occurrence]",
-                depth = depth + 1,
-                commands = commands,
-                referencedServices = referencedServices
-            )
         }
     }
 
@@ -394,92 +239,63 @@ internal class RtBuddyHeartRateDecoder {
         data: ByteArray,
         start: Int,
         end: Int,
-        path: String,
-        wrapperDepth: Int,
-        candidates: MutableList<PayloadCandidate>
+        depth: Int,
+        candidates: MutableList<ByteArray>
     ) {
         if (candidates.size >= MAX_PAYLOAD_CANDIDATES_PER_COMMAND) return
+
         val direct = data.copyOfRange(start, end)
-        if (candidates.none { it.bytes.contentEquals(direct) }) {
-            candidates += PayloadCandidate(bytes = direct, path = path)
-        }
+        if (candidates.none(direct::contentEquals)) candidates += direct
+        if (depth >= MAX_PAYLOAD_WRAPPER_DEPTH) return
 
-        if (wrapperDepth >= MAX_PAYLOAD_WRAPPER_DEPTH ||
-            candidates.size >= MAX_PAYLOAD_CANDIDATES_PER_COMMAND
-        ) {
-            return
-        }
         val wrapper = parseProtoMessage(data, start, end) ?: return
-        val lengthEntries = wrapper.entries.filter { it.wireType == WIRE_LENGTH_DELIMITED }
-        if (lengthEntries.isEmpty()) return
-
-        val fieldOccurrences = mutableMapOf<Int, Int>()
-        lengthEntries.forEach { entry ->
-            if (candidates.size >= MAX_PAYLOAD_CANDIDATES_PER_COMMAND) return@forEach
-            val occurrence = fieldOccurrences.getOrDefault(entry.field, 0)
-            fieldOccurrences[entry.field] = occurrence + 1
-            collectPayloadCandidates(
-                data = data,
-                start = entry.valueStart,
-                end = entry.valueEnd,
-                path = "$path.f${entry.field}[$occurrence]",
-                wrapperDepth = wrapperDepth + 1,
-                candidates = candidates
-            )
+        wrapper.fields.forEach { field ->
+            if (field.wireType == WIRE_LENGTH_DELIMITED &&
+                candidates.size < MAX_PAYLOAD_CANDIDATES_PER_COMMAND
+            ) {
+                collectPayloadCandidates(
+                    data = data,
+                    start = field.valueStart,
+                    end = field.valueEnd,
+                    depth = depth + 1,
+                    candidates = candidates
+                )
+            }
         }
     }
 
-    private fun buildStructuralDiagnostic(
-        sensorData: SensorDataWx,
-        analyses: List<PayloadAnalysis>
-    ): String {
-        val heartRateCommands = sensorData.commands.filter { it.service == HEART_RATE_SERVICE }
-        val commandText = if (heartRateCommands.isEmpty()) {
-            "none"
-        } else {
-            heartRateCommands.take(MAX_DIAGNOSTIC_COMMANDS).joinToString("|") { command ->
-                val commandAnalyses = analyses.filter { it.command === command }
-                val candidates = if (commandAnalyses.isEmpty()) {
-                    "none"
-                } else {
-                    commandAnalyses.take(MAX_DIAGNOSTIC_PAYLOADS_PER_COMMAND)
-                        .joinToString(",") { analysis ->
-                            val relativePath = analysis.candidate.path.removePrefix(command.path)
-                            val failures = analysis.failures
-                                .joinToString("+") { it.diagnosticCode }
-                                .ifEmpty { "ok" }
-                            "$relativePath:${analysis.candidate.bytes.size}:$failures"
-                        }
-                }
-                "${command.path}{${command.shape};p3x${command.directPayloadCount};c=$candidates}"
+    private fun isValidHeartRatePayload(payload: ByteArray): Boolean {
+        if (payload.size != HEART_RATE_PAYLOAD_LENGTH) return false
+        if (payload.unsignedByteAt(HEART_RATE_BPM_OFFSET) !in MIN_BPM..MAX_BPM) return false
+
+        return KNOWN_HEART_RATE_STATUS_TAILS.any { tail ->
+            tail.indices.all { index ->
+                payload[HEART_RATE_STATUS_TAIL_OFFSET + index] == tail[index]
             }
         }
-        val diagnostic =
-            "log=${sensorData.logType};top=${sensorData.topLevelShape};hr=$commandText"
-        return diagnostic.take(MAX_DIAGNOSTIC_SIGNATURE_LENGTH)
     }
 
     private fun parseProtoMessage(data: ByteArray, start: Int, end: Int): ProtoMessage? {
         if (start < 0 || end < start || end > data.size || end - start > MAX_PROTO_MESSAGE_LENGTH) {
             return null
         }
-        var index = start
-        val entries = mutableListOf<ProtoEntry>()
 
+        val fields = mutableListOf<ProtoField>()
+        var index = start
         while (index < end) {
-            if (entries.size >= MAX_PROTO_FIELDS) return null
+            if (fields.size >= MAX_PROTO_FIELDS) return null
             val key = readVarint(data, index, end) ?: return null
             index = key.nextIndex
-            val fieldLong = key.value ushr 3
-            if (fieldLong <= 0 || fieldLong > MAX_PROTO_FIELD_NUMBER) return null
-            val field = fieldLong.toInt()
+
+            val fieldNumber = key.value ushr 3
+            if (fieldNumber <= 0 || fieldNumber > MAX_PROTO_FIELD_NUMBER) return null
             val wireType = (key.value and 0x07).toInt()
 
             when (wireType) {
                 WIRE_VARINT -> {
                     val value = readVarint(data, index, end) ?: return null
-                    entries += ProtoEntry(
-                        field = field,
+                    fields += ProtoField(
+                        number = fieldNumber.toInt(),
                         wireType = wireType,
                         varintValue = value.value,
                         valueStart = index,
@@ -489,20 +305,24 @@ internal class RtBuddyHeartRateDecoder {
                 }
 
                 WIRE_LENGTH_DELIMITED -> {
-                    val value = readLengthDelimited(data, index, end) ?: return null
-                    entries += ProtoEntry(
-                        field = field,
+                    val length = readVarint(data, index, end) ?: return null
+                    if (length.value > Int.MAX_VALUE) return null
+                    val valueEnd = length.nextIndex + length.value.toInt()
+                    if (valueEnd < length.nextIndex || valueEnd > end) return null
+
+                    fields += ProtoField(
+                        number = fieldNumber.toInt(),
                         wireType = wireType,
-                        valueStart = value.startIndex,
-                        valueEnd = value.endIndex
+                        valueStart = length.nextIndex,
+                        valueEnd = valueEnd
                     )
-                    index = value.endIndex
+                    index = valueEnd
                 }
 
                 WIRE_FIXED64 -> {
                     if (end - index < 8) return null
-                    entries += ProtoEntry(
-                        field = field,
+                    fields += ProtoField(
+                        number = fieldNumber.toInt(),
                         wireType = wireType,
                         valueStart = index,
                         valueEnd = index + 8
@@ -512,8 +332,8 @@ internal class RtBuddyHeartRateDecoder {
 
                 WIRE_FIXED32 -> {
                     if (end - index < 4) return null
-                    entries += ProtoEntry(
-                        field = field,
+                    fields += ProtoField(
+                        number = fieldNumber.toInt(),
                         wireType = wireType,
                         valueStart = index,
                         valueEnd = index + 4
@@ -524,20 +344,8 @@ internal class RtBuddyHeartRateDecoder {
                 else -> return null
             }
         }
-
-        return ProtoMessage(entries = entries, shape = buildProtoShape(entries))
+        return ProtoMessage(fields)
     }
-
-    private fun buildProtoShape(entries: List<ProtoEntry>): String =
-        entries.take(MAX_DIAGNOSTIC_SHAPE_FIELDS).joinToString(",") { entry ->
-            if (entry.wireType == WIRE_LENGTH_DELIMITED) {
-                "f${entry.field}/${entry.wireType}:${entry.valueEnd - entry.valueStart}"
-            } else {
-                "f${entry.field}/${entry.wireType}"
-            }
-        }.let { shape ->
-            if (entries.size > MAX_DIAGNOSTIC_SHAPE_FIELDS) "$shape,..." else shape
-        }.ifEmpty { "empty" }
 
     private fun readVarint(data: ByteArray, start: Int, end: Int): VarintRead? {
         var value = 0L
@@ -550,87 +358,37 @@ internal class RtBuddyHeartRateDecoder {
             if (byte and 0x80 == 0) return VarintRead(value, index)
             shift += 7
         }
-
         return null
     }
 
-    private fun readLengthDelimited(
-        data: ByteArray,
-        start: Int,
-        end: Int
-    ): LengthDelimitedRead? {
-        val length = readVarint(data, start, end) ?: return null
-        if (length.value > Int.MAX_VALUE) return null
+    private fun ByteArray.unsignedByteAt(index: Int): Int = this[index].toInt().and(0xFF)
 
-        val valueEnd = length.nextIndex + length.value.toInt()
-        if (valueEnd < length.nextIndex || valueEnd > end) return null
-        return LengthDelimitedRead(
-            startIndex = length.nextIndex,
-            endIndex = valueEnd
-        )
+    private fun <K> MutableMap<K, Int>.increment(key: K) {
+        this[key] = getOrDefault(key, 0) + 1
     }
 
-    private enum class PayloadValidationFailure(val diagnosticCode: String) {
-        LENGTH("len"),
-        STATUS_TAIL("tail"),
-        BPM_RANGE("bpm_range")
+    private data class HeartRateCommand(val payloadCandidates: List<ByteArray>)
+
+    private data class ProtoMessage(val fields: List<ProtoField>) {
+        fun firstVarint(fieldNumber: Int): Long? = fields.firstOrNull {
+            it.number == fieldNumber && it.wireType == WIRE_VARINT
+        }?.varintValue
     }
 
-    private data class SensorDataWx(
-        val sequence: Int,
-        val logType: Int,
-        val commands: List<RtBuddyCommand>,
-        val referencedServices: Set<Int>,
-        val topLevelShape: String
-    )
-
-    private data class RtBuddyCommand(
-        val service: Int,
-        val directPayloadCount: Int,
-        val payloadCandidates: List<PayloadCandidate>,
-        val path: String,
-        val shape: String
-    )
-
-    private data class PayloadCandidate(
-        val bytes: ByteArray,
-        val path: String
-    )
-
-    private data class PayloadAnalysis(
-        val command: RtBuddyCommand,
-        val candidate: PayloadCandidate,
-        val failures: Set<PayloadValidationFailure>
-    )
-
-    private data class ProtoMessage(
-        val entries: List<ProtoEntry>,
-        val shape: String
-    )
-
-    private data class ProtoEntry(
-        val field: Int,
+    private data class ProtoField(
+        val number: Int,
         val wireType: Int,
         val varintValue: Long? = null,
         val valueStart: Int,
         val valueEnd: Int
     )
 
+    private data class VarintRead(val value: Long, val nextIndex: Int)
+
     private data class FrameClassification(
-        val isHeartRateRelated: Boolean = false,
+        val related: Boolean = false,
         val sample: HeartRateSample? = null,
-        val rejectionReason: HeartRateRejectionReason? = null,
-        val structuralDiagnostic: String? = null
-    )
-
-    private data class VarintRead(
-        val value: Long,
-        val nextIndex: Int
-    )
-
-    private data class LengthDelimitedRead(
-        val startIndex: Int,
-        val endIndex: Int
+        val rejectionReason: HeartRateRejectionReason? = null
     )
 
     private companion object {
@@ -638,10 +396,8 @@ internal class RtBuddyHeartRateDecoder {
         const val MAX_RTBUDDY_PAYLOAD_LENGTH = 16 * 1024
         const val MIN_SENSITIVE_PREFIX_LENGTH = 5
 
-        // AirPods firmware has emitted live HEARTRATE records using both log types and different
-        // exact status trailers depending on whether one or both earbuds participate in the session.
-        // Keep this an exact whitelist: the trailer is the discriminator that prevents startup/control
-        // service-19 records becoming BPM.
+        // Firmware has emitted live records with both log types and different exact status trailers
+        // depending on whether one or both earbuds participate in the session.
         val LIVE_SENSOR_DATA_LOG_TYPES = setOf(1, 3)
         val KNOWN_HEART_RATE_STATUS_TAILS = arrayOf(
             byteArrayOf(0x10, 0x00, 0x00),
@@ -649,17 +405,19 @@ internal class RtBuddyHeartRateDecoder {
             byteArrayOf(0x20, 0x02, 0x80.toByte()),
             byteArrayOf(0x20, 0x82.toByte(), 0x80.toByte())
         )
+
+        const val FIELD_SEQUENCE = 1
+        const val FIELD_LOG_TYPE = 2
+        const val FIELD_SERVICE = 1
+        const val FIELD_COMMAND_PAYLOAD = 3
         const val HEART_RATE_SERVICE = 19
         const val HEART_RATE_PAYLOAD_LENGTH = 18
         const val HEART_RATE_BPM_OFFSET = 1
-        const val HEART_RATE_STATUS_TAIL_LENGTH = 3
-        const val HEART_RATE_STATUS_TAIL_OFFSET =
-            HEART_RATE_PAYLOAD_LENGTH - HEART_RATE_STATUS_TAIL_LENGTH
+        const val HEART_RATE_STATUS_TAIL_OFFSET = 15
         const val MIN_BPM = 30
         const val MAX_BPM = 220
 
         val SENSOR_DATA_COMMAND_FIELDS = setOf(5, 7, 8, 9, 12)
-
         const val MAX_COMMAND_ENVELOPE_DEPTH = 3
         const val MAX_PAYLOAD_WRAPPER_DEPTH = 3
         const val MAX_COMMANDS_PER_FRAME = 16
@@ -667,12 +425,6 @@ internal class RtBuddyHeartRateDecoder {
         const val MAX_PROTO_MESSAGE_LENGTH = MAX_RTBUDDY_PAYLOAD_LENGTH
         const val MAX_PROTO_FIELDS = 96
         const val MAX_PROTO_FIELD_NUMBER = 4_096L
-
-        const val MAX_DIAGNOSTIC_SHAPE_FIELDS = 12
-        const val MAX_DIAGNOSTIC_COMMANDS = 4
-        const val MAX_DIAGNOSTIC_PAYLOADS_PER_COMMAND = 5
-        const val MAX_DIAGNOSTIC_SIGNATURE_LENGTH = 480
-        const val MALFORMED_STRUCTURE_DIAGNOSTIC = "malformed_sensor_data;raw=suppressed"
 
         const val WIRE_VARINT = 0
         const val WIRE_FIXED64 = 1
@@ -697,14 +449,7 @@ private fun ByteArray.indexOfPrefix(prefix: ByteArray, startIndex: Int): Int {
     if (startIndex > lastStart) return -1
 
     for (start in startIndex.coerceAtLeast(0)..lastStart) {
-        var matches = true
-        for (offset in prefix.indices) {
-            if (this[start + offset] != prefix[offset]) {
-                matches = false
-                break
-            }
-        }
-        if (matches) return start
+        if (prefix.indices.all { this[start + it] == prefix[it] }) return start
     }
     return -1
 }
@@ -716,15 +461,8 @@ private fun ByteArray.longestSuffixMatchingPrefix(
     val available = size - startIndex.coerceIn(0, size)
     val maxLength = minOf(available, prefix.size - 1)
     for (length in maxLength downTo 1) {
-        var matches = true
         val start = size - length
-        for (offset in 0 until length) {
-            if (this[start + offset] != prefix[offset]) {
-                matches = false
-                break
-            }
-        }
-        if (matches) return length
+        if ((0 until length).all { this[start + it] == prefix[it] }) return length
     }
     return 0
 }
