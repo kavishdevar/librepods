@@ -8,10 +8,12 @@
 //! from any thread — it stashes the text and posts a message to the window,
 //! which the main thread's `GetMessage` loop dispatches to `wnd_proc`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
-use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+use windows_sys::Win32::Graphics::Dwm::{DwmExtendFrameIntoClientArea, DwmSetWindowAttribute};
+use windows_sys::Win32::UI::Controls::MARGINS;
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect,
     InvalidateRect, PAINTSTRUCT, SelectObject, SetBkMode, SetTextColor,
@@ -41,7 +43,13 @@ const DEFAULT_CHARSET_U: u32 = 1;
 const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
 const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
 const DWMWA_BORDER_COLOR: u32 = 34;
+const DWMWA_SYSTEMBACKDROP_TYPE: u32 = 38;
 const DWMWCP_ROUND: u32 = 2;
+const DWMSBT_TRANSIENTWINDOW: u32 = 3; // acrylic flyout material
+
+/// Whether the acrylic backdrop is active (Win11 22H2+). When true we paint the
+/// client "glass" (black) so the acrylic shows; otherwise a solid card.
+static ACRYLIC: AtomicBool = AtomicBool::new(false);
 
 /// (title, subtitle) to render. `show()` sets it from any thread.
 static CONTENT: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
@@ -106,6 +114,28 @@ pub fn init() {
         }
         // Native rounded corners (Windows 11), like the system flyouts.
         dwm_set_u32(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND);
+
+        // Acrylic flyout backdrop (Win11 22H2+). If it takes, extend the frame
+        // across the whole client so the material fills the card, and paint the
+        // client "glass" (black) so it shows through. Older OSes ignore it (hr<0)
+        // and we fall back to the solid card.
+        let hr = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &DWMSBT_TRANSIENTWINDOW as *const u32 as *const core::ffi::c_void,
+            4,
+        );
+        if hr >= 0 {
+            let m = MARGINS {
+                cxLeftWidth: -1,
+                cxRightWidth: -1,
+                cyTopHeight: -1,
+                cyBottomHeight: -1,
+            };
+            DwmExtendFrameIntoClientArea(hwnd, &m);
+            ACRYLIC.store(true, Ordering::Relaxed);
+        }
+
         apply_theme(hwnd);
         let _ = HWND_CELL.set(hwnd as usize);
     }
@@ -171,10 +201,20 @@ unsafe fn paint(hwnd: HWND) {
     // we just fill the whole client with the flyout card color. Dark card + light
     // text in dark mode; light card + dark text in light mode.
     let dark = crate::theme::apps_dark();
-    let (card_col, title_col, sub_col) = if dark {
-        (0x002B_2B2B, 0x00FF_FFFF, 0x00C8_C8C8)
+    let acrylic = ACRYLIC.load(Ordering::Relaxed);
+    let (title_col, sub_col) = if dark {
+        (0x00FF_FFFF, 0x00C8_C8C8)
     } else {
-        (0x00F3_F3F3, 0x0020_2020, 0x0060_6060)
+        (0x0020_2020, 0x0060_6060)
+    };
+    // In acrylic mode the client is glass: pure black = fully transparent, so the
+    // acrylic backdrop shows through. Otherwise a solid theme card.
+    let card_col: u32 = if acrylic {
+        0x0000_0000
+    } else if dark {
+        0x002B_2B2B
+    } else {
+        0x00F3_F3F3
     };
 
     let full = RECT { left: 0, top: 0, right: WIDTH, bottom: HEIGHT };

@@ -269,6 +269,7 @@ fn run_receiver(
 fn main() {
     volume::init(); // COM for Core Audio, on this (main) thread
     overlay::init(); // create the (hidden) centered popup window on this thread
+    theme::apply_menu_theme(); // dark/light Win32 context menu, per the OS theme
 
     let state: Shared = Arc::new(Mutex::new(State::default()));
 
@@ -383,6 +384,7 @@ fn main() {
             _ => make_icon(),
         };
         let _ = tray.set_icon(Some(icon));
+        theme::apply_menu_theme(); // keep the menu theme in sync with the OS
     };
 
     unsafe {
