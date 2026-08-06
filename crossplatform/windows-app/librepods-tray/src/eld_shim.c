@@ -1,20 +1,27 @@
-// Minimal AAC-ELD decoder shim over FFmpeg libavcodec (LGPL). Exposes a small,
-// version-stable C ABI so the Rust side never touches AVCodecContext internals.
+// Minimal AAC-ELD decoder shim over FFmpeg libavcodec + libswresample (LGPL).
+// Exposes a small, version-stable C ABI so the Rust side never touches
+// AVCodecContext internals. Decodes AAC-ELD access units and resamples whatever
+// rate the decoder produces to a fixed 48 kHz mono s16 (matching the virtual
+// mic's capture format), so the pitch is always correct.
 #include <libavcodec/avcodec.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/frame.h>
 #include <libavutil/mem.h>
+#include <libswresample/swresample.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#define OUT_RATE 48000
+
 typedef struct {
     AVCodecContext *ctx;
     AVPacket *pkt;
-    AVFrame  *frame;
+    AVFrame *frame;
+    SwrContext *swr;
+    int in_rate;  // decoder output rate, learned from the first frame
 } EldDec;
 
-// Open an AAC-ELD decoder configured by `asc` (AudioSpecificConfig). Returns an
-// opaque handle or NULL.
 void *eld_open(const uint8_t *asc, int asc_len, int sample_rate) {
     const AVCodec *c = avcodec_find_decoder_by_name("aac");
     if (!c) return NULL;
@@ -25,34 +32,47 @@ void *eld_open(const uint8_t *asc, int asc_len, int sample_rate) {
     memset(ctx->extradata, 0, asc_len + AV_INPUT_BUFFER_PADDING_SIZE);
     memcpy(ctx->extradata, asc, asc_len);
     ctx->extradata_size = asc_len;
-    ctx->sample_rate = sample_rate;              // channels/rate also come from the ASC
+    ctx->sample_rate = sample_rate;  // channels/rate ultimately come from the ASC
     if (avcodec_open2(ctx, c, NULL) < 0) { avcodec_free_context(&ctx); return NULL; }
-    EldDec *d = (EldDec *)malloc(sizeof(EldDec));
+    EldDec *d = (EldDec *)calloc(1, sizeof(EldDec));
     if (!d) { avcodec_free_context(&ctx); return NULL; }
     d->ctx = ctx;
     d->pkt = av_packet_alloc();
     d->frame = av_frame_alloc();
+    d->swr = NULL;
+    d->in_rate = 0;
     return d;
 }
 
-// Decode one access unit into interleaved mono i16 `out` (capacity `out_cap`
-// samples). Returns the number of samples written, or -1 on error.
+// Decode one access unit into interleaved mono s16 at 48 kHz. `out_cap` is the
+// sample capacity. Returns the number of samples written, or -1 on error.
 int eld_decode(void *handle, const uint8_t *au, int au_len, int16_t *out, int out_cap) {
     EldDec *d = (EldDec *)handle;
     if (!d) return -1;
     d->pkt->data = (uint8_t *)au;
     d->pkt->size = au_len;
     if (avcodec_send_packet(d->ctx, d->pkt) < 0) return -1;
+
     int total = 0;
     while (avcodec_receive_frame(d->ctx, d->frame) == 0) {
-        int n = d->frame->nb_samples;
-        const float *p = (const float *)d->frame->data[0];  // FLTP mono -> plane 0
-        for (int i = 0; i < n && total < out_cap; i++) {
-            float s = p[i];
-            if (s > 1.0f) s = 1.0f;
-            if (s < -1.0f) s = -1.0f;
-            out[total++] = (int16_t)(s * 32767.0f);
+        // (Re)build the resampler when the decoder's output rate is first known
+        // or changes: decoder rate -> 48 kHz mono s16.
+        if (!d->swr || d->in_rate != d->frame->sample_rate) {
+            if (d->swr) swr_free(&d->swr);
+            AVChannelLayout out_ch;
+            av_channel_layout_default(&out_ch, 1);
+            swr_alloc_set_opts2(&d->swr, &out_ch, AV_SAMPLE_FMT_S16, OUT_RATE,
+                                &d->frame->ch_layout, (enum AVSampleFormat)d->frame->format,
+                                d->frame->sample_rate, 0, NULL);
+            swr_init(d->swr);
+            d->in_rate = d->frame->sample_rate;
         }
+        uint8_t *outp = (uint8_t *)(out + total);
+        int room = out_cap - total;
+        if (room <= 0) { av_frame_unref(d->frame); break; }
+        int got = swr_convert(d->swr, &outp, room,
+                              (const uint8_t **)d->frame->data, d->frame->nb_samples);
+        if (got > 0) total += got;
         av_frame_unref(d->frame);
     }
     return total;
@@ -61,6 +81,7 @@ int eld_decode(void *handle, const uint8_t *au, int au_len, int16_t *out, int ou
 void eld_close(void *handle) {
     EldDec *d = (EldDec *)handle;
     if (!d) return;
+    if (d->swr) swr_free(&d->swr);
     av_frame_free(&d->frame);
     av_packet_free(&d->pkt);
     avcodec_free_context(&d->ctx);
