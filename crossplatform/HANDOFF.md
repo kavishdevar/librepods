@@ -79,14 +79,27 @@ Audio + WinRT Bluetooth) and `Win32_Devices_Bluetooth` on windows-sys.
   BluetoothAdapter.BluetoothAddress.
 - [x] **Device discovery** (`platform/windows/discovery.rs`) — Win32
   BluetoothFindFirstDevice; find_connected_airpods + find_other_managed_devices.
-- [ ] **watch_connections** — still a stub (idle channel). Real = WinRT
-  `DeviceWatcher` (or poll `find_connected_airpods`) for connect/disconnect.
-- [ ] **tray-icon backend** for `WindowsTrayHandle`/`spawn_tray` (render `MyTray`
-  battery/ANC; wire menu → command_tx). Currently spawn_tray returns None.
-- [ ] Verify `platform/windows/transport.rs` `l2cap_connect` end-to-end from the
-  main crate (it bridges to the LibrePodsAAP driver via IOCTL).
-- [ ] Wire + run the Windows app entrypoint (iced GUI cross-compiles); smoke-test
-  on real hardware. NOTE: nothing in Phase J is hardware-tested yet — it compiles.
+- [x] **watch_connections** — poll `find_connected_airpods` every 3s, emit
+  Connected/Disconnected (synthesizes the AAP UUID so the main filter matches).
+- [x] **tray-icon backend** — `WindowsTrayHandle`/`spawn_tray` render a real tray
+  icon on a dedicated Win32-message-loop thread from the shared `MyTray`; menu
+  routes ANC/conversation via `command_tx`, Open Window via `ui_tx`. WM_TIMER
+  refresh each second.
+
+**Every platform trait now has a real Windows backend.**
+`cargo check --target x86_64-pc-windows-gnu` = 0 errors; Linux green.
+
+- [x] **The `.exe` builds & links** — `cargo build --target x86_64-pc-windows-gnu`
+  Finished (iced/wgpu/winit all link on the gnu toolchain). Output:
+  `target/x86_64-pc-windows-gnu/debug/librepods.exe`.
+
+Remaining (runtime, needs a Windows box + hardware):
+- [ ] Run it and verify `platform/windows/transport.rs` `l2cap_connect` drives the
+  LibrePodsAAP driver end-to-end (connect → battery/ANC → ear-detection auto-pause).
+  ⚠️ The driver is EXCLUSIVE — quit the auto-started `librepods-tray` first (it
+  holds the driver), or the main app's connect will fail.
+- [ ] Smoke-test the tray + iced window on real hardware. NOTE: nothing in Phase J
+  is hardware-tested yet — it all compiles + links but is unverified at runtime.
 
 ### Windows apps — features
 - [x] **Ear-detection auto-pause (SMTC) — VALIDATED ON HARDWARE** in
