@@ -170,3 +170,25 @@ Polish / remaining:
 
 Full technical blueprint (WDK BRB API, IOCTL contract, etc.) is in the plan file
 referenced by the `cross-platform-port` memory.
+
+## 🔬 Reverse-engineering unknown AAP opcodes (Pro 3 settings, heart rate)
+
+The AirPods Pro 3 (H2, model A3064) push control commands LibrePods doesn't map:
+ids `0x37`, `0x38`, `0x3b`, `0x3e`, plus opcodes `0x44` (an AAP *Send* from the
+Mac) and `0x4e`, and "EQ Data". `HrmState` (heart-rate monitor!) is already
+decoded and appears in the log — a great target. Unmapped control commands now
+log at INFO with `id + value + raw` (aacp.rs, commit abebf35) to aid this.
+
+**Method that works (validated 2026-08-06):** capture with **PacketLogger** on a
+Mac (needs Apple's "Bluetooth" logging profile from
+developer.apple.com/bug-reporting/profiles-and-logs/ + reconnect — macOS doesn't
+log HCI by default). PacketLogger decodes the AAP L2CAP channel (ID 0x060D) and
+labels rows **AAP Send/Receive**; filter the search box for `AAP`. Control
+commands are the **11-byte** packets `04 00 04 00 09 00 <ID> <VALUE> 00 00 00`;
+the big 559-byte `...17...` packet is the full settings dump. Differential RE:
+Clear → change ONE setting → read the short packet's `<ID>`/`<VALUE>`.
+CONFIRMED: `04 00 04 00 09 00 0D 02 00 00 00` = Listening Mode (id 0x0D) = 0x02
+(Noise Cancellation). NOTE: macOS changes some settings via **GATT/ATT (BLE)**,
+not AAP — but the AirPods still echo the new state as AAP control commands, which
+is what we map. Alternative (no Mac): the multipoint/reconnect differential using
+LibrePods on Windows, which decodes the AAP opcodes directly.
