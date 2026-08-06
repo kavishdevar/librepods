@@ -150,7 +150,7 @@ fn open_driver() -> io::Result<HANDLE> {
             ptr::null(),
             OPEN_EXISTING,
             0,
-            0,
+            ptr::null_mut(),
         );
         SetupDiDestroyDeviceInfoList(devinfo);
 

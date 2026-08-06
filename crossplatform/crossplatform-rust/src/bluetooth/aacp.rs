@@ -1,7 +1,7 @@
 use crate::devices::airpods::AirPodsInformation;
 use crate::devices::enums::{DeviceData, DeviceInformation, DeviceType};
 use crate::platform::{DeviceId, get_devices_path};
-use bluer::{Error, Result};
+use std::io::{Error, Result};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json;

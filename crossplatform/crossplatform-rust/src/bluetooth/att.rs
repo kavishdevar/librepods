@@ -1,5 +1,5 @@
 use crate::platform::DeviceId;
-use bluer::{Error, Result};
+use std::io::{Error, Result};
 use hex;
 use log::{debug, error, info};
 use std::collections::HashMap;

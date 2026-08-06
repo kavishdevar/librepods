@@ -15,6 +15,14 @@ pub async fn power_on_adapter() -> Result<(), String> {
     Ok(())
 }
 
+/// The local Bluetooth adapter's MAC address as a string (used as our identity
+/// in the AAP hijack/smart-routing exchange). `None` if it can't be read.
+pub async fn local_adapter_address() -> Option<String> {
+    let session = bluer::Session::new().await.ok()?;
+    let adapter = session.default_adapter().await.ok()?;
+    adapter.address().await.ok().map(|a| a.to_string())
+}
+
 /// Watch org.bluez for device connect/disconnect events. The blocking D-Bus
 /// loop runs on its own thread and forwards events over an async channel.
 pub fn watch_connections() -> UnboundedReceiver<BtConnectionEvent> {

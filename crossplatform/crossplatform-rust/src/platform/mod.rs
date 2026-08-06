@@ -109,8 +109,8 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     DeviceId, LinuxPlatform as Platform, audio_router, connect_device, find_connected_airpods,
-    find_other_managed_devices, l2cap_connect, media_control, power_on_adapter, spawn_tray,
-    watch_connections, watch_le_advertisements,
+    find_other_managed_devices, l2cap_connect, local_adapter_address, media_control,
+    power_on_adapter, spawn_tray, watch_connections, watch_le_advertisements,
 };
 
 /// Handle to the running system tray. Callers hold `Option<TrayHandle>` and
@@ -122,7 +122,16 @@ pub type TrayHandle = ksni::Handle<crate::ui::tray::MyTray>;
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
-pub use windows::{DeviceId, WindowsPlatform as Platform, l2cap_connect};
+pub use windows::{
+    DeviceId, WindowsPlatform as Platform, audio_router, connect_device, find_connected_airpods,
+    find_other_managed_devices, l2cap_connect, local_adapter_address, media_control,
+    power_on_adapter, spawn_tray, watch_connections, watch_le_advertisements,
+};
+
+/// Handle to the running system tray (Windows backend). See the Linux alias
+/// above; on Windows this is currently a no-op stub (Phase J = tray-icon).
+#[cfg(target_os = "windows")]
+pub type TrayHandle = windows::WindowsTrayHandle;
 
 // Backwards-compatible free functions so existing call sites stay unchanged
 // while the implementation moves behind the platform boundary.

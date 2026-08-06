@@ -103,18 +103,9 @@ impl AirPodsDevice {
             }
         }
 
-        let session = bluer::Session::new()
+        let local_mac = crate::platform::local_adapter_address()
             .await
-            .expect("Failed to get bluer session");
-        let adapter = session
-            .default_adapter()
-            .await
-            .expect("Failed to get default adapter");
-        let local_mac = adapter
-            .address()
-            .await
-            .expect("Failed to get adapter address")
-            .to_string();
+            .unwrap_or_default();
 
         let media_controller = Arc::new(Mutex::new(MediaController::new(
             mac_address.to_string(),

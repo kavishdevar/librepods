@@ -8,7 +8,7 @@ mod discovery;
 pub use discovery::{find_connected_airpods, find_other_managed_devices};
 
 mod watcher;
-pub use watcher::{power_on_adapter, watch_connections};
+pub use watcher::{local_adapter_address, power_on_adapter, watch_connections};
 
 mod le_scan;
 pub use le_scan::{connect_device, watch_le_advertisements};
