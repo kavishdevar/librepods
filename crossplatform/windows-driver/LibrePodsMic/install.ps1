@@ -1,9 +1,9 @@
 <#
-    install.ps1 — test-sign + install the LibrePodsMic virtual audio driver, and
+    install.ps1 - test-sign + install the LibrePodsMic virtual audio driver, and
     create its ROOT-enumerated device so a virtual microphone appears.
 
     RUN AS ADMINISTRATOR, in Test Mode (bcdedit /set testsigning on + reboot,
-    Secure Boot off). Consider a system restore point first — this adds a virtual
+    Secure Boot off). Consider a system restore point first - this adds a virtual
     audio device.
 
     Pass the build output dir that holds AudioCodec.sys + AudioCodec.inf.
@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 
 $sys = Join-Path $Dir 'AudioCodec.sys'
 $inf = Join-Path $Dir 'AudioCodec.inf'
-foreach ($f in @($sys, $inf)) { if (-not (Test-Path $f)) { throw "Missing $f — build first." } }
+foreach ($f in @($sys, $inf)) { if (-not (Test-Path $f)) { throw "Missing $f - build first." } }
 
 $kit = 'C:\Program Files (x86)\Windows Kits\10'
 $inf2cat = Join-Path $kit 'bin\10.0.28000.0\x86\Inf2Cat.exe'
