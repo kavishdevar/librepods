@@ -172,6 +172,11 @@ MicPipeCreateControlDevice(
     WdfDeviceInitSetDeviceType(init, FILE_DEVICE_UNKNOWN);
     WdfDeviceInitSetIoType(init, WdfDeviceIoBuffered);
 
+    // Single audio source: only one process may feed the mic at a time. Two
+    // writers interleaving in the ring sound like static, so refuse a second
+    // open (a stuck feeder is freed on its process exit / a driver reload).
+    WdfDeviceInitSetExclusive(init, TRUE);
+
     status = WdfDeviceInitAssignName(init, &ntName);
     if (!NT_SUCCESS(status)) {
         WdfDeviceInitFree(init);
