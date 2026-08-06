@@ -1,7 +1,8 @@
-//! MagicPods-style centered popup overlay. A borderless, always-on-top,
-//! click-through window that appears near the top-center of the screen on events
-//! (connect, ANC change, case open/close), shows the AirPods name + a status
-//! line, and auto-hides after a few seconds.
+//! MagicPods-style centered popup overlay, styled like the Windows 11 volume/
+//! brightness flyout: a rounded card (native DWM corners), a subtle border, and
+//! a theme-aware fill (dark card in dark mode, light in light mode). Appears near
+//! the top-center on events (connect, ANC change, case open/close), shows the
+//! AirPods name + a status line, and auto-hides after a few seconds.
 //!
 //! Created on the main (message-loop) thread via `init()`; `show()` is callable
 //! from any thread — it stashes the text and posts a message to the window,
@@ -10,16 +11,16 @@
 use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 use windows_sys::Win32::Graphics::Gdi::{
     BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect,
-    InvalidateRect, PAINTSTRUCT, RoundRect, SelectObject, SetBkMode, SetTextColor,
+    InvalidateRect, PAINTSTRUCT, SelectObject, SetBkMode, SetTextColor,
 };
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetSystemMetrics, KillTimer, LWA_COLORKEY, PostMessageW,
-    RegisterClassW, SM_CXSCREEN, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SetLayeredWindowAttributes,
-    SetTimer, SetWindowPos, ShowWindow, WM_APP, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, GetSystemMetrics, KillTimer, PostMessageW, RegisterClassW,
+    SM_CXSCREEN, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SetTimer, SetWindowPos, ShowWindow, WM_APP,
+    WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 const WIDTH: i32 = 380;
@@ -36,6 +37,12 @@ const FW_BOLD: i32 = 700;
 const FW_NORMAL: i32 = 400;
 const DEFAULT_CHARSET_U: u32 = 1;
 
+// DWM window attributes (dwmapi).
+const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+const DWMWA_BORDER_COLOR: u32 = 34;
+const DWMWCP_ROUND: u32 = 2;
+
 /// (title, subtitle) to render. `show()` sets it from any thread.
 static CONTENT: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
 /// The overlay window handle as usize (HWND isn't Send). Set once in `init()`.
@@ -43,6 +50,21 @@ static HWND_CELL: OnceLock<usize> = OnceLock::new();
 
 fn to_utf16(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+unsafe fn dwm_set_u32(hwnd: HWND, attr: u32, value: u32) {
+    DwmSetWindowAttribute(hwnd, attr, &value as *const u32 as *const core::ffi::c_void, 4);
+}
+
+/// Apply the current Windows theme to the window chrome (immersive dark title/
+/// border tone + a subtle border color). Called on each show so a theme switch
+/// is reflected.
+unsafe fn apply_theme(hwnd: HWND) {
+    let dark = crate::theme::apps_dark();
+    dwm_set_u32(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, dark as u32);
+    // Subtle 1px border (COLORREF 0x00BBGGRR), a touch lighter/darker than the card.
+    let border = if dark { 0x0045_4545 } else { 0x00D0_D0D0 };
+    dwm_set_u32(hwnd, DWMWA_BORDER_COLOR, border);
 }
 
 /// Create the (hidden) overlay window. Call once on the message-loop thread.
@@ -66,7 +88,7 @@ pub fn init() {
         RegisterClassW(&wc);
 
         let hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
             class_name.as_ptr(),
             std::ptr::null(),
             WS_POPUP,
@@ -82,10 +104,9 @@ pub fn init() {
         if hwnd.is_null() {
             return;
         }
-        // Color-key pure black to transparent: the window fills black (invisible)
-        // and only the non-black rounded card + text show — so it's a floating
-        // pill, not a black square.
-        SetLayeredWindowAttributes(hwnd, 0x0000_0000, 0, LWA_COLORKEY);
+        // Native rounded corners (Windows 11), like the system flyouts.
+        dwm_set_u32(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND);
+        apply_theme(hwnd);
         let _ = HWND_CELL.set(hwnd as usize);
     }
 }
@@ -106,6 +127,7 @@ pub fn show(title: &str, subtitle: &str) {
 unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     match msg {
         WM_SHOW_OVERLAY => {
+            apply_theme(hwnd); // pick up a theme switch since last shown
             let x = (GetSystemMetrics(SM_CXSCREEN) - WIDTH) / 2;
             SetWindowPos(hwnd, HWND_TOPMOST, x, TOP_MARGIN, WIDTH, HEIGHT, SWP_NOACTIVATE);
             ShowWindow(hwnd, SW_SHOWNA);
@@ -145,31 +167,33 @@ unsafe fn paint(hwnd: HWND) {
     let mut ps: PAINTSTRUCT = std::mem::zeroed();
     let hdc = BeginPaint(hwnd, &mut ps);
 
-    // Opaque black backdrop (the layered alpha softens the edges).
+    // Theme-aware fill (COLORREF is 0x00BBGGRR). DWM clips the corners round, so
+    // we just fill the whole client with the flyout card color. Dark card + light
+    // text in dark mode; light card + dark text in light mode.
+    let dark = crate::theme::apps_dark();
+    let (card_col, title_col, sub_col) = if dark {
+        (0x002B_2B2B, 0x00FF_FFFF, 0x00C8_C8C8)
+    } else {
+        (0x00F3_F3F3, 0x0020_2020, 0x0060_6060)
+    };
+
     let full = RECT { left: 0, top: 0, right: WIDTH, bottom: HEIGHT };
-    let bg = CreateSolidBrush(0x00000000);
+    let bg = CreateSolidBrush(card_col);
     FillRect(hdc, &full, bg);
     DeleteObject(bg);
-
-    // Rounded dark card (COLORREF is 0x00BBGGRR).
-    let card = CreateSolidBrush(0x0022262A);
-    let old_brush = SelectObject(hdc, card);
-    RoundRect(hdc, 6, 6, WIDTH - 6, HEIGHT - 6, 28, 28);
-    SelectObject(hdc, old_brush);
-    DeleteObject(card);
 
     let (title, subtitle) = CONTENT.lock().map(|c| c.clone()).unwrap_or_default();
     SetBkMode(hdc, BK_TRANSPARENT);
 
     let title_font = font(26, FW_BOLD);
     let old = SelectObject(hdc, title_font);
-    draw_line(hdc, &title, 16, 52, 0x00FFFFFF); // white
+    draw_line(hdc, &title, 16, 52, title_col);
     SelectObject(hdc, old);
     DeleteObject(title_font);
 
     let sub_font = font(20, FW_NORMAL);
     let old = SelectObject(hdc, sub_font);
-    draw_line(hdc, &subtitle, 52, HEIGHT - 12, 0x00B8B8B8); // gray
+    draw_line(hdc, &subtitle, 52, HEIGHT - 12, sub_col);
     SelectObject(hdc, old);
     DeleteObject(sub_font);
 

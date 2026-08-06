@@ -14,6 +14,7 @@ mod bt;
 mod driver;
 mod media;
 mod overlay;
+mod theme;
 mod volume;
 
 use std::sync::{Arc, Mutex};
@@ -94,7 +95,14 @@ fn battery_icon(percent: u8) -> Icon {
     let x = ((w as f32 - tw) / 2.0).max(0.0) as i32;
     let y = ((h as f32 - scale.y) / 2.0).max(0.0) as i32 - 2;
 
-    draw_text_mut(&mut img, Rgba([255u8, 255, 255, 255]), x, y, scale, &font, &text);
+    // Contrast with the taskbar: white digits on a dark taskbar, near-black on a
+    // light one (otherwise white digits vanish on a light taskbar).
+    let digit = if theme::system_dark() {
+        Rgba([255u8, 255, 255, 255])
+    } else {
+        Rgba([24u8, 24, 24, 255])
+    };
+    draw_text_mut(&mut img, digit, x, y, scale, &font, &text);
     Icon::from_rgba(img.into_raw(), w, h).unwrap_or_else(|_| make_icon())
 }
 
