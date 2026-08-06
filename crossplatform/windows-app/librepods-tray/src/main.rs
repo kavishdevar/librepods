@@ -17,6 +17,7 @@ mod overlay;
 mod theme;
 mod volume;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -127,8 +128,10 @@ fn run_receiver(
     state: Shared,
     dev_name: String,
     driver_cell: Arc<Mutex<Option<Driver>>>,
+    mic_on: Arc<AtomicBool>,
 ) {
-    let mut buf = [0u8; 1024];
+    let mut buf = [0u8; 2048];
+    let mut audio_pkts = 0u32;
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause on this thread
     let mut last_anc = 0u8;
     let mut last_case_present: Option<bool> = None;
@@ -178,6 +181,18 @@ fn run_receiver(
                 if n > 0 {
                     got_data = true;
                     let data = &buf[..n];
+                    // Hi-res mic (Phase 3 de-risk): while enabled, count the 0x58
+                    // uplink audio packets and confirm the stream actually started.
+                    if mic_on.load(Ordering::Relaxed) {
+                        if aap::is_audio_packet(data) {
+                            audio_pkts = audio_pkts.saturating_add(1);
+                            if audio_pkts == 10 {
+                                overlay::show(&dev_name, "Hi-res mic: receiving audio");
+                            }
+                        }
+                    } else {
+                        audio_pkts = 0;
+                    }
                     if let Some(b) = aap::parse_battery(data) {
                         let mut s = state.lock().unwrap();
                         // merge — a packet may carry only some components
@@ -282,6 +297,10 @@ fn main() {
     // so a stale handle fails) and publishes the live one here.
     let driver_cell: Arc<Mutex<Option<Driver>>> = Arc::new(Mutex::new(None));
 
+    // Whether the hi-res mic stream is enabled (toggled from the menu, read by
+    // the receive loop). Phase 3.
+    let mic_on = Arc::new(AtomicBool::new(false));
+
     // Start the background AAP session if the AirPods are paired. run_receiver
     // opens the driver itself and keeps retrying, so this works even if they
     // aren't connected yet at startup.
@@ -289,7 +308,8 @@ fn main() {
         let st = state.clone();
         let name = dev_name.clone();
         let cell = driver_cell.clone();
-        thread::spawn(move || run_receiver(mac, st, name, cell));
+        let mic = mic_on.clone();
+        thread::spawn(move || run_receiver(mac, st, name, cell, mic));
     }
 
     // --- Tray menu ---
@@ -304,6 +324,7 @@ fn main() {
     let m_vol_up = MenuItem::new("Volume  +", true, None);
     let m_vol_down = MenuItem::new("Volume  −", true, None);
     let m_mute = MenuItem::new("Mute / Unmute", true, None);
+    let m_mic = CheckMenuItem::new("Hi-res microphone (test)", true, false, None);
     let m_open = MenuItem::new("Open App", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
@@ -314,6 +335,7 @@ fn main() {
     let vol_up_id = m_vol_up.id().clone();
     let vol_down_id = m_vol_down.id().clone();
     let mute_id = m_mute.id().clone();
+    let mic_id = m_mic.id().clone();
     let open_id = m_open.id().clone();
     let quit_id = quit.id().clone();
 
@@ -332,6 +354,7 @@ fn main() {
     menu.append(&m_vol_down).unwrap();
     menu.append(&m_mute).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
+    menu.append(&m_mic).unwrap();
     menu.append(&m_open).unwrap();
     menu.append(&quit).unwrap();
 
@@ -427,6 +450,20 @@ fn main() {
                 } else if ev.id == mute_id {
                     volume::toggle_mute();
                     refresh();
+                } else if ev.id == mic_id {
+                    // Toggle the hi-res mic stream (Phase 3 de-risk): send the
+                    // enable/stop command; the receive loop confirms audio flow.
+                    let on = !mic_on.load(Ordering::Relaxed);
+                    mic_on.store(on, Ordering::Relaxed);
+                    m_mic.set_checked(on);
+                    if let Some(drv) = driver_cell.lock().unwrap().clone() {
+                        let cmd: &[u8] = if on { &aap::START_AUDIO } else { &aap::STOP_AUDIO };
+                        let _ = drv.send(cmd);
+                    }
+                    overlay::show(
+                        &dev_name,
+                        if on { "Hi-res mic: enabling…" } else { "Hi-res mic: off" },
+                    );
                 } else if let Some(mode) = mode_for(&ev.id) {
                     if let Some(drv) = driver_cell.lock().unwrap().clone() {
                         let _ = drv.send(&aap::anc_command(mode));
