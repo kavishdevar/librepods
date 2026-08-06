@@ -76,7 +76,12 @@ fn battery_text(b: &aap::Battery, connected: bool) -> String {
 /// Background loop: keep the AAP session alive and parse pushed packets.
 /// `connected` stays true while the link is up; it only flips false when a send
 /// actually fails (a real disconnect), so the UI never flickers on idle reads.
-fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
+fn run_receiver(
+    mac: u64,
+    state: Shared,
+    dev_name: String,
+    driver_cell: Arc<Mutex<Option<Driver>>>,
+) {
     let mut buf = [0u8; 1024];
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause on this thread
     let mut last_anc = 0u8;
@@ -86,6 +91,20 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
     // "case opened" popup (with battery), not the case-present transition.
     let mut pending_card = false;
     loop {
+        // (Re)open the driver each session. The driver's device object is
+        // recreated when the AirPods reconnect (it now unloads cleanly on
+        // disconnect), so a handle from a previous session points at a removed
+        // device and every call on it fails — a fresh open binds the new one.
+        let driver = match Driver::open() {
+            Ok(d) => d,
+            Err(_) => {
+                state.lock().unwrap().connected = false;
+                *driver_cell.lock().unwrap() = None;
+                thread::sleep(Duration::from_secs(3));
+                continue;
+            }
+        };
+        *driver_cell.lock().unwrap() = Some(driver.clone()); // publish for the menu
         if !driver.connect(mac, aap::PSM_AACP).unwrap_or(false) {
             state.lock().unwrap().connected = false;
             thread::sleep(Duration::from_secs(3));
@@ -178,6 +197,7 @@ fn run_receiver(driver: Driver, mac: u64, state: Shared, dev_name: String) {
                 ticks = 0;
                 if !driver.status().map(|s| s == 2).unwrap_or(false) {
                     state.lock().unwrap().connected = false;
+                    *driver_cell.lock().unwrap() = None; // drop the stale handle
                     // Reset per-session state so the next connect (e.g. lid
                     // reopened) re-fires the battery card + ANC/case events.
                     last_anc = 0;
@@ -200,13 +220,19 @@ fn main() {
         Some((m, n)) => (Some(m), n),
         None => (None, "AirPods".to_string()),
     };
-    let driver = Driver::open().ok();
+    // The current driver handle, shared with the tray menu. run_receiver
+    // re-opens it every session (the device object is recreated on reconnect,
+    // so a stale handle fails) and publishes the live one here.
+    let driver_cell: Arc<Mutex<Option<Driver>>> = Arc::new(Mutex::new(None));
 
-    // Start the background AAP session if we have both a device and the driver.
-    if let (Some(mac), Some(drv)) = (mac, driver.clone()) {
+    // Start the background AAP session if the AirPods are paired. run_receiver
+    // opens the driver itself and keeps retrying, so this works even if they
+    // aren't connected yet at startup.
+    if let Some(mac) = mac {
         let st = state.clone();
         let name = dev_name.clone();
-        thread::spawn(move || run_receiver(drv, mac, st, name));
+        let cell = driver_cell.clone();
+        thread::spawn(move || run_receiver(mac, st, name, cell));
     }
 
     // --- Tray menu ---
@@ -324,7 +350,7 @@ fn main() {
                     volume::toggle_mute();
                     refresh();
                 } else if let Some(mode) = mode_for(&ev.id) {
-                    if let Some(drv) = driver.clone() {
+                    if let Some(drv) = driver_cell.lock().unwrap().clone() {
                         let _ = drv.send(&aap::anc_command(mode));
                     }
                     state.lock().unwrap().anc = mode;
