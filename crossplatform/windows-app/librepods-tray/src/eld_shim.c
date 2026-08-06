@@ -13,6 +13,11 @@
 #include <string.h>
 
 #define OUT_RATE 48000
+// The AirPods hi-res mic AAC-ELD actually decodes at 64 kHz (PR #655's
+// ELD_SAMPLE_RATE), but its 4-byte ASC advertises index 3 (48000), so FFmpeg
+// labels the frames 48000. Feeding that 64 kHz content as 48 kHz played ~0.75x
+// slow (deep) and overfed the ring. Resample from the true 64 kHz instead.
+#define IN_RATE 64000
 
 typedef struct {
     AVCodecContext *ctx;
@@ -63,7 +68,7 @@ int eld_decode(void *handle, const uint8_t *au, int au_len, int16_t *out, int ou
             av_channel_layout_default(&out_ch, 1);
             swr_alloc_set_opts2(&d->swr, &out_ch, AV_SAMPLE_FMT_S16, OUT_RATE,
                                 &d->frame->ch_layout, (enum AVSampleFormat)d->frame->format,
-                                d->frame->sample_rate, 0, NULL);
+                                IN_RATE, 0, NULL);
             swr_init(d->swr);
             d->in_rate = d->frame->sample_rate;
         }
