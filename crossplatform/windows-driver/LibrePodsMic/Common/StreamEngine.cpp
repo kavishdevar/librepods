@@ -27,6 +27,7 @@ Environment:
 #include <mmsystem.h>
 #include <ksmedia.h>
 #include "streamengine.h"
+#include "MicPipe.h"
 
 #ifndef __INTELLISENSE__
 #include "streamengine.tmh"
@@ -1000,14 +1001,11 @@ CCaptureStreamEngine::ProcessPacket()
         packetBuffer += m_FirstPacketOffset;
     }
 
-    if (m_EnableWaveCapture)
-    {
-        m_WaveReader.ReadWaveData(packetBuffer, m_PacketSize);
-    }
-    else
-    {
-        m_ToneGenerator.GenerateSine(packetBuffer, m_PacketSize);
-    }
+    // LibrePods: fill this capture packet from the mic pipe — the PCM that user
+    // mode pushed over IOCTL_LIBREPODS_MIC_WRITE_PCM (the decoded AirPods audio).
+    // Underrun is zero-filled (silence). Replaces the sample's WAV-file / tone
+    // dummy sources.
+    MicPipeRead(packetBuffer, m_PacketSize);
 }
 
 _Use_decl_annotations_

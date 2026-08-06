@@ -1,0 +1,80 @@
+/*++
+
+Module Name:
+
+    MicPipe.h
+
+Abstract:
+
+    LibrePods hi-res microphone bridge (Phase 2). A global ring buffer that
+    user mode fills with decoded PCM over an IOCTL, and the ACX capture stream
+    engine drains one packet per notification tick (see StreamEngine.cpp
+    ProcessPacket). Exposed to user mode through a control device
+    (\\.\LibrePodsMic).
+
+    PCM format: mono, 16-bit, 44100 or 48000 Hz (whatever the client opens the
+    capture endpoint with — see Capture_AllocateSupportedFormats).
+
+Environment:
+
+    Kernel mode
+
+--*/
+
+#pragma once
+
+#include <ntddk.h>
+#include <wdf.h>
+
+//
+// IOCTL: user mode pushes raw PCM bytes into the mic ring buffer.
+// Value (precomputed for the user-mode side): 0x0022A000.
+//   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_WRITE_DATA)
+//
+#define IOCTL_LIBREPODS_MIC_WRITE_PCM \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_WRITE_DATA)
+
+EXTERN_C_START
+
+//
+// Initialize the global ring buffer. Call once, early (device add), before any
+// read/write. Idempotent.
+//
+VOID
+MicPipeInit(
+    VOID
+);
+
+//
+// Create the control device (\Device\LibrePodsMic + \DosDevices\LibrePodsMic)
+// that exposes IOCTL_LIBREPODS_MIC_WRITE_PCM. Driver-scoped and created once;
+// safe to call again (returns STATUS_SUCCESS if already created). Best-effort:
+// a failure here must not fail device add (the mic still enumerates, just with
+// no user-mode feed yet).
+//
+NTSTATUS
+MicPipeCreateControlDevice(
+    _In_ WDFDEVICE Parent
+);
+
+//
+// Append PCM bytes to the ring (called from the IOCTL handler, PASSIVE_LEVEL).
+// On overflow the oldest bytes are dropped so we always keep the newest audio.
+//
+VOID
+MicPipeWrite(
+    _In_reads_bytes_(Len) PVOID Data,
+    _In_                  ULONG Len
+);
+
+//
+// Fill Out with Len bytes from the ring (called from ProcessPacket, up to
+// DISPATCH_LEVEL). Any underrun is zero-filled (silence).
+//
+VOID
+MicPipeRead(
+    _Out_writes_bytes_(Len) PVOID Out,
+    _In_                    ULONG Len
+);
+
+EXTERN_C_END

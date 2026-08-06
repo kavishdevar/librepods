@@ -24,6 +24,7 @@ Environment:
 #include <mmsystem.h>
 #include <ksmedia.h>
 #include "streamengine.h"
+#include "MicPipe.h"
 #include "DriverSettings.h"
 
 #ifndef __INTELLISENSE__
@@ -182,6 +183,15 @@ Return Value:
     // circuit — so Windows never exposes a phantom output device that could grab
     // the default output.
     RETURN_NTSTATUS_IF_FAILED(CodecC_AddStaticCapture(device, &CODEC_CAPTURE_COMPONENT_GUID, &MIC_CUSTOM_NAME, &captureCircuitName));
+
+    //
+    // LibrePods mic bridge (Phase 2): init the PCM ring and expose the control
+    // device (\\.\LibrePodsMic) so user mode can push the decoded AirPods audio
+    // into the capture stream. Best-effort — a failure here must not fail device
+    // add (the mic still enumerates, just without a user-mode feed).
+    //
+    MicPipeInit();
+    (VOID)MicPipeCreateControlDevice(device);
 
     return status;
 }

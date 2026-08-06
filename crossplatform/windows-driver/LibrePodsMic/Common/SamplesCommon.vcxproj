@@ -151,6 +151,7 @@
     <ClInclude Include="NewDelete.h" />
     <ClInclude Include="CircuitHelper.h" />
     <ClInclude Include="KeywordDetector.h" />
+    <ClInclude Include="MicPipe.h" />
     <ClInclude Include="Private.h" />
     <ClInclude Include="Public.h" />
     <ClInclude Include="SaveData.h" />
@@ -166,6 +167,7 @@
     <ClCompile Include="captureCircuit.cpp" />
     <ClCompile Include="CircuitHelper.cpp" />
     <ClCompile Include="KeywordDetector.cpp" />
+    <ClCompile Include="MicPipe.cpp" />
     <ClCompile Include="renderCircuit.cpp" />
     <ClCompile Include="SaveData.cpp" />
     <ClCompile Include="SimPeakMeter.cpp" />
