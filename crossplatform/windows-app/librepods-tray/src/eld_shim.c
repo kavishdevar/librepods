@@ -78,6 +78,12 @@ int eld_decode(void *handle, const uint8_t *au, int au_len, int16_t *out, int ou
     return total;
 }
 
+// The decoder's output sample rate (learned after the first decoded frame), or 0.
+int eld_in_rate(void *handle) {
+    EldDec *d = (EldDec *)handle;
+    return d ? d->in_rate : 0;
+}
+
 void eld_close(void *handle) {
     EldDec *d = (EldDec *)handle;
     if (!d) return;
