@@ -21,9 +21,13 @@ for a PCM feed pushed from the app over an IOCTL/ring buffer.
 ## Status
 
 - [x] **Builds** with VS2026 + WDK 28000 (ACX headers present) — `AudioCodec.sys`.
-- [ ] Install (ROOT device) + verify a virtual mic appears in Sound settings.
-- [ ] Rename AudioCodec → LibrePodsMic (INF device description).
-- [ ] Trim to capture-only; add the IOCTL PCM bridge (Phase 2).
+- [x] **Installs + a virtual mic appears** — `install.ps1` (elevated, Test Mode)
+  signs + catalogs the driver and creates the `ROOT\AudioCodec` device via
+  devcon. Confirmed on hardware: Windows shows **"Microphone (AudioCodec Device)"**
+  in Sound -> Input (and a matching output). **Phase 1 done.**
+- [ ] Rename AudioCodec -> LibrePodsMic (INF device description).
+- [ ] Trim to capture-only; add the IOCTL PCM bridge (Phase 2) so the app can
+  push the AirPods' decoded audio into the mic.
 
 ## Build
 

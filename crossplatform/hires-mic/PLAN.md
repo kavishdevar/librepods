@@ -68,5 +68,12 @@ the sink.
 
 ## Status
 
-Phase 1 not started. This branch holds the plan + (to come) the `LibrePodsMic`
-driver and the shared-crate mic path.
+- **Phase 1 — DONE** ✅ (`windows-driver/LibrePodsMic/`, based on the MS ACX
+  AudioCodec sample). Builds with WDK 28000, installs via `install.ps1`, and
+  Windows shows a virtual **"Microphone (AudioCodec Device)"** (confirmed on
+  hardware). The audio source is still the sample's dummy; feeding real audio is
+  next.
+- **Phase 2 — next**: IOCTL/ring bridge so user mode can push PCM into the
+  capture circuit (`Common/CaptureCircuit.cpp` / `WaveReader.cpp`); test with a
+  tone/WAV heard on the virtual mic.
+- Phase 3 (protocol from PR #655 + AAC-ELD) and Phase 4 (integration) to follow.
