@@ -43,6 +43,7 @@ LpEvtDeviceAdd(
     NTSTATUS                    status;
     WDF_PNPPOWER_EVENT_CALLBACKS pnpPower;
     WDF_OBJECT_ATTRIBUTES       deviceAttrs;
+    WDF_FILEOBJECT_CONFIG       fileConfig;
     WDFDEVICE                   device;
     PDEVICE_CONTEXT             ctx;
     WDF_IO_QUEUE_CONFIG         queueConfig;
@@ -56,6 +57,16 @@ LpEvtDeviceAdd(
     pnpPower.EvtDevicePrepareHardware = LpEvtDevicePrepareHardware;
     pnpPower.EvtDeviceReleaseHardware = LpEvtDeviceReleaseHardware;
     WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPower);
+
+    // Track the user-mode handle lifetime so we can release the L2CAP channel
+    // when the app exits. Only EvtFileClose is needed (create/cleanup default).
+    // AutoForwardCleanupClose = WdfFalse: these CREATE/CLOSE IRPs belong to our
+    // user-mode device interface, not the Bluetooth stack below us, so WDF must
+    // complete them here rather than forwarding them down to bthport.
+    WDF_FILEOBJECT_CONFIG_INIT(
+        &fileConfig, WDF_NO_EVENT_CALLBACK, LpEvtFileClose, WDF_NO_EVENT_CALLBACK);
+    fileConfig.AutoForwardCleanupClose = WdfFalse;
+    WdfDeviceInitSetFileObjectConfig(DeviceInit, &fileConfig, WDF_NO_OBJECT_ATTRIBUTES);
 
     WdfDeviceInitSetDeviceType(DeviceInit, FILE_DEVICE_BLUETOOTH);
     WdfDeviceInitSetExclusive(DeviceInit, TRUE);

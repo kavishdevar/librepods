@@ -33,11 +33,14 @@ was linux-rust; + windows-driver + windows-app). CI = ci-crossplatform-rust.yml.
 ## 📋 TODO — pick up here
 
 ### Driver
-- [ ] **Add `EvtFileClose`** to the driver → close the L2CAP channel when the
-  app closes its handle. Currently the channel LEAKS on app exit → Windows says
-  "Can't disconnect" until manual disconnect/reboot. This is the top fix.
-  (KMDF: `WDF_FILEOBJECT_CONFIG_INIT` + `EvtFileClose` → `LpDisconnect(ctx)`.)
-  Then rebuild + re-sign + re-install (Test Mode cycle).
+- [x] **`EvtFileClose` added** → the driver now closes the L2CAP channel when the
+  app closes its handle (clean exit OR crash), so the channel no longer leaks
+  ("Can't disconnect" bug). `WDF_FILEOBJECT_CONFIG_INIT` in `Driver.c`
+  (`AutoForwardCleanupClose = WdfFalse`) + `LpEvtFileClose` in `Ioctl.c` →
+  `LpDisconnect(ctx)`. **Built clean** on the Windows host; `prebuilt/` refreshed
+  (16896-byte `.sys`, new `.cat`). ⏳ **Still needs install + hardware test:**
+  run `install.ps1 -PackageDir <repo>\...\prebuilt` elevated (Test Mode already
+  on), then verify connect → app quit → Windows can disconnect the AirPods.
 
 ### App port (finish making the crate compile for Windows)
 - [ ] **Phase E** — LE monitor: abstract `bluetooth/le.rs` (`bluer::monitor`

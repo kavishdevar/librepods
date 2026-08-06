@@ -113,6 +113,11 @@ EVT_WDF_OBJECT_CONTEXT_CLEANUP    LpEvtDeviceContextCleanup;
 
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LpEvtIoDeviceControl;
 
+// Fires when the LibrePods app closes its handle to our device interface -> we
+// tear down the L2CAP channel so it doesn't leak (which left Windows unable to
+// disconnect the AirPods until a manual disconnect/reboot).
+EVT_WDF_FILE_CLOSE                 LpEvtFileClose;
+
 // L2cap.c
 NTSTATUS LpSubmitBrbSync(_In_ PDEVICE_CONTEXT Ctx, _Inout_ PBRB Brb);
 NTSTATUS LpConnect(_In_ PDEVICE_CONTEXT Ctx, _In_ BTH_ADDR Address, _In_ USHORT Psm);

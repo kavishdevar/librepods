@@ -5,6 +5,24 @@
 
 #include "LibrePodsAAP.h"
 
+//
+// The app closed its handle (clean exit OR crash -> the OS closes it for us).
+// Release the L2CAP channel so it doesn't leak. LpDisconnect is idempotent and
+// runs at PASSIVE_LEVEL, which is where EvtFileClose is called.
+//
+VOID
+LpEvtFileClose(
+    _In_ WDFFILEOBJECT FileObject
+)
+{
+    PDEVICE_CONTEXT ctx = DeviceGetContext(WdfFileObjectGetDevice(FileObject));
+
+    if (ctx->State != LpDisconnected) {
+        KdPrint(("LibrePodsAAP: app handle closed -> releasing L2CAP channel\n"));
+        LpDisconnect(ctx);
+    }
+}
+
 VOID
 LpEvtIoDeviceControl(
     _In_ WDFQUEUE   Queue,
