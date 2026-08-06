@@ -165,8 +165,10 @@ fn run_receiver(
         let mut we_paused = false;
         let mut ticks = 0u32;
         loop {
+            let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
                 if n > 0 {
+                    got_data = true;
                     let data = &buf[..n];
                     if let Some(b) = aap::parse_battery(data) {
                         let mut s = state.lock().unwrap();
@@ -225,6 +227,14 @@ fn run_receiver(
                         }
                     }
                 }
+            }
+            // No data this cycle: yield the CPU. The driver's ACL read completes
+            // immediately with 0 bytes when idle (ACL_SHORT_TRANSFER_OK), so
+            // without this the loop spins a core AND floods the Bluetooth stack
+            // with back-to-back ACL reads that contend with the A2DP audio
+            // (the crackle). Pushed events still arrive within ~150 ms.
+            if !got_data {
+                thread::sleep(Duration::from_millis(150));
             }
             // Passive session: no periodic L2CAP sends — those make Windows
             // re-negotiate the audio profile and cut/switch the output. Detect a
