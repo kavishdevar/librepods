@@ -204,8 +204,12 @@ async fn async_main(
     while let Some(event) = events.recv().await {
         match event {
             crate::platform::BtConnectionEvent::Disconnected { id } => {
+                let addr_str = id.to_string();
+                // Drop the device's managers so its AACP/ATT session tears down
+                // and a later reconnect re-initializes cleanly.
+                device_managers.write().await.remove(&addr_str);
                 if let Err(e) =
-                    ui_tx.send(BluetoothUIMessage::DeviceDisconnected(id.to_string()))
+                    ui_tx.send(BluetoothUIMessage::DeviceDisconnected(addr_str))
                 {
                     warn!("Failed to send DeviceDisconnected UI message: {:?}", e);
                 }
@@ -240,6 +244,13 @@ async fn async_main(
                 }
 
                 if !uuids.iter().any(|u| u.to_lowercase() == target_uuid) {
+                    continue;
+                }
+                // Skip if this device is already initialized — the startup scan
+                // and the connection watcher can both report the same
+                // already-connected AirPods (and the driver is single-handle).
+                if device_managers.read().await.contains_key(&addr_str) {
+                    info!("AirPods {} already initialized; skipping duplicate", addr_str);
                     continue;
                 }
                 info!("AirPods connected: {}, initializing", name);

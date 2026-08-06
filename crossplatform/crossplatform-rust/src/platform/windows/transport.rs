@@ -35,6 +35,10 @@ const GUID_DEVINTERFACE_LIBREPODSAAP: GUID = GUID {
 const IOCTL_LP_CONNECT: u32 = 0x8000_2000;
 const IOCTL_LP_SEND: u32 = 0x8000_2008;
 const IOCTL_LP_RECEIVE: u32 = 0x8000_200C;
+const IOCTL_LP_GET_STATUS: u32 = 0x8000_2010;
+
+/// Driver connection state (LP_STATE): 2 = connected.
+const LP_STATE_CONNECTED: u32 = 2;
 
 /// Driver-side recv timeout (ms). Kept short so a blocking read doesn't stall
 /// pending sends for long on the driver's sequential queue.
@@ -178,11 +182,35 @@ impl L2capTransport for WindowsL2cap {
         let handle = self.handle.clone();
         let len = buf.len();
         let out = tokio::task::spawn_blocking(move || {
-            let mut out = vec![0u8; len];
             let timeout = RECV_TIMEOUT_MS.to_le_bytes();
-            let n = device_ioctl(handle.0, IOCTL_LP_RECEIVE, &timeout, &mut out)?;
-            out.truncate(n as usize);
-            Ok::<Vec<u8>, io::Error>(out)
+            loop {
+                let mut out = vec![0u8; len];
+                // On a read timeout the driver returns EITHER 0 bytes OR a
+                // STATUS_TIMEOUT error — neither means the channel closed. The
+                // AACP layer treats a recv error/EOF as a disconnect (Linux
+                // SeqPacket semantics), so we must NOT propagate a timeout.
+                if let Ok(n) = device_ioctl(handle.0, IOCTL_LP_RECEIVE, &timeout, &mut out)
+                    && n > 0
+                {
+                    out.truncate(n as usize);
+                    return Ok::<Vec<u8>, io::Error>(out);
+                }
+                // No data. Only a genuine disconnect ends the loop — checked via
+                // GET_STATUS, which reads a driver variable (no L2CAP I/O, so it
+                // never disturbs the audio). Surface that as Ok(0) = EOF.
+                let mut status = [0u8; 12]; // LP_STATUS_OUTPUT { u32 State; u64 Addr }
+                match device_ioctl(handle.0, IOCTL_LP_GET_STATUS, &[], &mut status) {
+                    Ok(_) => {
+                        let state =
+                            u32::from_le_bytes([status[0], status[1], status[2], status[3]]);
+                        if state != LP_STATE_CONNECTED {
+                            return Ok(Vec::new()); // real disconnect -> Ok(0)
+                        }
+                        // still connected, just idle: keep waiting for data
+                    }
+                    Err(e) => return Err(e), // can't query the driver at all
+                }
+            }
         })
         .await
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))??;
