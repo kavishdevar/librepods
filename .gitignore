@@ -326,6 +326,9 @@ __pycache__/
 .Python
 develop-eggs/
 dist/
+# ...but the LibrePods cross-platform distributables are intentionally tracked.
+!crossplatform/dist/
+!crossplatform/dist/**
 downloads/
 eggs/
 .eggs/

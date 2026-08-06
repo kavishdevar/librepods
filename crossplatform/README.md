@@ -59,10 +59,12 @@ compile time (`#[cfg(target_os)]`). The protocol/UI code (`aacp`, `att`, `le`,
 
 ## Install (Windows, Test Mode)
 
-The driver is test-signed, so it needs Secure Boot **off** +
-`bcdedit /set testsigning on` + reboot. Then run `install.ps1` (elevated) from
-`windows-driver/LibrePodsAAP/prebuilt/`, and start the tray app.
-Details + build instructions are in `HANDOFF.md` and the per-directory READMEs.
+**Ready-to-install builds are in [`dist/windows/`](dist/windows/)** — both apps,
+the driver, and a one-shot `install.ps1`. The driver is test-signed, so it needs
+Secure Boot **off** + `bcdedit /set testsigning on` + reboot; then run the
+installer (elevated). Full steps are in
+[`dist/windows/README.md`](dist/windows/README.md); build instructions + the
+technical log are in `HANDOFF.md`.
 
 ## Not done yet / in progress
 
