@@ -1,9 +1,7 @@
 use crate::bluetooth::aacp::AACPManager;
 use crate::bluetooth::aacp::EarDetectionStatus;
-use crate::platform::{AudioRouter, audio_router};
-use dbus::blocking::Connection;
-use dbus::blocking::stdintf::org_freedesktop_dbus::Properties;
-use log::{debug, error, info, warn};
+use crate::platform::{AudioRouter, MediaControl, audio_router, media_control};
+use log::{debug, error, info};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -47,6 +45,8 @@ pub struct MediaController {
     state: Arc<Mutex<MediaControllerState>>,
     /// Platform audio routing (A2DP profile + volume). Linux = PulseAudio.
     audio: Arc<dyn AudioRouter>,
+    /// Platform media control (play/pause/skip). Linux = MPRIS.
+    media: Arc<dyn MediaControl>,
 }
 
 impl MediaController {
@@ -57,6 +57,7 @@ impl MediaController {
         MediaController {
             state: Arc::new(Mutex::new(state)),
             audio: audio_router(),
+            media: media_control(),
         }
     }
 
@@ -96,7 +97,8 @@ impl MediaController {
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
 
-            let is_playing = tokio::task::spawn_blocking(|| Self::check_if_playing())
+            let media = self.media.clone();
+            let is_playing = tokio::task::spawn_blocking(move || media.is_playing())
                 .await
                 .unwrap_or(false);
 
@@ -148,24 +150,6 @@ impl MediaController {
                 debug!("completed playback takeover process");
             }
         }
-    }
-
-    fn check_if_playing() -> bool {
-        let conn = match Connection::new_session() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-        Self::list_mpris_services(&conn).iter().any(|service| {
-            let proxy = conn.with_proxy(service, "/org/mpris/MediaPlayer2", Duration::from_secs(5));
-            proxy
-                .get::<String>("org.mpris.MediaPlayer2.Player", "PlaybackStatus")
-                .map(|s| s == "Playing")
-                .unwrap_or(false)
-        })
-    }
-
-    fn is_kdeconnect_service(service: &str) -> bool {
-        service.starts_with("org.mpris.MediaPlayer2.kdeconnect.mpris_")
     }
 
     pub async fn handle_ear_detection(
@@ -277,49 +261,13 @@ impl MediaController {
 
     async fn pause(&self) {
         debug!("Pausing playback");
-
-        let paused_services = tokio::task::spawn_blocking(|| {
-            let conn = match Connection::new_session() {
-                Ok(c) => c,
-                Err(_) => return vec![],
-            };
-            let mut paused_services = Vec::new();
-
-            for service in Self::list_mpris_services(&conn) {
-                debug!("Checking playback status for service: {}", service);
-                let proxy = conn.with_proxy(
-                    &service,
-                    "/org/mpris/MediaPlayer2",
-                    Duration::from_secs(5),
-                );
-
-                if let Ok(playback_status) =
-                    proxy.get::<String>("org.mpris.MediaPlayer2.Player", "PlaybackStatus")
-                    && playback_status == "Playing"
-                {
-                    if proxy
-                        .method_call::<(), _, &str, &str>(
-                            "org.mpris.MediaPlayer2.Player",
-                            "Pause",
-                            (),
-                        )
-                        .is_ok()
-                    {
-                        info!("Paused playback for: {}", service);
-                        paused_services.push(service);
-                    } else {
-                        error!("Failed to pause {}", service);
-                    }
-                }
-            }
-
-            paused_services
-        })
+        let media = self.media.clone();
+        let paused_services = tokio::task::spawn_blocking(move || media.pause_playing())
             .await
-            .unwrap();
+            .unwrap_or_default();
 
         if !paused_services.is_empty() {
-            info!("Paused {} media player(s) via DBus", paused_services.len());
+            info!("Paused {} media player(s)", paused_services.len());
             let mut state = self.state.lock().await;
             state.paused_by_app_services = paused_services;
             state.is_playing = false;
@@ -330,47 +278,9 @@ impl MediaController {
 
     pub async fn pause_all_media(&self) {
         debug!("Pausing all media (without tracking for resume)");
-
-        let paused_count = tokio::task::spawn_blocking(|| {
-            let conn = match Connection::new_session() {
-                Ok(c) => c,
-                Err(_) => return 0,
-            };
-            let mut paused_count = 0;
-
-            for service in Self::list_mpris_services(&conn) {
-                let proxy =
-                    conn.with_proxy(&service, "/org/mpris/MediaPlayer2", Duration::from_secs(5));
-                if let Ok(playback_status) =
-                    proxy.get::<String>("org.mpris.MediaPlayer2.Player", "PlaybackStatus")
-                    && playback_status == "Playing"
-                {
-                    if proxy
-                        .method_call::<(), _, &str, &str>(
-                            "org.mpris.MediaPlayer2.Player",
-                            "Pause",
-                            (),
-                        )
-                        .is_ok()
-                    {
-                        info!("Paused playback for: {}", service);
-                        paused_count += 1;
-                    } else {
-                        error!("Failed to pause {}", service);
-                    }
-                }
-            }
-            paused_count
-        })
-            .await
-            .unwrap();
-
-        if paused_count > 0 {
-            info!("Paused {} media player(s) due to ownership loss", paused_count);
-            self.state.lock().await.is_playing = false;
-        } else {
-            debug!("No playing media players found to pause");
-        }
+        let media = self.media.clone();
+        let _ = tokio::task::spawn_blocking(move || media.pause_all()).await;
+        self.state.lock().await.is_playing = false;
     }
 
     async fn resume(&self) {
@@ -382,36 +292,9 @@ impl MediaController {
             return;
         }
 
-        let resumed_count = tokio::task::spawn_blocking(move || {
-            let conn = match Connection::new_session() {
-                Ok(c) => c,
-                Err(_) => return 0,
-            };
-            let mut resumed_count = 0;
-            for service in services {
-                let proxy =
-                    conn.with_proxy(&service, "/org/mpris/MediaPlayer2", Duration::from_secs(5));
-                if proxy
-                    .method_call::<(), _, &str, &str>("org.mpris.MediaPlayer2.Player", "Play", ())
-                    .is_ok()
-                {
-                    info!("Resumed playback for: {}", service);
-                    resumed_count += 1;
-                } else {
-                    warn!("Failed to resume {}", service);
-                }
-            }
-            resumed_count
-        })
-            .await
-            .unwrap();
-
-        if resumed_count > 0 {
-            info!("Resumed {} media player(s) via DBus", resumed_count);
-            self.state.lock().await.paused_by_app_services.clear();
-        } else {
-            error!("Failed to resume any media players via DBus");
-        }
+        let media = self.media.clone();
+        let _ = tokio::task::spawn_blocking(move || media.resume(&services)).await;
+        self.state.lock().await.paused_by_app_services.clear();
     }
 
     pub async fn next_track(&self) {
@@ -520,50 +403,8 @@ impl MediaController {
     }
 
     async fn mpris_command(&self, command: &'static str) {
-        tokio::task::spawn_blocking(move || {
-            let conn = match Connection::new_session() {
-                Ok(c) => c,
-                Err(_) => return,
-            };
-
-            let services = Self::list_mpris_services(&conn);
-            let mut playing = None;
-            let mut fallback = None;
-
-            for service in &services {
-                let proxy =
-                    conn.with_proxy(service, "/org/mpris/MediaPlayer2", Duration::from_secs(5));
-                if let Ok(status) =
-                    proxy.get::<String>("org.mpris.MediaPlayer2.Player", "PlaybackStatus")
-                {
-                    if status == "Playing" && playing.is_none() {
-                        playing = Some(service);
-                    }
-                }
-                if fallback.is_none() {
-                    fallback = Some(service);
-                }
-            }
-
-            if let Some(service) = playing.or(fallback) {
-                let proxy =
-                    conn.with_proxy(service, "/org/mpris/MediaPlayer2", Duration::from_secs(5));
-                if proxy
-                    .method_call::<(), _, &str, &str>(
-                        "org.mpris.MediaPlayer2.Player",
-                        command,
-                        (),
-                    )
-                    .is_ok()
-                {
-                    info!("Sent {} to: {}", command, service);
-                } else {
-                    debug!("Failed to send {} to: {}", command, service);
-                }
-            }
-        })
-            .await
-            .unwrap();
+        let media = self.media.clone();
+        let _ = tokio::task::spawn_blocking(move || media.command(command)).await;
     }
 
     async fn restore_volume_if_needed(&self, mac: &str) {
@@ -584,27 +425,5 @@ impl MediaController {
         }
     }
 
-    fn list_mpris_services(conn: &Connection) -> Vec<String> {
-        let proxy = conn.with_proxy(
-            "org.freedesktop.DBus",
-            "/org/freedesktop/DBus",
-            Duration::from_secs(5),
-        );
-
-        let (names,): (Vec<String>,) =
-            match proxy.method_call("org.freedesktop.DBus", "ListNames", ()) {
-                Ok(n) => n,
-                Err(_) => return vec![],
-            };
-
-        names
-            .into_iter()
-            .filter(|s| {
-                s.starts_with("org.mpris.MediaPlayer2.") && !Self::is_kdeconnect_service(s)
-            })
-            .collect()
-    }
 }
-
-// --- PulseAudio helpers ---
 

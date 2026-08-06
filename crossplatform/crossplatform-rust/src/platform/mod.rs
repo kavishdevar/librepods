@@ -55,6 +55,24 @@ pub trait AudioRouter: Send + Sync {
     async fn set_volume(&self, mac: &str, percent: u32);
 }
 
+/// Control of whatever media player currently owns the system's playback
+/// session. On Linux this is MPRIS over D-Bus; on Windows it is the System Media
+/// Transport Controls (SMTC). All methods are synchronous/blocking — call them
+/// from a blocking context (the `MediaController` wraps them in `spawn_blocking`).
+pub trait MediaControl: Send + Sync {
+    /// Is any player currently playing?
+    fn is_playing(&self) -> bool;
+    /// Pause every currently-playing player; return their ids so they can be
+    /// resumed later with [`MediaControl::resume`].
+    fn pause_playing(&self) -> Vec<String>;
+    /// Pause every currently-playing player without tracking them.
+    fn pause_all(&self);
+    /// Resume the given player ids.
+    fn resume(&self, players: &[String]);
+    /// Send a transport command (`"Next"` / `"Previous"`) to the active player.
+    fn command(&self, command: &str);
+}
+
 /// A currently-connected Bluetooth device found during discovery.
 pub struct DiscoveredDevice {
     pub id: DeviceId,
@@ -91,7 +109,7 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     DeviceId, LinuxPlatform as Platform, audio_router, connect_device, find_connected_airpods,
-    find_other_managed_devices, l2cap_connect, power_on_adapter, watch_connections,
+    find_other_managed_devices, l2cap_connect, media_control, power_on_adapter, watch_connections,
     watch_le_advertisements,
 };
 
