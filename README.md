@@ -9,6 +9,16 @@
 [![GitHub contributors](https://img.shields.io/github/contributors/kavishdevar/librepods)](https://github.com/kavishdevar/librepods/graphs/contributors)
 
 
+> ## 🪟 New: Windows support (cross-platform)
+>
+> LibrePods now runs **natively on Windows** — battery, noise control, ear
+> detection, auto-pause, conversational awareness and more — driven by an
+> **open-source kernel driver** for Apple's AAP protocol, all from the **same
+> Rust crate that powers Linux**. Validated on real AirPods Pro.
+>
+> **➡️ See [`crossplatform/README.md`](crossplatform/README.md) for what works,
+> the architecture, and how to install.**
+
 ## What is LibrePods?
 
 LibrePods unlocks Apple's exclusive AirPods features on non-Apple devices. Get access to noise control modes, adaptive transparency, ear detection, hearing aid, customized transparency mode, battery status, and more - all the premium features you paid for but Apple locked to their ecosystem.
