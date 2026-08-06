@@ -61,6 +61,19 @@ LpEvtDeviceReleaseHardware(
     if (ctx->State != LpDisconnected) {
         LpDisconnect(ctx);
     }
+
+    // Release the Bluetooth profile driver interface we took in
+    // PrepareHardware. WdfFdoQueryForInterface increments the interface's
+    // reference count; not dereferencing it leaks a reference to our BTHENUM
+    // parent, so the device never tears down cleanly — the old driver instance
+    // stays resident and the next load fails with Code 38 ("a previous instance
+    // is still in memory"), which the AirPods reconnect can't recover without a
+    // reboot. Dereferencing here lets it unload and rebind on every reconnect.
+    if (ctx->HasBthInterface) {
+        ctx->BthInterface.Interface.InterfaceDereference(
+            ctx->BthInterface.Interface.Context);
+        ctx->HasBthInterface = FALSE;
+    }
     return STATUS_SUCCESS;
 }
 
