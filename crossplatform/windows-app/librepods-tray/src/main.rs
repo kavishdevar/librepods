@@ -12,7 +12,9 @@
 mod aap;
 mod bt;
 mod driver;
+mod eld;
 mod media;
+mod micpipe;
 mod overlay;
 mod theme;
 mod volume;
@@ -132,6 +134,11 @@ fn run_receiver(
 ) {
     let mut buf = [0u8; 2048];
     let mut audio_pkts = 0u32;
+    // Hi-res mic pipeline (Phase 3b): created on first audio packet, torn down
+    // when the mic is disabled. The decoder holds the FFmpeg AAC-ELD context;
+    // the pipe writes decoded PCM into \\.\LibrePodsMic.
+    let mut decoder: Option<eld::Decoder> = None;
+    let mut pipe: Option<micpipe::MicPipe> = None;
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause on this thread
     let mut last_anc = 0u8;
     let mut last_case_present: Option<bool> = None;
@@ -185,12 +192,32 @@ fn run_receiver(
                     // uplink audio packets and confirm the stream actually started.
                     if mic_on.load(Ordering::Relaxed) {
                         if aap::is_audio_packet(data) {
-                            audio_pkts = audio_pkts.saturating_add(1);
-                            if audio_pkts == 10 {
-                                overlay::show(&dev_name, "Hi-res mic: receiving audio");
+                            // Lazily bring up the decoder + mic pipe on the first
+                            // audio packet, and report the outcome once.
+                            if decoder.is_none() {
+                                decoder = eld::Decoder::new();
+                                pipe = micpipe::MicPipe::open();
+                                let msg = match (decoder.is_some(), pipe.is_some()) {
+                                    (true, true) => "Hi-res mic: streaming to the mic",
+                                    (false, _) => "Hi-res mic: decoder failed (FFmpeg)",
+                                    (_, false) => "Hi-res mic: virtual mic not found",
+                                };
+                                overlay::show(&dev_name, msg);
                             }
+                            if let (Some(dec), Some(pp)) = (decoder.as_mut(), pipe.as_ref()) {
+                                aap::for_each_au(data, |au| {
+                                    let pcm = dec.decode(au);
+                                    if !pcm.is_empty() {
+                                        pp.write(pcm);
+                                    }
+                                });
+                            }
+                            audio_pkts = audio_pkts.saturating_add(1);
                         }
-                    } else {
+                    } else if decoder.is_some() || pipe.is_some() {
+                        // Mic disabled: tear the pipeline down.
+                        decoder = None;
+                        pipe = None;
                         audio_pkts = 0;
                     }
                     if let Some(b) = aap::parse_battery(data) {

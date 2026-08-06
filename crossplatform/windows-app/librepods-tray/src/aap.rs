@@ -32,6 +32,24 @@ pub fn is_audio_packet(data: &[u8]) -> bool {
         && data[7] == 0x00
 }
 
+/// 0x58 packet layout (PR #655): a 22-byte header, then one or more access
+/// units, each a 5-byte record header (length at byte 4) followed by the AU
+/// payload. Calls `f` with each AU's AAC-ELD bytes.
+pub fn for_each_au(sdu: &[u8], mut f: impl FnMut(&[u8])) {
+    const HEADER_LEN: usize = 22;
+    let mut off = HEADER_LEN;
+    while off + 5 <= sdu.len() {
+        let au_len = sdu[off + 4] as usize;
+        let start = off + 5;
+        let end = start + au_len;
+        if au_len == 0 || end > sdu.len() {
+            break;
+        }
+        f(&sdu[start..end]);
+        off = end;
+    }
+}
+
 /// Listening-mode (ANC) control command. value = mode (1 off, 2 anc, 3 transparency, 4 adaptive).
 pub fn anc_command(mode: u8) -> [u8; 11] {
     [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, mode, 0x00, 0x00, 0x00]

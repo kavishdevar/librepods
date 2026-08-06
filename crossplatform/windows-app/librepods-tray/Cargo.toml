@@ -33,6 +33,9 @@ windows = { version = "0.58", features = [
     "Media_Control",    # GlobalSystemMediaTransportControlsSession* (auto-pause)
 ] }
 
+[build-dependencies]
+cc = "1"
+
 [[bin]]
 name = "librepods-tray"
 path = "src/main.rs"
