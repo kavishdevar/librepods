@@ -500,12 +500,20 @@ impl AACPManager {
                         },
                         level: payload[base_index + 2],
                         status: match payload[base_index + 3] {
-                            0x01 => BatteryStatus::Charging,
+                            // 0x05 is reported while a bud charges in the case
+                            // (the iPhone shows them charging with their level).
+                            0x01 | 0x05 => BatteryStatus::Charging,
                             0x02 => BatteryStatus::NotCharging,
                             0x04 => BatteryStatus::Disconnected,
-                            _ => {
-                                error!("Unknown battery status: {:#04x}", payload[base_index + 3]);
-                                continue;
+                            other => {
+                                // Never DROP the entry on an unfamiliar status —
+                                // that hides the (valid) level. The tray path only
+                                // ever special-cases 0x04 = disconnected.
+                                debug!(
+                                    "Unfamiliar battery status {:#04x}; keeping level as NotCharging",
+                                    other
+                                );
+                                BatteryStatus::NotCharging
                             }
                         },
                     });
