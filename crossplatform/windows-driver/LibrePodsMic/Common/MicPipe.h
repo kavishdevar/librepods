@@ -34,6 +34,16 @@ Environment:
 #define IOCTL_LIBREPODS_MIC_WRITE_PCM \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_WRITE_DATA)
 
+//
+// IOCTL: user mode reads a capture-activity counter (ULONG). It advances every
+// time an app pulls a capture packet, so the tray can tell when the mic is
+// actually being recorded and auto-enable/disable the hi-res stream.
+// Value (precomputed): 0x00226004.
+//   CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_READ_DATA)
+//
+#define IOCTL_LIBREPODS_MIC_STATUS \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_READ_DATA)
+
 EXTERN_C_START
 
 //

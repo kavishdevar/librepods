@@ -10,15 +10,22 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
+const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
 // CTL_CODE(FILE_DEVICE_UNKNOWN, 0x800, METHOD_BUFFERED, FILE_WRITE_DATA)
 const IOCTL_LIBREPODS_MIC_WRITE_PCM: u32 = 0x0022_A000;
+// CTL_CODE(FILE_DEVICE_UNKNOWN, 0x801, METHOD_BUFFERED, FILE_READ_DATA)
+const IOCTL_LIBREPODS_MIC_STATUS: u32 = 0x0022_6004;
 
 pub struct MicPipe {
     handle: HANDLE,
 }
 
+// One tray owns the single exclusive handle and uses it from the receive thread
+// (writes) and the status-poll thread (reads); both DeviceIoControl paths are
+// independent, so sharing the handle is safe.
 unsafe impl Send for MicPipe {}
+unsafe impl Sync for MicPipe {}
 
 impl MicPipe {
     /// Open the virtual-mic control device. None if the LibrePodsMic driver
@@ -31,7 +38,7 @@ impl MicPipe {
         let handle = unsafe {
             CreateFileW(
                 path.as_ptr(),
-                GENERIC_WRITE,
+                GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 ptr::null(),
                 OPEN_EXISTING,
@@ -44,6 +51,26 @@ impl MicPipe {
         } else {
             Some(MicPipe { handle })
         }
+    }
+
+    /// Capture-activity counter — advances while an app is recording from the
+    /// virtual mic. The tray polls it to auto-enable/disable the hi-res stream.
+    pub fn status(&self) -> i32 {
+        let mut out = [0u8; 4];
+        let mut returned = 0u32;
+        unsafe {
+            DeviceIoControl(
+                self.handle,
+                IOCTL_LIBREPODS_MIC_STATUS,
+                ptr::null(),
+                0,
+                out.as_mut_ptr() as *mut c_void,
+                4,
+                &mut returned,
+                ptr::null_mut(),
+            );
+        }
+        i32::from_le_bytes(out)
     }
 
     /// Push mono 16-bit PCM samples into the mic ring.

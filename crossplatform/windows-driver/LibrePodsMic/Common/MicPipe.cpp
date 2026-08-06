@@ -36,6 +36,11 @@ static BOOLEAN    g_Inited = FALSE;
 
 static WDFDEVICE  g_ControlDevice = NULL;
 
+// Advances on every capture pull (MicPipeRead). The tray polls it to tell when
+// an app is actually recording from the mic, and auto-enables/disables the
+// hi-res stream accordingly.
+static volatile LONG g_ReadTick = 0;
+
 EXTERN_C_START
 
 VOID
@@ -92,6 +97,8 @@ MicPipeRead(
     if (Out == NULL || Len == 0) {
         return;
     }
+    // A capture is pulling data: mark activity so the tray can auto-enable.
+    InterlockedIncrement(&g_ReadTick);
     if (!g_Inited) {
         RtlZeroMemory(Out, Len);
         return;
@@ -135,6 +142,14 @@ MicPipe_EvtIoDeviceControl(
         if (NT_SUCCESS(status)) {
             MicPipeWrite(buf, (ULONG)len);
             info = len;
+        }
+    } else if (IoControlCode == IOCTL_LIBREPODS_MIC_STATUS) {
+        PVOID  buf = NULL;
+        size_t len = 0;
+        status = WdfRequestRetrieveOutputBuffer(Request, sizeof(LONG), &buf, &len);
+        if (NT_SUCCESS(status)) {
+            *(LONG *)buf = InterlockedCompareExchange(&g_ReadTick, 0, 0);
+            info = sizeof(LONG);
         }
     }
 
