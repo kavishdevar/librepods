@@ -64,15 +64,29 @@ was linux-rust; + windows-driver + windows-app). CI = ci-crossplatform-rust.yml.
   bluer; local MAC via `platform::local_adapter_address()`.
 
 ### Phase J — real Windows backends (replace the stubs) + app entrypoint
-- [ ] `platform/windows/transport.rs` already bridges L2CAP to the LibrePodsAAP
-  driver via IOCTL — verify `l2cap_connect` works end-to-end from the main crate.
-- [ ] WinRT `BluetoothLEAdvertisementWatcher` (le_scan), `BluetoothAdapter` +
-  `DeviceWatcher` (watcher/discovery), `BluetoothAdapter.BluetoothAddress`
-  (local_adapter_address).
-- [ ] SMTC media control (reuse the proven `librepods-tray/src/media.rs`) +
-  WASAPI volume (reuse `librepods-tray/src/volume.rs`) for `AudioRouter`.
-- [ ] `tray-icon` backend for `WindowsTrayHandle`/`spawn_tray` (render `MyTray`).
-- [ ] Wire the Windows app entrypoint (the iced GUI should already cross-compile).
+Cross-check target from WSL: `cargo check --target x86_64-pc-windows-gnu` (green).
+The main crate's Windows deps now include the full `windows` crate (SMTC + Core
+Audio + WinRT Bluetooth) and `Win32_Devices_Bluetooth` on windows-sys.
+- [x] **SMTC media** (`platform/windows/media.rs`) — MediaControl via
+  GlobalSystemMediaTransportControlsSession (is_playing/pause/pause_all/resume/
+  Next+Previous), COM ensured per call.
+- [x] **WASAPI volume** (`platform/windows/audio.rs`) — AudioRouter volume via
+  IAudioEndpointVolume on the default render endpoint; A2DP no-op.
+- [x] **WinRT LE watcher** (`platform/windows/le_scan.rs`) —
+  BluetoothLEAdvertisementWatcher → Apple 0x004C manufacturer data → shared
+  `bluetooth/le.rs` decoder.
+- [x] **local_adapter_address** (`platform/windows/watcher.rs`) — WinRT
+  BluetoothAdapter.BluetoothAddress.
+- [x] **Device discovery** (`platform/windows/discovery.rs`) — Win32
+  BluetoothFindFirstDevice; find_connected_airpods + find_other_managed_devices.
+- [ ] **watch_connections** — still a stub (idle channel). Real = WinRT
+  `DeviceWatcher` (or poll `find_connected_airpods`) for connect/disconnect.
+- [ ] **tray-icon backend** for `WindowsTrayHandle`/`spawn_tray` (render `MyTray`
+  battery/ANC; wire menu → command_tx). Currently spawn_tray returns None.
+- [ ] Verify `platform/windows/transport.rs` `l2cap_connect` end-to-end from the
+  main crate (it bridges to the LibrePodsAAP driver via IOCTL).
+- [ ] Wire + run the Windows app entrypoint (iced GUI cross-compiles); smoke-test
+  on real hardware. NOTE: nothing in Phase J is hardware-tested yet — it compiles.
 
 ### Windows apps — features
 - [x] **Ear-detection auto-pause (SMTC) — VALIDATED ON HARDWARE** in
