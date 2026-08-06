@@ -19,7 +19,6 @@ windows-sys = { version = "0.59", features = [
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_Bluetooth",
     "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Controls",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
     "Win32_System_LibraryLoader",
