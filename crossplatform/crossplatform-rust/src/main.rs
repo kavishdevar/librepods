@@ -1,3 +1,7 @@
+// Release builds are GUI apps — no console window / log spam. Debug builds keep
+// a console so `--no-tray` and RUST_LOG output stay visible for development.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod bluetooth;
 mod devices;
 mod media_controller;

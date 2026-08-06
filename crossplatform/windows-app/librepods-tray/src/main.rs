@@ -412,6 +412,9 @@ fn main() {
                         let _ = drv.send(&aap::anc_command(mode));
                     }
                     state.lock().unwrap().anc = mode;
+                    // Show the card immediately on the click — don't wait for the
+                    // AirPods to echo the mode back (they may not).
+                    overlay::show(&dev_name, aap::anc_name(mode));
                     refresh();
                 }
             }
