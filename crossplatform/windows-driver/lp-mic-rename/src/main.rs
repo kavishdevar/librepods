@@ -64,9 +64,14 @@ struct IPolicyConfig_Vtbl {
     GetShareMode: usize,
     SetShareMode: usize,
     GetPropertyValue: usize,
-    // SetPropertyValue(PCWSTR name, const PROPERTYKEY& key, PROPVARIANT* pv)
-    SetPropertyValue:
-        unsafe extern "system" fn(*mut c_void, *const u16, *const c_void, *const c_void) -> HRESULT,
+    // SetPropertyValue(PCWSTR name, BOOL bFxStore, const PROPERTYKEY& key, PROPVARIANT* pv)
+    SetPropertyValue: unsafe extern "system" fn(
+        *mut c_void,
+        *const u16,
+        i32,
+        *const c_void,
+        *const c_void,
+    ) -> HRESULT,
 }
 
 unsafe impl Interface for IPolicyConfig {
@@ -76,6 +81,19 @@ unsafe impl Interface for IPolicyConfig {
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn log(s: &str) {
+    use std::io::Write;
+    if let Ok(la) = std::env::var("LOCALAPPDATA") {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(format!("{la}\\LibrePods\\rename.log"))
+        {
+            let _ = writeln!(f, "{s}");
+        }
+    }
 }
 
 /// Read a null-terminated wide (UTF-16) string from a raw pointer.
@@ -134,7 +152,8 @@ fn main() {
                 })
                 .unwrap_or_default();
 
-            if friendly.contains("AudioCodec") {
+            if friendly.contains("LibrePods") || friendly.contains("AudioCodec") {
+                log(&format!("found: {friendly}"));
                 println!("Found the virtual mic: \"{friendly}\"");
                 target = Some(id);
                 break;
@@ -153,9 +172,17 @@ fn main() {
             }
         };
 
+        log("creating CPolicyConfigClient");
         let policy: IPolicyConfig =
-            CoCreateInstance(&CLSID_POLICY_CONFIG_CLIENT, None, CLSCTX_ALL)
-                .expect("CPolicyConfigClient");
+            match CoCreateInstance(&CLSID_POLICY_CONFIG_CLIENT, None, CLSCTX_ALL) {
+                Ok(p) => p,
+                Err(e) => {
+                    log(&format!("CoCreateInstance failed: {e:?}"));
+                    eprintln!("CPolicyConfigClient not available: {e:?}");
+                    std::process::exit(2);
+                }
+            };
+        log("policy created; reading vtable");
 
         let wname = wide(&name);
         let pv = PropVariantStr {
@@ -167,12 +194,20 @@ fn main() {
             _pad: 0,
         };
 
-        let hr = (policy.vtable().SetPropertyValue)(
-            policy.as_raw(),
+        // Read the vtable pointer manually and call SetPropertyValue at the known
+        // slot (index 12 = 3 IUnknown + 9 IPolicyConfig methods).
+        let raw = policy.as_raw();
+        let vtbl = *(raw as *const *const IPolicyConfig_Vtbl);
+        log("calling SetPropertyValue");
+        let set = (*vtbl).SetPropertyValue;
+        let hr = set(
+            raw,
             id.0,
+            0, // bFxStore = FALSE
             &PKEY_DEVICE_FRIENDLYNAME as *const _ as *const c_void,
             &pv as *const _ as *const c_void,
         );
+        log(&format!("SetPropertyValue returned hr={:#x}", hr.0));
 
         CoTaskMemFree(Some(id.0 as *const c_void));
 
