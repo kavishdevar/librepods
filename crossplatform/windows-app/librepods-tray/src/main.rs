@@ -9,6 +9,7 @@
 
 #![windows_subsystem = "windows"] // no console window
 
+mod a2dp;
 mod aap;
 mod bt;
 mod driver;
@@ -509,9 +510,17 @@ fn main() {
                         let cmd: &[u8] = if on { &aap::START_AUDIO } else { &aap::STOP_AUDIO };
                         let _ = drv.send(cmd);
                     }
+                    if !on {
+                        // The mic mode degraded A2DP to mono; reconnect the A2DP
+                        // service to restore stereo (off the UI thread — it waits
+                        // ~0.6 s between disable/enable).
+                        if let Some(m) = mac {
+                            thread::spawn(move || a2dp::reset(m));
+                        }
+                    }
                     overlay::show(
                         &dev_name,
-                        if on { "Hi-res mic: enabling…" } else { "Hi-res mic: off" },
+                        if on { "Hi-res mic: enabling…" } else { "Hi-res mic: restoring stereo…" },
                     );
                 } else if let Some(mode) = mode_for(&ev.id) {
                     if let Some(drv) = driver_cell.lock().unwrap().clone() {
