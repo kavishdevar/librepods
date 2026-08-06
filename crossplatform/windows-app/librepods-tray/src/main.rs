@@ -60,6 +60,44 @@ fn make_icon() -> Icon {
     Icon::from_rgba(rgba, w, h).expect("icon")
 }
 
+/// Average earbud battery (L+R)/2, or the single known one.
+fn avg_battery(b: &aap::Battery) -> Option<u8> {
+    match (b.left, b.right) {
+        (Some(l), Some(r)) => Some(((l as u16 + r as u16) / 2) as u8),
+        (Some(v), None) | (None, Some(v)) => Some(v),
+        (None, None) => None,
+    }
+}
+
+/// A tray icon that shows the battery percentage as a number (MagicPods-style).
+fn battery_icon(percent: u8) -> Icon {
+    use ab_glyph::{Font, PxScale, ScaleFont};
+    use image::{ImageBuffer, Rgba};
+    use imageproc::drawing::draw_text_mut;
+
+    let (w, h) = (64u32, 64u32);
+    let mut img = ImageBuffer::from_fn(w, h, |_, _| Rgba([0u8, 0, 0, 0]));
+    let font = match ab_glyph::FontRef::try_from_slice(include_bytes!("../assets/DejaVuSans.ttf")) {
+        Ok(f) => f,
+        Err(_) => return make_icon(),
+    };
+    let text = format!("{percent}");
+    // Shrink for 3 digits ("100") so it still fits.
+    let scale = PxScale::from(if text.len() >= 3 { 44.0 } else { 56.0 });
+
+    // Center horizontally using the glyph advances.
+    let scaled = font.as_scaled(scale);
+    let mut tw = 0.0f32;
+    for c in text.chars() {
+        tw += scaled.h_advance(font.glyph_id(c));
+    }
+    let x = ((w as f32 - tw) / 2.0).max(0.0) as i32;
+    let y = ((h as f32 - scale.y) / 2.0).max(0.0) as i32 - 2;
+
+    draw_text_mut(&mut img, Rgba([255u8, 255, 255, 255]), x, y, scale, &font, &text);
+    Icon::from_rgba(img.into_raw(), w, h).unwrap_or_else(|_| make_icon())
+}
+
 fn battery_text(b: &aap::Battery, connected: bool) -> String {
     if !connected {
         return "Disconnected".to_string();
@@ -320,6 +358,13 @@ fn main() {
             "{dev_name} · {bt} · ANC: {} · Vol: {vol}",
             aap::anc_name(s.anc)
         )));
+        // Tray icon: the average earbud battery % (falls back to the badge when
+        // disconnected / unknown).
+        let icon = match (s.connected, avg_battery(&s.battery)) {
+            (true, Some(avg)) => battery_icon(avg),
+            _ => make_icon(),
+        };
+        let _ = tray.set_icon(Some(icon));
     };
 
     unsafe {

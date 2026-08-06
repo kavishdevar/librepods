@@ -6,6 +6,10 @@ description = "LibrePods system-tray app for Windows — AirPods battery + ANC c
 
 [dependencies]
 tray-icon = "0.19"
+# Battery-percentage tray icon rendering.
+ab_glyph = "0.2"
+image = { version = "0.25", default-features = false }
+imageproc = "0.25"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_IO",
