@@ -134,7 +134,7 @@ fn run_receiver(
     driver_cell: Arc<Mutex<Option<Driver>>>,
     mic_on: Arc<AtomicBool>,
 ) {
-    let mut buf = [0u8; 2048];
+    let mut buf = [0u8; 8192];
     let mut audio_pkts = 0u32;
     // Hi-res mic pipeline (Phase 3b): created on first audio packet, torn down
     // when the mic is disabled. The decoder holds the FFmpeg AAC-ELD context;
@@ -199,6 +199,14 @@ fn run_receiver(
                             if decoder.is_none() {
                                 decoder = eld::Decoder::new();
                                 pipe = micpipe::MicPipe::open();
+                                if let Some(pp) = pipe.as_ref() {
+                                    // Prime the ring with a short silence cushion:
+                                    // we feed in per-packet bursts (~80 ms) while
+                                    // the capture drains steadily, so without a
+                                    // head start the ring underran between bursts
+                                    // (a click per packet). ~150 ms absorbs it.
+                                    pp.write(&[0i16; 7200]);
+                                }
                                 let msg = match (decoder.is_some(), pipe.is_some()) {
                                     (true, true) => "Hi-res mic: streaming to the mic",
                                     (false, _) => "Hi-res mic: decoder failed (FFmpeg)",
@@ -207,12 +215,14 @@ fn run_receiver(
                                 overlay::show(&dev_name, msg);
                             }
                             if let (Some(dec), Some(pp)) = (decoder.as_mut(), pipe.as_ref()) {
+                                // Decode all the packet's AUs, then write once.
+                                let mut out: Vec<i16> = Vec::new();
                                 aap::for_each_au(data, |au| {
-                                    let pcm = dec.decode(au);
-                                    if !pcm.is_empty() {
-                                        pp.write(pcm);
-                                    }
+                                    out.extend_from_slice(dec.decode(au));
                                 });
+                                if !out.is_empty() {
+                                    pp.write(&out);
+                                }
                             }
                             audio_pkts = audio_pkts.saturating_add(1);
                         }
