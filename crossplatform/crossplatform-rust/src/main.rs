@@ -150,9 +150,7 @@ async fn async_main(
     let le_tray_clone = tray_handle.clone();
     tokio::spawn(async move {
         info!("Starting LE monitor...");
-        if let Err(e) = start_le_monitor(le_tray_clone).await {
-            log::error!("LE monitor error: {}", e);
-        }
+        start_le_monitor(le_tray_clone).await;
     });
 
     info!("Listening for new connections.");

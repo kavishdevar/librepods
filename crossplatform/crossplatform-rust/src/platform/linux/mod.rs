@@ -10,6 +10,9 @@ pub use discovery::{find_connected_airpods, find_other_managed_devices};
 mod watcher;
 pub use watcher::{power_on_adapter, watch_connections};
 
+mod le_scan;
+pub use le_scan::{connect_device, watch_le_advertisements};
+
 /// Bluetooth device identity. On Linux this is BlueZ's MAC address type, so
 /// the whole codebase depends on `platform::DeviceId` rather than `bluer`
 /// directly. All of `Display`/`FromStr`/`Hash`/`Serialize` carry over.

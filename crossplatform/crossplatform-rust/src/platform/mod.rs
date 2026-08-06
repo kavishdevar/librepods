@@ -42,6 +42,18 @@ pub struct DiscoveredDevice {
     pub name: String,
 }
 
+/// One Bluetooth-LE advertisement carrying Apple manufacturer data, surfaced by
+/// the platform LE scanner (Linux: `bluer::monitor`; Windows: WinRT
+/// `BluetoothLEAdvertisementWatcher`). The RPA/IRK match and payload decode stay
+/// platform-agnostic in `bluetooth/le.rs`; only this raw source is per-platform.
+pub struct LeAdvertisement {
+    /// The (usually resolvable-private) address the advert was seen from.
+    pub address: DeviceId,
+    /// Manufacturer-specific bytes for Apple's company id 0x004C, with the
+    /// company id already stripped (matching BlueZ's ManufacturerData layout).
+    pub apple_data: Vec<u8>,
+}
+
 /// A device connection/disconnection observed by the platform watcher
 /// (Linux: org.bluez D-Bus; Windows: WinRT DeviceWatcher).
 pub enum BtConnectionEvent {
@@ -59,8 +71,9 @@ pub enum BtConnectionEvent {
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
-    DeviceId, LinuxPlatform as Platform, find_connected_airpods, find_other_managed_devices,
-    l2cap_connect, power_on_adapter, watch_connections,
+    DeviceId, LinuxPlatform as Platform, connect_device, find_connected_airpods,
+    find_other_managed_devices, l2cap_connect, power_on_adapter, watch_connections,
+    watch_le_advertisements,
 };
 
 #[cfg(target_os = "windows")]

@@ -33,19 +33,23 @@ was linux-rust; + windows-driver + windows-app). CI = ci-crossplatform-rust.yml.
 ## 📋 TODO — pick up here
 
 ### Driver
-- [x] **`EvtFileClose` added** → the driver now closes the L2CAP channel when the
-  app closes its handle (clean exit OR crash), so the channel no longer leaks
-  ("Can't disconnect" bug). `WDF_FILEOBJECT_CONFIG_INIT` in `Driver.c`
-  (`AutoForwardCleanupClose = WdfFalse`) + `LpEvtFileClose` in `Ioctl.c` →
-  `LpDisconnect(ctx)`. **Built clean** on the Windows host; `prebuilt/` refreshed
-  (16896-byte `.sys`, new `.cat`). ⏳ **Still needs install + hardware test:**
-  run `install.ps1 -PackageDir <repo>\...\prebuilt` elevated (Test Mode already
-  on), then verify connect → app quit → Windows can disconnect the AirPods.
+- [x] **`EvtFileClose` added & VALIDATED ON HARDWARE** → the driver closes the
+  L2CAP channel when the app closes its handle (clean exit OR crash), so the
+  channel no longer leaks ("Can't disconnect" bug is GONE — confirmed: connect →
+  quit app → Windows disconnected the AirPods immediately). `WDF_FILEOBJECT_CONFIG_INIT`
+  in `Driver.c` (`AutoForwardCleanupClose = WdfFalse`) + `LpEvtFileClose` in
+  `Ioctl.c` → `LpDisconnect(ctx)`. Built clean + installed (needed one reboot to
+  swap the live driver). `prebuilt/` refreshed (16896-byte `.sys`, new `.cat`).
 
 ### App port (finish making the crate compile for Windows)
-- [ ] **Phase E** — LE monitor: abstract `bluetooth/le.rs` (`bluer::monitor`
-  Apple 0x004C scan). The RPA/IRK decode stays; only the advert source moves to
-  `platform::`. Windows = WinRT `BluetoothLEAdvertisementWatcher`.
+- [x] **Phase E done** — LE monitor abstracted. `platform::watch_le_advertisements()`
+  returns a channel of `LeAdvertisement{address, apple_data}` (Linux backend
+  `platform/linux/le_scan.rs` = the old `bluer::monitor` + per-device
+  `dev.events()` source); `bluetooth/le.rs` now consumes that stream and keeps
+  the RPA/IRK match + AES decode + battery/in-ear parse + tray update. The
+  `bluetoothctl connect` shell-out moved to `platform::connect_device(&DeviceId)`.
+  `start_le_monitor` no longer returns `bluer::Result`. Linux `cargo check` green,
+  no new warnings. Windows = WinRT `BluetoothLEAdvertisementWatcher` (Phase I/J).
 - [ ] **Phase F/G** — `media_controller.rs`: `AudioRouter` (libpulse) +
   `MediaControl` (MPRIS). Windows: WASAPI + SMTC (or no-op audio; media via SMTC).
 - [ ] **Phase H** — tray: abstract `ksni` (`ui/tray.rs`). Windows = `tray-icon`.
