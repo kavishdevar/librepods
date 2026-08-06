@@ -27,7 +27,7 @@ const WIDTH: i32 = 380;
 const HEIGHT: i32 = 96;
 const TOP_MARGIN: i32 = 48;
 const HIDE_TIMER_ID: usize = 1;
-const HIDE_MS: u32 = 3200;
+const HIDE_MS: u32 = 4500;
 const WM_SHOW_OVERLAY: u32 = WM_APP + 1;
 
 const HWND_TOPMOST: HWND = -1isize as HWND;

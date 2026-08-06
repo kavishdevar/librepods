@@ -406,8 +406,9 @@ fn main() {
                         if let Some(drv) = poll_cell.lock().unwrap().clone() {
                             let _ = drv.send(&aap::STOP_AUDIO);
                         }
+                        overlay::show(&poll_name, "Microphone released — restoring stereo…");
                         a2dp::reset(mac);
-                        overlay::show(&poll_name, "Microphone released — stereo restored");
+                        overlay::show(&poll_name, "Stereo restored");
                     }
                 }
             }
@@ -576,21 +577,34 @@ fn main() {
                 } else if ev.id == mic_manual_id {
                     // Manual override: turn the hi-res mic on/off directly.
                     let on = !mic_on.load(Ordering::Relaxed);
-                    mic_on.store(on, Ordering::Relaxed);
                     m_mic_manual.set_checked(on);
-                    if let Some(drv) = driver_cell.lock().unwrap().clone() {
-                        let cmd: &[u8] = if on { &aap::START_AUDIO } else { &aap::STOP_AUDIO };
-                        let _ = drv.send(cmd);
-                    }
-                    if !on {
-                        if let Some(m) = mac {
-                            thread::spawn(move || a2dp::reset(m));
+                    if on {
+                        mic_on.store(true, Ordering::Relaxed);
+                        if let Some(drv) = driver_cell.lock().unwrap().clone() {
+                            let _ = drv.send(&aap::START_AUDIO);
                         }
+                        overlay::show(&dev_name, "Hi-res mic on");
+                    } else {
+                        // Same 1.5 s debounce as auto so the tail isn't clipped,
+                        // then stop + restore stereo, keeping the card up through
+                        // the whole reconnect.
+                        let mic = mic_on.clone();
+                        let cell = driver_cell.clone();
+                        let name = dev_name.clone();
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(1500));
+                            mic.store(false, Ordering::Relaxed);
+                            if let Some(drv) = cell.lock().unwrap().clone() {
+                                let _ = drv.send(&aap::STOP_AUDIO);
+                            }
+                            overlay::show(&name, "Restoring stereo…");
+                            if let Some(m) = mac {
+                                a2dp::reset(m);
+                            }
+                            overlay::show(&name, "Stereo restored");
+                        });
+                        overlay::show(&dev_name, "Hi-res mic off");
                     }
-                    overlay::show(
-                        &dev_name,
-                        if on { "Hi-res mic on" } else { "Hi-res mic off — restoring stereo…" },
-                    );
                     refresh();
                 } else if let Some(mode) = mode_for(&ev.id) {
                     if let Some(drv) = driver_cell.lock().unwrap().clone() {
