@@ -101,9 +101,15 @@ Audio + WinRT Bluetooth) and `Win32_Devices_Bluetooth` on windows-sys.
   EXCLUSIVE), reconnect the AirPods for a fresh channel (avoids the 0xC00000B5
   connect-timeout that rapid restarts cause), then `librepods.exe --no-tray`.
 
+- [x] **✅ FULL iced GUI VALIDATED ON HARDWARE** — with a fresh channel the GUI
+  populates live: device in the sidebar with battery (18/15/0), detail page with
+  Listening Mode (Noise Cancellation, controllable), Audio Settings, Off Listening
+  Mode, and Device Information (model/serials/firmware). The "stuck on Settings"
+  symptom was just the empty list from the session teardown — gone with the recv fix.
+
 Polish / remaining:
-- [ ] Smoke-test the **iced GUI** + **tray-icon** on hardware (only the headless
-  Bluetooth path is validated; the GUI renders but wasn't functionally tested).
+- [ ] Smoke-test the **Windows tray-icon** interactively (the tray backend renders
+  but its menu clicks weren't hardware-tested).
 - [ ] Provision the config dir + empty `devices.json` at startup so the GUI stops
   spamming "Failed to read devices file" every frame (this accumulation drove the
   debug build to ~5.6GB; a fresh run is ~200MB; `--no-tray` avoids it entirely).
