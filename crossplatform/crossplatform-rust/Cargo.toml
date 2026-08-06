@@ -39,7 +39,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_Security",
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_Bluetooth",
+    "Win32_UI_WindowsAndMessaging",
 ] }
+tray-icon = "0.19"
 # Full COM/WinRT: SMTC media control + Core Audio (WASAPI) volume + WinRT
 # Bluetooth (LE advertisement watcher, adapter address).
 windows = { version = "0.58", features = [
