@@ -130,7 +130,18 @@ Polish / remaining:
   one-time `REQUEST_NOTIFS` at handshake is what makes the buds push 0x06 events.
   Battery/ANC merge path unchanged.
 
-### Feature idea — MagicPods-style "lid open" popup (requested)
+### MagicPods-style popup overlay — DONE (v1, commit 1044929)
+`librepods-tray/src/overlay.rs` — a Win32 layered, always-on-top, click-through
+card near the top-center that shows on connect ("Connected"), ANC change (mode
+name), and case battery present/absent ("Case opened/closed"), auto-hiding after
+~3s. Built + deployed. **v1 lid trigger uses the AAP case-battery present/absent
+as a proxy** — RE showed that opening/closing the lid does NOT give a clean AAP
+signal (ear-detection is `[InCase,InCase]` both ways; opcode 0x38=0x52 appeared
+on *open* only — a lead, not conclusive). A precise lid open/close popup needs
+the **BLE advertisement** lid state (RE below). Polish TODO: render the AirPods
+image + battery bars in the card (currently text only), fade animation.
+
+### Feature idea — precise "lid open" popup via BLE advertisement
 A centered on-screen overlay (borderless, always-on-top, click-through, fade
 in/out) that pops up like the iOS connection card when you **open/close the case
 lid** near the PC, and on **ANC-mode change**. We already have the pieces: the
