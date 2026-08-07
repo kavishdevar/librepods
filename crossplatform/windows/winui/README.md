@@ -2,7 +2,19 @@
 
 ![The WinUI 3 client](docs/screenshot-device.png)
 
-A native **C# / WinUI 3 (Windows App SDK)** front-end for LibrePods. It is an
+A native **C# / WinUI 3 (Windows App SDK)** front-end for LibrePods.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Devices pane](docs/screenshot-nav.png) | ![Narrow single-column layout](docs/screenshot-narrow.png) |
+| Navigation pane (devices + settings) | Responsive: one column when narrow |
+| ![Settings](docs/screenshot-settings.png) | ![Tray menu](docs/screenshot-tray.png) |
+| Settings (theme, default front-end) | Tray menu (battery + Noise Control + Mute) |
+| ![Toast notification](docs/screenshot-toast.png) | ![Connection island](docs/screenshot-island.png) |
+| Native Windows toast (ANC change) | iOS-style connection island |
+ It is an
 alternative to the cross-platform iced app (`librepods.exe`) and the Rust tray
 (`librepods-tray.exe`). All three are thin IPC clients of the same Rust daemon,
 **`librepodsd.exe`**, which owns the driver, the AAP session and the hi-res mic.
