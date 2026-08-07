@@ -204,20 +204,38 @@ public sealed class DaemonClient : IDisposable
     {
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, DaemonExe);
-            if (!File.Exists(path)) return;
+            var path = FindDaemon();
+            if (path is null) return;
             Process.Start(new ProcessStartInfo
             {
                 FileName = path,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                WorkingDirectory = AppContext.BaseDirectory,
+                WorkingDirectory = Path.GetDirectoryName(path)!,
             });
         }
         catch
         {
             // Best effort — if we can't spawn it, keep retrying the connect.
         }
+    }
+
+    /// Locate librepodsd.exe: next to us (the deployed layout has every exe in the
+    /// same folder), else the standard install dir %LOCALAPPDATA%\LibrePods — so a
+    /// VS debug run (from bin\...) still finds and launches the installed daemon
+    /// without needing the Rust tray to be up first.
+    private static string? FindDaemon()
+    {
+        string[] candidates =
+        {
+            Path.Combine(AppContext.BaseDirectory, DaemonExe),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "LibrePods", DaemonExe),
+        };
+        foreach (var c in candidates)
+            if (File.Exists(c)) return c;
+        return null;
     }
 
     public void Dispose()
