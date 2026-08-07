@@ -41,8 +41,13 @@ single owner of the driver. Responsibilities:
   accepts (never pulls the AirPods off the iPhone). Gives up after ~18 s.
 - **Ear-detection auto-pause**: pauses on a single-bud removal (Apple-style,
   transition-based), resumes when both are back in.
-- **Notifications** (overlays): connect card, ANC change, case open/close,
-  **low battery** (≤20%, hysteresis). More planned.
+- **Notifications** (overlays): Connected (with battery) / Disconnected, ANC
+  change, case open/close, **low battery** (≤20%, hysteresis), **charging**
+  (names the bud + levels) / **fully charged**.
+- **Settings toggles + controls**: Conversational Awareness, Adaptive Volume,
+  Allow-Off, **Adaptive noise strength** (0x2E, Low/Med/High). CA does NOT duck
+  while the hi-res mic is in use (a call — you're talking but the audio mustn't
+  drop). **Rename** is via the iced app's Device-name field (over the L2CAP proxy).
 - **App L2CAP proxy** (Phase 3): forwards raw AAP packets to the iced app over
   two pipes so the app can run its own session over the daemon's channel; caches
   + replays battery/ANC on attach.
@@ -64,13 +69,20 @@ deadlocks). `Command`/`Event`/`Snapshot`; DACL lets same-user clients connect.
 
 ## 📋 TODO — pick up here
 
+### Features — done this cycle
+- [x] Notifications: Connected/Disconnected, charging (names the bud + levels) /
+  fully-charged, low battery.
+- [x] Adaptive noise strength (0x2E) — tray submenu Low/Med/High via a generic
+  `SetControl { id, value }` IPC command.
+- [x] Rename — the app's Device-name field sends `send_rename_packet` over the
+  L2CAP proxy on Windows (no daemon change needed).
+- [x] CA suppressed while the hi-res mic is in use; charging state accumulated
+  across partial battery packets.
+
 ### Features — queue
-- [ ] **More notifications**: charging / fully-charged (status byte 0x01/0x02 is
-  already in the battery packet at `payload[base+3]`), explicit Disconnected,
-  case low battery.
-- [ ] **Rename the AirPods** (device name over AAP) — proven encoding
-  (`send_rename_packet`: `[RENAME,0,1,len,0,name]`); needs a text input (best in
-  the iced app → IPC command to the daemon).
+- [ ] **Case low battery** notification (buds low is done).
+- [ ] Sync the Adaptive-noise submenu to the device's current 0x2E value (parse
+  the status echo) + reflect the daemon `dev_name` after an in-app rename.
 - [ ] **Stem / press-and-hold controls** — StemConfig 0x39 (bitmask
   single=0x01/double=0x02/triple=0x04/long=0x08); press modes 0x14/0x15/0x16.
 - [ ] **One-bud ANC** (0x1B), **Volume Swipe** (0x25) — the app only *parses*
