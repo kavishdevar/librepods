@@ -1,6 +1,6 @@
 //! Shared IPC protocol between `librepodsd` (the driver-owning daemon) and the
 //! LibrePods UIs (the tray + the full app). Newline-delimited JSON over a Windows
-//! named pipe — see `../../daemon-ipc/PLAN.md`.
+//! named pipe — see `../../../docs/windows/daemon-ipc/PLAN.md`.
 
 use serde::{Deserialize, Serialize};
 

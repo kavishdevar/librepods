@@ -2,7 +2,7 @@
 //!
 //! The daemon owns the driver + AAP session + hi-res mic; this renders the tray
 //! icon/menu/overlay from the daemon's State events and sends it commands. It
-//! spawns the daemon if it isn't already running. (See ../../daemon-ipc/PLAN.md.)
+//! spawns the daemon if it isn't already running. (See ../../../docs/windows/daemon-ipc/PLAN.md.)
 #![windows_subsystem = "windows"]
 
 mod client;

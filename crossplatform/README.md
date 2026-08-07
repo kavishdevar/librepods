@@ -110,7 +110,7 @@ the driver, and a one-shot `install.ps1`. The drivers are test-signed, so they
 need Secure Boot **off** + `bcdedit /set testsigning on` + reboot; then run the
 installer (elevated). Full steps are in
 [`windows/dist/README.md`](windows/dist/README.md); build instructions + the
-technical log are in `HANDOFF.md`.
+technical log are in `docs/windows/HANDOFF.md`.
 
 > **Signing note.** Kernel drivers must be signed to load. For personal use we
 > test-sign (above). Distributing to others without Test Mode needs an **EV
@@ -152,5 +152,19 @@ the **hi-res mic**. The cost is Test Mode (personal) or an EV cert (distribution
 - Release build packaging; precise BLE lid-open detection; heart-rate RE
   (AirPods Pro 3).
 
-See **`HANDOFF.md`** for the full technical log, remaining TODOs, and the
+See **`docs/windows/HANDOFF.md`** for the full technical log, remaining TODOs, and the
 reverse-engineering notes.
+
+## 🤖 Use of AI
+
+This Windows port was built in close pair-programming with **Claude** (Anthropic's
+Claude Code). AI assisted across the whole stack — the KMDF AAP driver and the
+virtual-mic driver, the `librepodsd` daemon + named-pipe IPC, the AAC-ELD mic
+pipeline, the WASAPI/SMTC integration, protocol reverse-engineering, and this
+documentation. Commits touched by AI are marked `Co-Authored-By: Claude`.
+
+Every design decision was human-directed and **every feature was validated on
+real AirPods hardware** by the maintainer before it landed — the AI wrote and
+explained code, but nothing was accepted on trust. The Linux and Android sides of
+LibrePods are the upstream project's work and are not covered by this note.
+

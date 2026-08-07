@@ -1,6 +1,6 @@
 # LibrePodsMic — virtual audio (microphone) driver
 
-The virtual-microphone driver for the [hi-res mic feature](../../hires-mic/PLAN.md):
+The virtual-microphone driver for the [hi-res mic feature](../../../docs/windows/hires-mic/PLAN.md):
 Windows sees a "LibrePods Microphone" that the app feeds with the AirPods'
 decoded AAC-ELD audio, so any app (Teams, Zoom, Discord, OBS…) can use it.
 
@@ -33,4 +33,4 @@ for a PCM feed pushed from the app over an IOCTL/ring buffer.
 
 `build-wsl.cmd` on the Windows host (VS + WDK) →
 `AudioCodec/Driver/x64/Release/AudioCodec.sys`. See
-[`../../hires-mic/PLAN.md`](../../hires-mic/PLAN.md) for the roadmap.
+[`../../../docs/windows/hires-mic/PLAN.md`](../../../docs/windows/hires-mic/PLAN.md) for the roadmap.

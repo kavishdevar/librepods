@@ -94,6 +94,13 @@ MagicPods-style popup), with a full window for detailed settings.
 For installation, what works, and the architecture, see the
 [Windows README](/crossplatform/README.md).
 
+> [!NOTE]
+> **Use of AI.** The Windows port (drivers, daemon/IPC, hi-res mic, and docs) was
+> built in pair-programming with **Claude** (Anthropic's Claude Code), fully
+> human-directed and validated on real AirPods hardware. See the
+> [Use of AI](/crossplatform/README.md#-use-of-ai) note for details. The Linux and
+> Android sides are the upstream project's work.
+
 ### Android
 
 #### Screenshots
