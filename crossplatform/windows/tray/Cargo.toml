@@ -5,7 +5,7 @@ edition = "2021"
 description = "LibrePods system-tray app for Windows — a thin IPC client of librepodsd"
 
 [dependencies]
-librepods-ipc = { path = "../librepods-ipc" }
+librepods-ipc = { path = "../ipc" }
 tray-icon = "0.19"
 # Battery-percentage tray icon rendering.
 ab_glyph = "0.2"

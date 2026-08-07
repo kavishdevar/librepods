@@ -5,7 +5,7 @@ edition = "2021"
 description = "LibrePods Windows daemon — owns the AAP driver + hi-res mic, serves the tray/app over IPC."
 
 [dependencies]
-librepods-ipc = { path = "../librepods-ipc" }
+librepods-ipc = { path = "../ipc" }
 serde_json = "1"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",

@@ -93,23 +93,23 @@ compile time (`#[cfg(target_os)]`). The protocol/UI code (`aacp`, `att`, `le`,
 
 ## Layout
 
-- **`crossplatform-rust/`** — the shared LibrePods app (Linux + Windows), with
+- **`app/`** — the shared LibrePods app (Linux + Windows), with
   the `platform/` abstraction layer.
-- **`windows-driver/LibrePodsAAP/`** — the open-source KMDF AAP kernel driver
+- **`windows/drivers/aap/`** — the open-source KMDF AAP kernel driver
   (`+ prebuilt/` so it installs without the WDK; Test Mode).
-- **`windows-driver/LibrePodsMic/`** — the virtual-microphone audio driver (ACX),
+- **`windows/drivers/mic/`** — the virtual-microphone audio driver (ACX),
   plus **`lp-mic-rename/`** (names the mic after the connected device).
-- **`windows-app/`** — a lightweight native **tray app** (battery + ANC + volume
+- **`windows/`** — a lightweight native **tray app** (battery + ANC + volume
   + ear-detection auto-pause + the hi-res mic + the popup overlay) and an egui
   window, plus the `lp-driver-test` CLI.
 
 ## Install (Windows, Test Mode)
 
-**Ready-to-install builds are in [`dist/windows/`](dist/windows/)** — the apps,
+**Ready-to-install builds are in [`windows/dist/`](windows/dist/)** — the apps,
 the driver, and a one-shot `install.ps1`. The drivers are test-signed, so they
 need Secure Boot **off** + `bcdedit /set testsigning on` + reboot; then run the
 installer (elevated). Full steps are in
-[`dist/windows/README.md`](dist/windows/README.md); build instructions + the
+[`windows/dist/README.md`](windows/dist/README.md); build instructions + the
 technical log are in `HANDOFF.md`.
 
 > **Signing note.** Kernel drivers must be signed to load. For personal use we

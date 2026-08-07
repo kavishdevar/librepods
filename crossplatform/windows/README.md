@@ -5,7 +5,7 @@ modes (Off / Noise Cancellation / Transparency / Adaptive) from the system tray.
 
 It has two parts:
 
-1. **`LibrePodsAAP` kernel driver** ([`../windows-driver/LibrePodsAAP`](../windows-driver/LibrePodsAAP)) —
+1. **`LibrePodsAAP` kernel driver** ([`../windows/drivers/aap`](../windows/drivers/aap)) —
    opens the Apple Accessory Protocol (AAP) L2CAP channel to the AirPods in
    kernel mode, which normal Windows apps cannot do, and exposes it via IOCTLs.
 2. **`librepods-tray` app** (this folder) — a tiny background app that talks to
@@ -28,7 +28,7 @@ shown depend on the model (e.g. only Pro/Max have noise control).
   x64/x86 libs** + a **Windows 11 SDK** and the **matching WDK** (SDK & WDK
   build numbers must match, e.g. `28000`).
 - Build the driver package (`.sys` + `.inf`, then `inf2cat` a `.cat`) — see
-  [`../windows-driver/LibrePodsAAP/README.md`](../windows-driver/LibrePodsAAP/README.md).
+  [`../windows/drivers/aap/README.md`](../windows/drivers/aap/README.md).
 
 ### b) Turn on Test Mode
 1. Back up your **BitLocker recovery key** (if BitLocker is on) and make a

@@ -6,15 +6,15 @@ below is committed + green.
 ## ✅ Resume — what's done & working
 
 **Windows AirPods control (proven on real AirPods Pro 3):**
-- **`LibrePodsAAP` kernel driver** (`crossplatform/windows-driver/LibrePodsAAP/`)
+- **`LibrePodsAAP` kernel driver** (`crossplatform/windows/drivers/aap/`)
   — KMDF profile driver bound to the AAP SDP service
   `BTHENUM\{74ec2172-0bad-4d01-8f77-997b2be0722a}`; opens the L2CAP AAP channel
   (PSM 0x1001) in kernel mode and bridges to user space via IOCTLs. Reads
   battery, controls ANC. Universal across AirPods models. Prebuilt package in
   `prebuilt/` so it installs **without C++/WDK** (just `install.ps1`, Test Mode).
-- **`librepods-tray`** (`crossplatform/windows-app/librepods-tray/`) — native
+- **`librepods-tray`** (`crossplatform/windows/tray/`) — native
   tray menu: battery (L/R/Case) + ANC + system volume.
-- **`librepods-ui`** (`crossplatform/windows-app/librepods-ui/`) — egui window:
+- **`librepods-ui`** (`crossplatform/windows/ui/`) — egui window:
   battery bars, ANC segmented buttons, **volume slider**.
 - **KEY finding:** holding the AAP channel via a **passive session** (handshake
   once, then only listen; liveness via GET_STATUS, no periodic L2CAP sends)
@@ -27,8 +27,8 @@ below is committed + green.
 - `main.rs` now has **zero direct `bluer`/`dbus`** — all Bluetooth goes through
   `platform::`. Linux backends in `platform/linux/`, Windows backends TODO.
 
-**Repo:** everything under `crossplatform/` (crossplatform-rust = the Rust app,
-was linux-rust; + windows-driver + windows-app). CI = ci-crossplatform-rust.yml.
+**Repo:** everything under `crossplatform/` (app = the Rust app,
+was linux-rust; + windows-driver + windows-app). CI = ci-app.yml.
 
 ## 📋 TODO — pick up here
 
@@ -176,13 +176,13 @@ battery + status, auto-hiding after a few seconds. Best home: `librepods-tray`
 ## 🔧 How to continue (commands / gotchas)
 
 - **Build the Rust app (Linux):** no cargo in PATH — use nix devshell
-  (`cd crossplatform/crossplatform-rust && nix develop -c cargo check`). rustup
+  (`cd crossplatform/app && nix develop -c cargo check`). rustup
   IS installed in WSL for cross-compiles: `. ~/.cargo/env`.
 - **Build a Windows app (cross-compile from WSL):**
-  `cd crossplatform/windows-app/<app> && cargo build --release --target x86_64-pc-windows-gnu`.
+  `cd crossplatform/windows/<app> && cargo build --release --target x86_64-pc-windows-gnu`.
   Run it via WSL interop (it executes on the Windows host).
 - **Build the driver:** needs VS2026 + WDK on Windows (SDK/WDK build numbers must
-  match, e.g. 28000). Build via interop: `windows-driver/LibrePodsAAP/build-wsl.cmd`
+  match, e.g. 28000). Build via interop: `windows/drivers/aap/build-wsl.cmd`
   then `inf2cat` a package folder. `SignMode=Off` in the vcxproj.
 - **Install the driver (Test Mode):** Secure Boot OFF + `bcdedit /set testsigning on`
   + reboot, then `install.ps1 -PackageDir <package-or-prebuilt>` (elevated).

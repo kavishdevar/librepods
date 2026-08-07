@@ -45,7 +45,7 @@ Native LibrePods for Windows, driven by two open-source kernel drivers —
   can't run at once — "Open App" hands off (it quits the tray and launches the app).
 - The virtual mic auto-activates when an app records and restores stereo playback
   when it stops.
-- Built from `../../crossplatform-rust` (app) and `../../windows-app` (tray) for
+- Built from `../../app` (app) and `../../windows-app` (tray) for
   `x86_64-pc-windows-gnu`, and `../../windows-driver` (both drivers).
 - `tools/devcon.exe` is Microsoft's device console (from the WDK), bundled so the
   installer can create the mic device without the WDK installed.

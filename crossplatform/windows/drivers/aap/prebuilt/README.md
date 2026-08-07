@@ -3,7 +3,7 @@
 The compiled driver (`LibrePodsAAP.sys` + `.inf` + `.cat`) so you can install
 **without building it** — no Visual Studio / C++ / WDK required.
 
-Install (admin PowerShell, Test Mode — see ../../windows-app/README.md):
+Install (admin PowerShell, Test Mode — see ../../windows/README.md):
 ```powershell
 & "..\install.ps1" -PackageDir ".\"
 ```

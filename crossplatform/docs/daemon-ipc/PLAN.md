@@ -18,7 +18,7 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
 
 ## Components
 
-- **`librepodsd`** (new, `windows-app/librepodsd/`) — headless. Owns the driver
+- **`librepodsd`** (new, `windows/daemon/`) — headless. Owns the driver
   handle + AAP session (today's tray `run_receiver`), the mic pipeline (decode
   AAC-ELD → feed `\\.\LibrePodsMic`), the auto-activate poll + A2DP reset, and
   the dynamic-rename trigger. Holds the **authoritative state**. Runs an IPC
@@ -29,7 +29,7 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
   (spawns the daemon if absent), renders the icon/menu/overlay from daemon
   events, sends commands. Its `driver`/`aap`/`eld`/`micpipe`/`a2dp` modules
   **move into the daemon**.
-- **`librepods.exe`** (crossplatform-rust, Windows) — becomes an IPC client too
+- **`librepods.exe`** (app, Windows) — becomes an IPC client too
   (Phase 3): its `platform/windows` backend talks to the daemon instead of the
   driver directly. On **Linux nothing changes** (still `bluer`, no daemon).
 
@@ -74,7 +74,7 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
    to the daemon, renders from `Event`s, sends `Command`s, spawns the daemon if
    absent. **This alone ends the handle conflict for the tray** and deletes the
    "Open App handoff" hack.
-3. **App → client.** Route crossplatform-rust's `platform/windows` L2CAP/session
+3. **App → client.** Route app's `platform/windows` L2CAP/session
    backend through the daemon IPC. Now tray + full app coexist. (Heaviest phase —
    touches the shared cross-platform code; Linux path untouched.)
 4. **Polish.** Daemon single-instance + autostart-on-demand + reconnect; installer
@@ -124,7 +124,7 @@ Implementation sketch (to do together, with hardware testing):
    extra controls. The daemon already serializes commands (single `apply_command`).
 2. **Daemon**: parse + publish the extra data in the `Snapshot` (its session
    already parses battery/ANC/ear; add the rest).
-3. **App (`crossplatform-rust`, Windows only)**: source the GUI's state from the
+3. **App (`app`, Windows only)**: source the GUI's state from the
    daemon IPC instead of a live session. The clean shape: abstract the app's
    "state source" — Linux = the `bluer` session (unchanged), Windows = an IPC
    client of the daemon. The iced GUI renders from the state stream either way.

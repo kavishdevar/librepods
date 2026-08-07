@@ -33,14 +33,14 @@ AirPods ──AAP / L2CAP──▶ LibrePodsAAP driver ──IOCTL──▶ app
 
 The protocol (enable-mic control command, uplink packet framing, AAC-ELD params)
 is platform-neutral and comes from PR #655 — it lands in the shared
-`crossplatform-rust` crate (`aacp`/`media_controller`), gated per platform for
+`app` crate (`aacp`/`media_controller`), gated per platform for
 the sink.
 
 ## Phases (incremental, each independently testable)
 
 1. **Virtual-mic driver base** — build + test-sign + install SYSVAD (or a trimmed
    fork) so Windows shows a "LibrePods Microphone" capture endpoint. Prove it
-   appears in Sound settings and apps. *(driver: `windows-driver/LibrePodsMic/`)*
+   appears in Sound settings and apps. *(driver: `windows/drivers/mic/`)*
 2. **PCM bridge** — an IOCTL/shared-ring for user mode to push PCM samples into
    the driver; feed a test tone / a WAV → verify it's audible on the virtual mic
    (record in Voice Recorder / Audacity).
@@ -64,11 +64,11 @@ the sink.
 
 - Microsoft SYSVAD (virtual audio device sample), and the ACX audio samples.
 - LibrePods PR #655 (Linux hi-res mic: AAC-ELD + PipeWire) — the protocol RE.
-- `../windows-driver/LibrePodsAAP/` — our existing driver + build/sign/install loop.
+- `../windows/drivers/aap/` — our existing driver + build/sign/install loop.
 
 ## Status
 
-- **Phase 1 — DONE** ✅ (`windows-driver/LibrePodsMic/`, based on the MS ACX
+- **Phase 1 — DONE** ✅ (`windows/drivers/mic/`, based on the MS ACX
   AudioCodec sample). Builds with WDK 28000, installs via `install.ps1`, and
   Windows shows a virtual **"Microphone (AudioCodec Device)"** (confirmed on
   hardware). The audio source is still the sample's dummy; feeding real audio is
@@ -82,7 +82,7 @@ the sink.
   — a spin-locked global PCM ring buffer + a control device `\\.\LibrePodsMic`
   exposing `IOCTL_LIBREPODS_MIC_WRITE_PCM` (0x0022A000). `StreamEngine.cpp`
   `ProcessPacket` drains the ring instead of the WAV/tone dummy. Proven end to
-  end: `lp-mic-test` (a user-mode tone feeder, `windows-driver/lp-mic-test/`)
+  end: `lp-mic-test` (a user-mode tone feeder, `windows/tools/mic-test/`)
   pushed a 440 Hz sine and it was **recorded and audible** on "Microphone
   (AudioCodec Device)". The audio-driver de-risk is complete.
 - **Phase 3a — DONE** ✅ (`c843d32`, validated on hardware): the AAP enable
