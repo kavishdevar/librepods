@@ -68,6 +68,32 @@ The Linux version runs as a system tray app. Connect your AirPods and enjoy:
 
 For installation and detailed info, see the [Linux README](/linux/README.md).
 
+### Windows
+
+LibrePods runs **natively on Windows**, sharing the same Rust core as Linux. It
+appears as a system-tray app (battery-% icon + noise control + volume + a
+MagicPods-style popup), with a full window for detailed settings.
+
+- Battery (L / R / Case)
+- Noise control (Off / ANC / Transparency / Adaptive)
+- Automatic ear detection (auto-pause) + Conversational Awareness
+- **Hi-res AirPods microphone** — the AAC-ELD mic as a native Windows input for
+  any app (Teams / Zoom / Discord / OBS), auto-named after the device
+- BLE proximity **"connect?"** prompt — asks before connecting, never steals the
+  AirPods from your phone
+
+> [!CAUTION]
+> Windows needs **two open-source kernel drivers** — one to open the AirPods' AAP
+> control channel (classic-Bluetooth L2CAP, PSM `0x1001`), one for the virtual
+> microphone. Microsoft exposes **no user-mode alternative**: L2CAP client
+> connections are driver-only (`BRB_L2CA_OPEN_CHANNEL`), and there is no user-mode
+> API to create a virtual audio device. For personal use the drivers are
+> **test-signed** — which requires **Secure Boot off** + Test Mode. (Without the
+> drivers you'd get only battery over BLE and the low-quality built-in HFP mic.)
+
+For installation, what works, and the architecture, see the
+[Windows README](/crossplatform/README.md).
+
 ### Android
 
 #### Screenshots

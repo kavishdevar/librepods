@@ -117,6 +117,31 @@ technical log are in `HANDOFF.md`.
 > certificate + Microsoft Partner Center** attestation (Azure Trusted Signing
 > covers the user-mode app for SmartScreen, but **not** kernel drivers).
 
+## Why two kernel drivers (no user-mode alternative)
+
+Both drivers exist because **Microsoft exposes no user-mode API** for what they
+do — verified against the Windows driver docs:
+
+- **AAP control (`LibrePodsAAP`)** — AAP runs over a classic-Bluetooth **L2CAP**
+  channel (PSM `0x1001`). Windows only lets you open an L2CAP client connection
+  from a **kernel profile driver** (`BRB_L2CA_OPEN_CHANNEL`); there is **no
+  WinRT/Winsock user-mode L2CAP client** (a Winsock `AF_BTH` spike returned
+  `WSAENETDOWN`). So ANC/battery/controls need the driver.
+- **Hi-res microphone (`LibrePodsMic`)** — Windows has **no user-mode API to
+  create a virtual audio device**. Everything that does (VB-Cable, SysVAD, ours)
+  is a WDM/kernel driver. User-mode **APOs** can only post-process *existing*
+  devices, not add a new input.
+
+What you *could* do driverless, and why it's not enough:
+
+| User-mode option | Gives | Loses |
+| --- | --- | --- |
+| BLE (GATT / advertisements) | Battery (we use it for the LE battery + proximity prompt) | **No** ANC/controls (those are L2CAP) |
+| Windows' built-in HFP mic | A mic with no driver | Low quality (mono, narrowband) **and** it degrades A2DP playback |
+
+So the drivers aren't over-engineering — they're what unlocks **ANC control** and
+the **hi-res mic**. The cost is Test Mode (personal) or an EV cert (distribution).
+
 ## Not done yet / in progress
 
 - ~~Fold the `LibrePodsMic` driver install into the one-shot `install.ps1`.~~ ✅
