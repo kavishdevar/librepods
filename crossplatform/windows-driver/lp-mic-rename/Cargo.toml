@@ -7,10 +7,6 @@ description = "Rename the LibrePodsMic virtual microphone endpoint (e.g. to the 
 [dependencies]
 windows = { version = "0.58", features = [
     "Win32_Foundation",
-    "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
-    "Win32_Media_Audio",
-    "Win32_UI_Shell_PropertiesSystem",
     "Win32_System_Registry",
     "Win32_Security",
 ] }

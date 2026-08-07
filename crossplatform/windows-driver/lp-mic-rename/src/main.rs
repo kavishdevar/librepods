@@ -1,65 +1,42 @@
 //! Rename the LibrePods virtual microphone endpoint(s) to a given name (e.g. the
 //! connected device's name — "AirPods Pro de Pedro", "Beats Studio Buds", …), so
-//! it shows that in Discord/Teams/Zoom instead of the driver's generic name.
+//! any app (Discord/Teams/Zoom) shows that instead of the driver's generic name.
 //! MUST run elevated (writes HKLM\...\MMDevices).
 //!
 //!   lp-mic-rename "AirPods Pro de Pedro"
 //!
-//! IPolicyConfig::SetPropertyValue returns E_ACCESSDENIED even elevated, so we
-//! write the endpoint's PKEY_Device_FriendlyName registry blob directly (as
-//! SoundVolumeView does) and restart the audio endpoint service. Reinstalls leave
-//! several stale "LibrePods" capture endpoints, so we rename ALL of them (the
-//! active one is the one that shows up).
+//! HOW (learned the hard way): the Windows Sound "Rename" UI persists the name in
+//! PKEY_Device_DeviceDesc ({a45c254e...},2) as a **plain REG_SZ string** — NOT in
+//! PKEY_Device_FriendlyName (,14), and NOT as a REG_BINARY PROPVARIANT blob (a
+//! blob there is ignored → the display falls back to the driver's INF name). So we
+//! write ,2 as REG_SZ, exactly like the UI.
+//!
+//! We identify our endpoint(s) by STABLE, name-independent properties (so re-runs
+//! still match after a rename): the device/bus name ({b3f8fa53...},6 == "LibrePods",
+//! from our INF) or the hardware id ({a8b865dd...},8 contains "AudioCodec"). All
+//! matching endpoints are renamed (reinstalls leave stale duplicates; the active
+//! one is whichever shows up). We skip endpoints already named correctly, and only
+//! restart the audio service if something actually changed (no needless blip).
 
 use std::ffi::c_void;
 use std::process::Command;
 
-use windows::core::{GUID, PCWSTR};
-use windows::Win32::Media::Audio::{
-    eCapture, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
-};
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ,
-};
+use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_SET_VALUE,
-    REG_BINARY, REG_OPTION_NON_VOLATILE,
+    RegCloseKey, RegCreateKeyExW, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, RegSetValueExW, HKEY,
+    HKEY_LOCAL_MACHINE, KEY_READ, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ, RRF_RT_REG_SZ,
 };
-use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
 
-const PKEY_DEVICE_FRIENDLYNAME: PROPERTYKEY = PROPERTYKEY {
-    fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
-    pid: 14,
-};
-const PKEY_DEVICE_DEVICEDESC: PROPERTYKEY = PROPERTYKEY {
-    fmtid: GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
-    pid: 2,
-};
-const VT_LPWSTR: u16 = 31;
-
-#[repr(C)]
-struct PropVariantStr {
-    vt: u16,
-    r1: u16,
-    r2: u16,
-    r3: u16,
-    pwsz: *mut u16,
-    _pad: u64,
-}
+const BASE: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture";
+/// Device/bus friendly name — stays "LibrePods" (our INF DeviceDesc) after renames.
+const PROP_DEVICE_NAME: &str = "{b3f8fa53-0004-438e-9003-51a46e139bfc},6";
+/// Hardware id — "ROOT\\AudioCodec" for our driver.
+const PROP_HARDWARE_ID: &str = "{a8b865dd-2e3d-4094-ad97-e593a70c75d6},8";
+/// PKEY_Device_DeviceDesc — the endpoint's display name (what "Rename" sets).
+const PROP_DEVICE_DESC: &str = "{a45c254e-df1c-4efd-8020-67d146a850e0},2";
 
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
-}
-
-unsafe fn wide_ptr_to_string(p: *const u16) -> String {
-    if p.is_null() {
-        return String::new();
-    }
-    let mut len = 0isize;
-    while *p.offset(len) != 0 {
-        len += 1;
-    }
-    String::from_utf16_lossy(std::slice::from_raw_parts(p, len as usize))
 }
 
 fn log(s: &str) {
@@ -75,12 +52,32 @@ fn log(s: &str) {
     }
 }
 
-/// Write PKEY_Device_FriendlyName (VT_LPWSTR REG_BINARY: 0x1F + UTF-16LE + NUL)
-/// under the endpoint's registry Properties. Returns true on success.
-unsafe fn write_friendly(guid: &str, name: &str) -> bool {
-    let subkey = wide(&format!(
-        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\{guid}\\Properties"
-    ));
+/// Read a REG_SZ value under HKLM\<subpath>. Returns None if missing / wrong type.
+unsafe fn read_reg_sz(subpath: &str, value: &str) -> Option<String> {
+    let wpath = wide(subpath);
+    let wval = wide(value);
+    let mut buf = [0u16; 512];
+    let mut cb: u32 = (buf.len() * 2) as u32;
+    let rc = RegGetValueW(
+        HKEY_LOCAL_MACHINE,
+        PCWSTR(wpath.as_ptr()),
+        PCWSTR(wval.as_ptr()),
+        RRF_RT_REG_SZ,
+        None,
+        Some(buf.as_mut_ptr() as *mut c_void),
+        Some(&mut cb),
+    );
+    if rc.is_ok() {
+        let n = (cb as usize / 2).saturating_sub(1); // drop the NUL terminator
+        Some(String::from_utf16_lossy(&buf[..n]))
+    } else {
+        None
+    }
+}
+
+/// Write PKEY_Device_DeviceDesc as a plain REG_SZ string (what the Sound UI does).
+unsafe fn write_desc(guid: &str, name: &str) -> bool {
+    let subkey = wide(&format!("{BASE}\\{guid}\\Properties"));
     let mut hkey = HKEY::default();
     let rc = RegCreateKeyExW(
         HKEY_LOCAL_MACHINE,
@@ -97,14 +94,11 @@ unsafe fn write_friendly(guid: &str, name: &str) -> bool {
         log(&format!("RegCreateKeyEx {guid} failed: {rc:?}"));
         return false;
     }
-    let mut blob: Vec<u8> = vec![VT_LPWSTR as u8, 0, 0, 0];
-    for w in wide(name) {
-        blob.extend_from_slice(&w.to_le_bytes());
-    }
-    let valname = wide("{a45c254e-df1c-4efd-8020-67d146a850e0},14");
-    let rc = RegSetValueExW(hkey, PCWSTR(valname.as_ptr()), 0, REG_BINARY, Some(&blob));
+    let wname = wide(name);
+    let bytes = std::slice::from_raw_parts(wname.as_ptr() as *const u8, wname.len() * 2);
+    let valname = wide(PROP_DEVICE_DESC);
+    let rc = RegSetValueExW(hkey, PCWSTR(valname.as_ptr()), 0, REG_SZ, Some(bytes));
     let _ = RegCloseKey(hkey);
-    log(&format!("wrote {guid}: {rc:?}"));
     rc.is_ok()
 }
 
@@ -115,73 +109,77 @@ fn main() {
     });
 
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let enumerator: IMMDeviceEnumerator =
-            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).expect("MMDeviceEnumerator");
-        let collection = enumerator
-            .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
-            .expect("EnumAudioEndpoints");
-        let count = collection.GetCount().unwrap_or(0);
-
-        let read = |dev: &windows::Win32::Media::Audio::IMMDevice, key: &PROPERTYKEY| -> String {
-            dev.OpenPropertyStore(STGM_READ)
-                .ok()
-                .and_then(|s| s.GetValue(key).ok())
-                .map(|pv| {
-                    let raw = &pv as *const _ as *const PropVariantStr;
-                    if (*raw).vt == VT_LPWSTR {
-                        wide_ptr_to_string((*raw).pwsz)
-                    } else {
-                        String::new()
-                    }
-                })
-                .unwrap_or_default()
-        };
-
-        // Rename EVERY LibrePods capture endpoint (match on the constant
-        // DeviceDesc so it works even after a previous rename), so the active one
-        // is covered regardless of stale duplicates.
-        let mut renamed = 0;
-        for i in 0..count {
-            let dev = match collection.Item(i) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            let id = match dev.GetId() {
-                Ok(id) => id,
-                Err(_) => continue,
-            };
-            let desc = read(&dev, &PKEY_DEVICE_DEVICEDESC);
-            let friendly = read(&dev, &PKEY_DEVICE_FRIENDLYNAME);
-            let is_ours = desc.contains("LibrePods")
-                || desc.contains("AudioCodec")
-                || friendly.contains("LibrePods")
-                || friendly.contains("AudioCodec");
-            if is_ours {
-                let id_str = wide_ptr_to_string(id.0);
-                if let Some(guid) = id_str.rsplit('.').next() {
-                    log(&format!("match {guid} desc='{desc}' friendly='{friendly}'"));
-                    if write_friendly(guid, &name) {
-                        renamed += 1;
-                    }
-                }
-            }
-            CoTaskMemFree(Some(id.0 as *const c_void));
-        }
-
-        if renamed == 0 {
-            eprintln!("No LibrePods capture endpoint found (or write denied — run elevated).");
+        let mut hbase = HKEY::default();
+        let rc = RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            PCWSTR(wide(BASE).as_ptr()),
+            0,
+            KEY_READ,
+            &mut hbase,
+        );
+        if rc.is_err() {
+            eprintln!("cannot open MMDevices Capture key: {rc:?}");
             std::process::exit(1);
         }
 
-        let _ = Command::new("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                "Restart-Service AudioEndpointBuilder -Force",
-            ])
-            .status();
+        let mut changed = 0;
+        let mut already = 0;
+        let mut i = 0u32;
+        loop {
+            let mut namebuf = [0u16; 128];
+            let mut namelen = namebuf.len() as u32;
+            let rc = RegEnumKeyExW(
+                hbase,
+                i,
+                PWSTR(namebuf.as_mut_ptr()),
+                &mut namelen,
+                None,
+                PWSTR::null(),
+                None,
+                None,
+            );
+            if rc.is_err() {
+                break; // ERROR_NO_MORE_ITEMS
+            }
+            i += 1;
 
-        println!("Renamed {renamed} LibrePods mic endpoint(s) to \"{name}\".");
+            let guid = String::from_utf16_lossy(&namebuf[..namelen as usize]);
+            let props = format!("{BASE}\\{guid}\\Properties");
+            let dev = read_reg_sz(&props, PROP_DEVICE_NAME).unwrap_or_default();
+            let hw = read_reg_sz(&props, PROP_HARDWARE_ID).unwrap_or_default();
+            let is_ours =
+                dev.contains("LibrePods") || hw.to_ascii_lowercase().contains("audiocodec");
+            if !is_ours {
+                continue;
+            }
+
+            let cur = read_reg_sz(&props, PROP_DEVICE_DESC).unwrap_or_default();
+            if cur == name {
+                already += 1;
+                log(&format!("ok {guid} already '{name}'"));
+            } else if write_desc(&guid, &name) {
+                changed += 1;
+                log(&format!("wrote {guid} dev='{dev}' hw='{hw}' (was '{cur}')"));
+            }
+        }
+        let _ = RegCloseKey(hbase);
+
+        if changed == 0 && already == 0 {
+            eprintln!("No LibrePods capture endpoint found (run elevated).");
+            std::process::exit(1);
+        }
+
+        if changed > 0 {
+            let _ = Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    "Restart-Service AudioEndpointBuilder -Force",
+                ])
+                .status();
+            println!("Renamed {changed} LibrePods mic endpoint(s) to \"{name}\".");
+        } else {
+            println!("Already named \"{name}\" ({already} endpoint(s)) — nothing to do.");
+        }
     }
 }
