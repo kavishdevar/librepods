@@ -46,6 +46,20 @@ struct Args {
 }
 
 fn main() -> iced::Result {
+    // Single instance on Windows: the tray's "Open App" spawns us each click, so
+    // without this every click stacks another librepods.exe. If one is already
+    // up, exit immediately (the existing window stays).
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+        use windows_sys::Win32::System::Threading::CreateMutexW;
+        let name: Vec<u16> = "Local\\LibrePodsAppSingleton\0".encode_utf16().collect();
+        let _ = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            std::process::exit(0);
+        }
+    }
+
     let args = Args::parse();
 
     if args.version {

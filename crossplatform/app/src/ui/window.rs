@@ -235,6 +235,12 @@ impl App {
             Message::WindowClosed(id) => {
                 if self.window == Some(id) {
                     self.window = None;
+                    // On Windows the app has no tray of its own (the daemon +
+                    // Windows tray own that), so a daemon runtime with no window
+                    // would linger as an invisible background process. Closing
+                    // the window means quit — exit the runtime.
+                    #[cfg(target_os = "windows")]
+                    return iced::exit();
                 }
                 Task::none()
             }
