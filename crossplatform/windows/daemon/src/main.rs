@@ -391,14 +391,9 @@ fn l2cap_reader(pipe: Arc<Pipe>, ctx: Ctx) {
             let packet = acc[2..2 + len].to_vec();
             acc.drain(..2 + len);
             if !is_setup(&packet) {
-                if packet.len() >= 5 {
-                    log(&format!("app→drv opcode={:#04x} len={}", packet[4], packet.len()));
-                }
                 if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
                     let _ = drv.send(&packet);
                 }
-            } else {
-                log("app→drv DROPPED (setup packet)");
             }
         }
     }
@@ -563,10 +558,8 @@ fn run_receiver(ctx: Ctx) {
         let mut status_fails = 0u32;
         let mut low_warned = false; // low-battery overlay fired (hysteresis)
         let mut case_low_warned = false; // case low-battery overlay fired
-        let mut prev_charging = false; // earbuds were charging last packet
-        let mut charged_notified = false; // "fully charged" already shown this cycle
-        let mut left_chg = false; // accumulated charging state (packets are partial)
-        let mut right_chg = false;
+        // Per-bud ear status, to notify on the transition into the case.
+        let mut prev_status = [aap::EarStatus::Disconnected; 2];
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -598,11 +591,6 @@ fn run_receiver(ctx: Ctx) {
                         decoder = None;
                     }
                     if let Some(b) = aap::parse_battery(data) {
-                        log(&format!(
-                            "batt: L={:?}/{:?} R={:?}/{:?} C={:?}/{:?} H={:?}",
-                            b.left, b.left_charging, b.right, b.right_charging,
-                            b.case, b.case_charging, b.headphone
-                        ));
                         ctx.cache_replay(0, data); // replay to a newly-attached app
                         let (batt_text, present) = {
                             let mut s = ctx.state.lock().unwrap();
@@ -653,40 +641,6 @@ fn run_receiver(ctx: Ctx) {
                             } else if cl > 20 {
                                 case_low_warned = false;
                             }
-                        }
-                        // Charging notifications (fire when a bud is charging —
-                        // e.g. one cased while the other stays connected). Battery
-                        // packets are partial, so accumulate per-bud charging
-                        // across packets instead of reading a single packet.
-                        if let Some(c) = b.left_charging {
-                            left_chg = c;
-                        }
-                        if let Some(c) = b.right_charging {
-                            right_chg = c;
-                        }
-                        let charging = left_chg || right_chg;
-                        log(&format!("charging: lchg={left_chg} rchg={right_chg} prev={prev_charging}"));
-                        if charging && !prev_charging {
-                            // Name the bud(s) that just started charging.
-                            let which = match (left_chg, right_chg) {
-                                (true, true) => "Both charging",
-                                (true, false) => "Left charging",
-                                (false, true) => "Right charging",
-                                _ => "Charging",
-                            };
-                            ctx.overlay(&format!("{which}  ·  {batt_text}"));
-                        }
-                        prev_charging = charging;
-                        let (ll, rl) = {
-                            let s = ctx.state.lock().unwrap();
-                            (s.battery.left, s.battery.right)
-                        };
-                        let full = (left_chg && ll == Some(100)) || (right_chg && rl == Some(100));
-                        if full && !charged_notified {
-                            ctx.overlay("Fully charged");
-                            charged_notified = true;
-                        } else if !charging {
-                            charged_notified = false; // re-arm once it stops charging
                         }
                     }
                     if let Some(m) = aap::parse_anc_mode(data) {
@@ -740,6 +694,20 @@ fn run_receiver(ctx: Ctx) {
                         }
                     }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
+                        // "In case" notification on the transition into the case.
+                        // Ear-detection reports both buds together (never partial,
+                        // unlike the battery packet) and comes over AAP — so this
+                        // is reliable with no BLE, hence no audio static.
+                        let now = [primary, secondary];
+                        for i in 0..2 {
+                            if now[i] == aap::EarStatus::InCase
+                                && prev_status[i] != aap::EarStatus::InCase
+                            {
+                                ctx.overlay("AirPod in case");
+                                break; // one overlay even if both go in at once
+                            }
+                        }
+                        prev_status = now;
                         let new_ear = [primary.in_ear(), secondary.in_ear()];
                         if new_ear != prev_ear {
                             let all_in = new_ear[0] && new_ear[1];
