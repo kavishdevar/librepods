@@ -2,9 +2,10 @@
 name = "librepods-tray"
 version = "0.1.0"
 edition = "2021"
-description = "LibrePods system-tray app for Windows — AirPods battery + ANC control via the LibrePodsAAP driver"
+description = "LibrePods system-tray app for Windows — a thin IPC client of librepodsd"
 
 [dependencies]
+librepods-ipc = { path = "../librepods-ipc" }
 tray-icon = "0.19"
 # Battery-percentage tray icon rendering.
 ab_glyph = "0.2"
@@ -17,25 +18,18 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Threading",
     "Win32_Storage_FileSystem",
     "Win32_Security",
-    "Win32_Devices_DeviceAndDriverInstallation",
-    "Win32_Devices_Bluetooth",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
     "Win32_System_LibraryLoader",
 ] }
-# `windows` (full COM/WinRT) for Core Audio volume control + SMTC media control.
+# `windows` (COM) for Core Audio volume control (volume stays client-side).
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
-    "Foundation",       # IAsyncOperation::get() for the WinRT SMTC calls
-    "Media_Control",    # GlobalSystemMediaTransportControlsSession* (auto-pause)
 ] }
-
-[build-dependencies]
-cc = "1"
 
 [[bin]]
 name = "librepods-tray"
