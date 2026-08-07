@@ -52,9 +52,12 @@ public sealed class TrayIcon : IDisposable
         _client = client;
 
         var menu = new MenuFlyout();
-        // The SecondWindow context-menu host doesn't grow to the content, so long
-        // labels ("Noise Cancellation", the device name) get clipped. Give the
-        // presenter a floor width so every item shows in full.
+        // The SecondWindow host is a tiny window, and a flyout is by default
+        // *constrained to its XamlRoot's window bounds* — so long labels ("Noise
+        // Cancellation", the device name) get clipped to that narrow window.
+        // ShouldConstrainToRootBounds=false lets the flyout size to its content and
+        // spill beyond the host window; the MinWidth floor keeps it tidy.
+        menu.ShouldConstrainToRootBounds = false;
         var presenterStyle = new Style(typeof(MenuFlyoutPresenter));
         presenterStyle.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 240.0));
         menu.MenuFlyoutPresenterStyle = presenterStyle;
