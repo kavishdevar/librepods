@@ -17,6 +17,7 @@ mod eld;
 mod media;
 mod micpipe;
 mod overlay;
+mod rename;
 mod theme;
 mod volume;
 
@@ -331,6 +332,12 @@ fn main() {
         Some((m, n)) => (Some(m), n),
         None => (None, "AirPods".to_string()),
     };
+
+    // Auto-rename the virtual mic to the connected device's name (via the elevated
+    // scheduled task; idempotent, so this is a cheap no-op when already correct).
+    if mac.is_some() {
+        rename::apply(&dev_name);
+    }
     // The current driver handle, shared with the tray menu. run_receiver
     // re-opens it every session (the device object is recreated on reconnect,
     // so a stale handle fails) and publishes the live one here.

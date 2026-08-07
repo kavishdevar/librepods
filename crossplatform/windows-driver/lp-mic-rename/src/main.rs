@@ -102,9 +102,32 @@ unsafe fn write_desc(guid: &str, name: &str) -> bool {
     rc.is_ok()
 }
 
+/// The name to apply: the CLI arg if given, else the contents of
+/// %LOCALAPPDATA%\LibrePods\micname.txt (so an elevated scheduled task launched
+/// by the non-elevated tray can pick up the connected device's name).
+fn resolve_name() -> Option<String> {
+    if let Some(a) = std::env::args().nth(1) {
+        let a = a.trim().to_string();
+        if !a.is_empty() {
+            return Some(a);
+        }
+    }
+    let la = std::env::var("LOCALAPPDATA").ok()?;
+    let s = std::fs::read_to_string(format!("{la}\\LibrePods\\micname.txt")).ok()?;
+    let s = s.trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
 fn main() {
-    let name = std::env::args().nth(1).unwrap_or_else(|| {
-        eprintln!("usage: lp-mic-rename \"<new microphone name>\"");
+    let name = resolve_name().unwrap_or_else(|| {
+        eprintln!(
+            "usage: lp-mic-rename \"<new microphone name>\"\n       \
+             (or write the name to %LOCALAPPDATA%\\LibrePods\\micname.txt)"
+        );
         std::process::exit(2);
     });
 
