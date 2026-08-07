@@ -3,6 +3,7 @@ using LibrePods.WinUI.Ipc;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 
 namespace LibrePods.WinUI;
