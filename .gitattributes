@@ -1,0 +1,14 @@
+
+# --- Collapse third-party / generated files in GitHub diffs (they're not ours
+# to review; the build still uses them). ---
+# Vendored FFmpeg (LGPL prebuilt: headers + import libs + DLLs), not our code:
+crossplatform/windows/daemon/vendor/** linguist-vendored
+# Generated Rust lockfiles:
+**/Cargo.lock linguist-generated
+# Prebuilt driver packages (binary artifacts):
+crossplatform/windows/drivers/**/prebuilt/** linguist-vendored
+# Kernel drivers are derived from Microsoft/nefarius samples (mic = MS ACX
+# AudioCodec sample; aap = bthecho/BthPS3). Collapse the sample-derived source in
+# diffs — our modifications are documented in the drivers' READMEs + HANDOFF.
+crossplatform/windows/drivers/mic/** linguist-vendored
+crossplatform/windows/drivers/aap/** linguist-vendored
