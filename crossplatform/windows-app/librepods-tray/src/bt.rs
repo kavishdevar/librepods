@@ -12,8 +12,15 @@ fn utf16_name(buf: &[u16]) -> String {
     String::from_utf16_lossy(&buf[..end])
 }
 
-/// (address, display name) of the first paired device whose name contains
-/// "airpod". The Windows " - Find My" suffix is stripped for display.
+/// Name patterns of Apple-chip audio devices that speak the AAP protocol — not
+/// just AirPods but Beats too (Powerbeats, Beats Fit Pro, Studio Buds, Solo,
+/// Studio3, Flex…), which share the same H1/W1 chip and endpoint. Matched
+/// case-insensitively against the paired device's name.
+const AAP_NAME_HINTS: &[&str] = &["airpod", "beats"];
+
+/// (address, display name) of the first paired device whose name matches a known
+/// AAP device (AirPods / Beats). The Windows " - Find My" suffix is stripped for
+/// display.
 pub fn find_airpods() -> Option<(u64, String)> {
     unsafe {
         let mut params: BLUETOOTH_DEVICE_SEARCH_PARAMS = zeroed();
@@ -34,7 +41,8 @@ pub fn find_airpods() -> Option<(u64, String)> {
         let mut found = None;
         loop {
             let name = utf16_name(&info.szName);
-            if name.to_lowercase().contains("airpod") {
+            let lname = name.to_lowercase();
+            if AAP_NAME_HINTS.iter().any(|h| lname.contains(h)) {
                 let clean = name
                     .trim_end_matches("- Find My")
                     .trim_end_matches(" -")

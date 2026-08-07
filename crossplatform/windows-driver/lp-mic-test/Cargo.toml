@@ -1,0 +1,13 @@
+[package]
+name = "lp-mic-test"
+version = "0.1.0"
+edition = "2021"
+description = "Feed a test tone into the LibrePodsMic virtual microphone (Phase 2 pipe test)."
+
+[[bin]]
+name = "lp-mic-test"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 2
+strip = true

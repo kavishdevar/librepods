@@ -11,6 +11,45 @@ pub const SET_FEATURES: [u8; 14] = [
 pub const REQUEST_NOTIFS: [u8; 10] =
     [0x04, 0x00, 0x04, 0x00, 0x0F, 0x00, 0xFF, 0xFF, 0xFF, 0xFF];
 
+/// Enable the hi-res (AAC-ELD) microphone stream — the AirPods start pushing
+/// 0x58 uplink audio packets. From LibrePods PR #655.
+pub const START_AUDIO: [u8; 19] = [
+    0x04, 0x00, 0x04, 0x00, 0x58, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x01, 0x82, 0x00, 0x00, 0x00,
+    0x04, 0x96, 0x00,
+];
+/// Stop the hi-res microphone stream.
+pub const STOP_AUDIO: [u8; 12] = [
+    0x04, 0x00, 0x04, 0x00, 0x58, 0x00, 0x00, 0x00, 0x02, 0x00, 0x03, 0x01,
+];
+
+/// True if `data` is a 0x58 uplink audio packet (carries AAC-ELD frames).
+pub fn is_audio_packet(data: &[u8]) -> bool {
+    data.len() >= 8
+        && data[0] == 0x04
+        && data[2] == 0x04
+        && data[4] == 0x58
+        && data[6] == 0x01
+        && data[7] == 0x00
+}
+
+/// 0x58 packet layout (PR #655): a 22-byte header, then one or more access
+/// units, each a 5-byte record header (length at byte 4) followed by the AU
+/// payload. Calls `f` with each AU's AAC-ELD bytes.
+pub fn for_each_au(sdu: &[u8], mut f: impl FnMut(&[u8])) {
+    const HEADER_LEN: usize = 22;
+    let mut off = HEADER_LEN;
+    while off + 5 <= sdu.len() {
+        let au_len = sdu[off + 4] as usize;
+        let start = off + 5;
+        let end = start + au_len;
+        if au_len == 0 || end > sdu.len() {
+            break;
+        }
+        f(&sdu[start..end]);
+        off = end;
+    }
+}
+
 /// Listening-mode (ANC) control command. value = mode (1 off, 2 anc, 3 transparency, 4 adaptive).
 pub fn anc_command(mode: u8) -> [u8; 11] {
     [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, mode, 0x00, 0x00, 0x00]

@@ -9,13 +9,19 @@
 
 #![windows_subsystem = "windows"] // no console window
 
+mod a2dp;
 mod aap;
 mod bt;
 mod driver;
+mod eld;
 mod media;
+mod micpipe;
 mod overlay;
+mod rename;
+mod theme;
 mod volume;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -24,6 +30,8 @@ use driver::Driver;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIconBuilder};
 
+use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
+use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, MSG, PostQuitMessage, SetTimer, TranslateMessage, WM_TIMER,
 };
@@ -94,7 +102,14 @@ fn battery_icon(percent: u8) -> Icon {
     let x = ((w as f32 - tw) / 2.0).max(0.0) as i32;
     let y = ((h as f32 - scale.y) / 2.0).max(0.0) as i32 - 2;
 
-    draw_text_mut(&mut img, Rgba([255u8, 255, 255, 255]), x, y, scale, &font, &text);
+    // Contrast with the taskbar: white digits on a dark taskbar, near-black on a
+    // light one (otherwise white digits vanish on a light taskbar).
+    let digit = if theme::system_dark() {
+        Rgba([255u8, 255, 255, 255])
+    } else {
+        Rgba([24u8, 24, 24, 255])
+    };
+    draw_text_mut(&mut img, digit, x, y, scale, &font, &text);
     Icon::from_rgba(img.into_raw(), w, h).unwrap_or_else(|_| make_icon())
 }
 
@@ -119,8 +134,14 @@ fn run_receiver(
     state: Shared,
     dev_name: String,
     driver_cell: Arc<Mutex<Option<Driver>>>,
+    mic_on: Arc<AtomicBool>,
+    pipe: Option<Arc<micpipe::MicPipe>>,
 ) {
-    let mut buf = [0u8; 1024];
+    let mut buf = [0u8; 8192];
+    let mut audio_pkts = 0u32;
+    // Hi-res mic decoder (Phase 3b): created on the first audio packet, torn down
+    // when the mic is disabled. It feeds the shared mic pipe.
+    let mut decoder: Option<eld::Decoder> = None;
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause on this thread
     let mut last_anc = 0u8;
     let mut last_case_present: Option<bool> = None;
@@ -165,9 +186,43 @@ fn run_receiver(
         let mut we_paused = false;
         let mut ticks = 0u32;
         loop {
+            let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
                 if n > 0 {
+                    got_data = true;
                     let data = &buf[..n];
+                    // Hi-res mic (Phase 3 de-risk): while enabled, count the 0x58
+                    // uplink audio packets and confirm the stream actually started.
+                    if mic_on.load(Ordering::Relaxed) {
+                        if aap::is_audio_packet(data) {
+                            // Bring up the decoder on the first audio packet and
+                            // prime the shared mic pipe's ring with a small cushion.
+                            if decoder.is_none() {
+                                decoder = eld::Decoder::new();
+                                if let Some(pp) = pipe.as_ref() {
+                                    // We feed ~30 ms per-packet bursts while the
+                                    // capture drains steadily, so an 80 ms head
+                                    // start avoids underruns without much latency.
+                                    pp.write(&[0i16; 3840]);
+                                }
+                            }
+                            if let (Some(dec), Some(pp)) = (decoder.as_mut(), pipe.as_ref()) {
+                                // Decode all the packet's AUs, then write once.
+                                let mut out: Vec<i16> = Vec::new();
+                                aap::for_each_au(data, |au| {
+                                    out.extend_from_slice(dec.decode(au));
+                                });
+                                if !out.is_empty() {
+                                    pp.write(&out);
+                                }
+                            }
+                            audio_pkts = audio_pkts.saturating_add(1);
+                        }
+                    } else if decoder.is_some() {
+                        // Mic disabled: drop the decoder.
+                        decoder = None;
+                        audio_pkts = 0;
+                    }
                     if let Some(b) = aap::parse_battery(data) {
                         let mut s = state.lock().unwrap();
                         // merge — a packet may carry only some components
@@ -226,6 +281,14 @@ fn run_receiver(
                     }
                 }
             }
+            // No data this cycle: yield the CPU. The driver's ACL read completes
+            // immediately with 0 bytes when idle (ACL_SHORT_TRANSFER_OK), so
+            // without this the loop spins a core AND floods the Bluetooth stack
+            // with back-to-back ACL reads that contend with the A2DP audio
+            // (the crackle). Pushed events still arrive within ~150 ms.
+            if !got_data {
+                thread::sleep(Duration::from_millis(150));
+            }
             // Passive session: no periodic L2CAP sends — those make Windows
             // re-negotiate the audio profile and cut/switch the output. Detect a
             // real disconnect via GET_STATUS, which reads a driver variable only
@@ -249,8 +312,19 @@ fn run_receiver(
 }
 
 fn main() {
+    // Single instance: if a LibrePods tray is already running, exit quietly so we
+    // never end up with two icons fighting over the single-open driver / mic pipe.
+    unsafe {
+        let name: Vec<u16> = "Local\\LibrePodsTraySingleton\0".encode_utf16().collect();
+        let _ = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            return;
+        }
+    }
+
     volume::init(); // COM for Core Audio, on this (main) thread
     overlay::init(); // create the (hidden) centered popup window on this thread
+    theme::apply_menu_theme(); // dark/light Win32 context menu, per the OS theme
 
     let state: Shared = Arc::new(Mutex::new(State::default()));
 
@@ -258,10 +332,30 @@ fn main() {
         Some((m, n)) => (Some(m), n),
         None => (None, "AirPods".to_string()),
     };
+
+    // Auto-rename the virtual mic to the connected device's name (via the elevated
+    // scheduled task; idempotent, so this is a cheap no-op when already correct).
+    if mac.is_some() {
+        rename::apply(&dev_name);
+    }
     // The current driver handle, shared with the tray menu. run_receiver
     // re-opens it every session (the device object is recreated on reconnect,
     // so a stale handle fails) and publishes the live one here.
     let driver_cell: Arc<Mutex<Option<Driver>>> = Arc::new(Mutex::new(None));
+
+    // Whether the hi-res mic stream is enabled. Driven automatically by the
+    // capture-activity poll below (on when an app records from the virtual mic),
+    // read by the receive loop.
+    let mic_on = Arc::new(AtomicBool::new(false));
+
+    // Auto mode (default): the poll auto-enables/disables the mic on recording.
+    // Users who prefer can turn it off and drive the mic manually.
+    let auto_mode = Arc::new(AtomicBool::new(true));
+
+    // The single (exclusive) handle to the virtual-mic control device, shared by
+    // the receive thread (writes decoded audio) and the poll thread (reads the
+    // capture-activity counter).
+    let pipe: Option<Arc<micpipe::MicPipe>> = micpipe::MicPipe::open().map(Arc::new);
 
     // Start the background AAP session if the AirPods are paired. run_receiver
     // opens the driver itself and keeps retrying, so this works even if they
@@ -270,7 +364,62 @@ fn main() {
         let st = state.clone();
         let name = dev_name.clone();
         let cell = driver_cell.clone();
-        thread::spawn(move || run_receiver(mac, st, name, cell));
+        let mic = mic_on.clone();
+        let rx_pipe = pipe.clone();
+        thread::spawn(move || run_receiver(mac, st, name, cell, mic, rx_pipe));
+
+        // Auto-activate: the driver's capture counter advances while an app is
+        // recording from the virtual mic. When it starts, enable the hi-res
+        // stream; when it stops (debounced ~1.5 s), disable it and restore A2DP
+        // stereo — so the mic "just works" when you join a call.
+        let poll_pipe = pipe.clone();
+        let poll_mic = mic_on.clone();
+        let poll_cell = driver_cell.clone();
+        let poll_name = dev_name.clone();
+        let poll_auto = auto_mode.clone();
+        thread::spawn(move || {
+            let mut prev = poll_pipe.as_ref().map(|p| p.status()).unwrap_or(0);
+            let mut idle = 0u32;
+            let mut on = false;
+            loop {
+                thread::sleep(Duration::from_millis(500));
+                let cur = match poll_pipe.as_ref() {
+                    Some(p) => p.status(),
+                    None => break,
+                };
+                let capturing = cur != prev;
+                prev = cur;
+                // Manual mode: don't auto-manage (but keep `prev` fresh above so
+                // re-enabling auto doesn't fire a spurious transition).
+                if !poll_auto.load(Ordering::Relaxed) {
+                    on = poll_mic.load(Ordering::Relaxed);
+                    continue;
+                }
+                if capturing {
+                    idle = 0;
+                    if !on {
+                        on = true;
+                        poll_mic.store(true, Ordering::Relaxed);
+                        if let Some(drv) = poll_cell.lock().unwrap().clone() {
+                            let _ = drv.send(&aap::START_AUDIO);
+                        }
+                        overlay::show(&poll_name, "Microphone in use — hi-res on");
+                    }
+                } else {
+                    idle += 1;
+                    if on && idle >= 3 {
+                        on = false;
+                        poll_mic.store(false, Ordering::Relaxed);
+                        if let Some(drv) = poll_cell.lock().unwrap().clone() {
+                            let _ = drv.send(&aap::STOP_AUDIO);
+                        }
+                        overlay::show(&poll_name, "Microphone released — restoring stereo…");
+                        a2dp::reset(mac);
+                        overlay::show(&poll_name, "Stereo restored");
+                    }
+                }
+            }
+        });
     }
 
     // --- Tray menu ---
@@ -285,6 +434,10 @@ fn main() {
     let m_vol_up = MenuItem::new("Volume  +", true, None);
     let m_vol_down = MenuItem::new("Volume  −", true, None);
     let m_mute = MenuItem::new("Mute / Unmute", true, None);
+    // Hi-res mic: a status line + an "auto" toggle + a manual override.
+    let m_mic = MenuItem::new("Microphone: idle", false, None);
+    let m_auto = CheckMenuItem::new("Auto-enable on recording", true, true, None);
+    let m_mic_manual = CheckMenuItem::new("Hi-res microphone (manual)", true, false, None);
     let m_open = MenuItem::new("Open App", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
@@ -295,6 +448,8 @@ fn main() {
     let vol_up_id = m_vol_up.id().clone();
     let vol_down_id = m_vol_down.id().clone();
     let mute_id = m_mute.id().clone();
+    let auto_id = m_auto.id().clone();
+    let mic_manual_id = m_mic_manual.id().clone();
     let open_id = m_open.id().clone();
     let quit_id = quit.id().clone();
 
@@ -313,6 +468,9 @@ fn main() {
     menu.append(&m_vol_down).unwrap();
     menu.append(&m_mute).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
+    menu.append(&m_mic).unwrap();
+    menu.append(&m_auto).unwrap();
+    menu.append(&m_mic_manual).unwrap();
     menu.append(&m_open).unwrap();
     menu.append(&quit).unwrap();
 
@@ -354,6 +512,13 @@ fn main() {
                 .unwrap_or_else(|| "—".into())
         };
         vol_line.set_text(format!("Volume: {vol}"));
+        m_mic.set_text(if mic_on.load(Ordering::Relaxed) {
+            "Microphone: recording (hi-res)"
+        } else {
+            "Microphone: idle"
+        });
+        m_auto.set_checked(auto_mode.load(Ordering::Relaxed));
+        m_mic_manual.set_checked(mic_on.load(Ordering::Relaxed));
         let _ = tray.set_tooltip(Some(format!(
             "{dev_name} · {bt} · ANC: {} · Vol: {vol}",
             aap::anc_name(s.anc)
@@ -365,6 +530,7 @@ fn main() {
             _ => make_icon(),
         };
         let _ = tray.set_icon(Some(icon));
+        theme::apply_menu_theme(); // keep the menu theme in sync with the OS
     };
 
     unsafe {
@@ -406,6 +572,46 @@ fn main() {
                     refresh();
                 } else if ev.id == mute_id {
                     volume::toggle_mute();
+                    refresh();
+                } else if ev.id == auto_id {
+                    let on = !auto_mode.load(Ordering::Relaxed);
+                    auto_mode.store(on, Ordering::Relaxed);
+                    m_auto.set_checked(on);
+                    overlay::show(
+                        &dev_name,
+                        if on { "Microphone: auto mode" } else { "Microphone: manual mode" },
+                    );
+                } else if ev.id == mic_manual_id {
+                    // Manual override: turn the hi-res mic on/off directly.
+                    let on = !mic_on.load(Ordering::Relaxed);
+                    m_mic_manual.set_checked(on);
+                    if on {
+                        mic_on.store(true, Ordering::Relaxed);
+                        if let Some(drv) = driver_cell.lock().unwrap().clone() {
+                            let _ = drv.send(&aap::START_AUDIO);
+                        }
+                        overlay::show(&dev_name, "Hi-res mic on");
+                    } else {
+                        // Same 1.5 s debounce as auto so the tail isn't clipped,
+                        // then stop + restore stereo, keeping the card up through
+                        // the whole reconnect.
+                        let mic = mic_on.clone();
+                        let cell = driver_cell.clone();
+                        let name = dev_name.clone();
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(3500));
+                            mic.store(false, Ordering::Relaxed);
+                            if let Some(drv) = cell.lock().unwrap().clone() {
+                                let _ = drv.send(&aap::STOP_AUDIO);
+                            }
+                            overlay::show(&name, "Restoring stereo…");
+                            if let Some(m) = mac {
+                                a2dp::reset(m);
+                            }
+                            overlay::show(&name, "Stereo restored");
+                        });
+                        overlay::show(&dev_name, "Hi-res mic off");
+                    }
                     refresh();
                 } else if let Some(mode) = mode_for(&ev.id) {
                     if let Some(drv) = driver_cell.lock().unwrap().clone() {

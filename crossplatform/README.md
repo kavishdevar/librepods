@@ -3,8 +3,9 @@
 This directory brings the full **LibrePods** app to **Windows**, natively and
 100% open-source, while **keeping Linux working from the same code**. It builds
 on the Linux Rust app ([PR #241](https://github.com/librepods-org/librepods/pull/241))
-and extends it into a single **cross-platform** crate plus an open-source
-**Windows kernel driver** for the Apple Accessory Protocol (AAP).
+and extends it into a single **cross-platform** crate plus two open-source
+**Windows kernel drivers** — one for the Apple Accessory Protocol (AAP), one that
+exposes the AirPods as a native **microphone**.
 
 > Apple's AAP runs over a classic-Bluetooth L2CAP channel (PSM `0x1001`) that
 > Windows won't let user-mode apps open. So we wrote a signed **KMDF profile
@@ -13,15 +14,28 @@ and extends it into a single **cross-platform** crate plus an open-source
 
 ## ✅ What works (validated on real AirPods Pro on Windows)
 
+**Control & status**
+
 | Feature | Status |
 | --- | --- |
 | **Battery** (L / R / Case, charging state) | ✅ matches iPhone |
 | **Noise control** (Off / ANC / Transparency / Adaptive) | ✅ read + control |
 | **Ear detection** | ✅ |
-| **Auto-pause / resume** when you remove/insert a bud | ✅ via SMTC |
-| **Conversational Awareness** (volume ducking when you speak) | ✅ via WASAPI |
 | **Device info** (model, serials, firmware) | ✅ |
 | **LE battery** via BLE advertisement (IRK/enc keys) | ✅ |
+
+**Audio**
+
+| Feature | Status |
+| --- | --- |
+| **Auto-pause / resume** when you remove/insert a bud | ✅ via SMTC |
+| **Conversational Awareness** (volume ducking when you speak) | ✅ via WASAPI |
+| **Hi-res microphone** — the AirPods AAC-ELD mic as a native Windows input | ✅ see below |
+
+**App & UX**
+
+| Feature | Status |
+| --- | --- |
 | **Full iced GUI** running natively | ✅ |
 | **System tray** | ✅ (`tray-icon`) |
 | **MagicPods-style centered popup** (connect / ANC / case) | ✅ (v1) |
@@ -30,6 +44,35 @@ and extends it into a single **cross-platform** crate plus an open-source
 The whole app also **compiles and links as a Windows `.exe`**
 (`cargo build --target x86_64-pc-windows-gnu`), and **Linux stays green** at
 every step.
+
+## 🎙️ The hi-res microphone
+
+Windows has no API to "create a virtual microphone", so we ship a **second**
+kernel driver — `LibrePodsMic`, a virtual audio device (ACX) that appears as a
+real capture endpoint. The tray reads the AirPods' uplink audio over AAP, decodes
+it, and streams PCM into that device, so **any app (Teams, Zoom, Discord, OBS…)
+can use the AirPods mic** — the Windows counterpart to Linux
+[PR #655](https://github.com/librepods-org/librepods/pull/655).
+
+```
+AirPods ──AAP/L2CAP──▶ LibrePodsAAP ──IOCTL──▶ tray: decode AAC-ELD → resample → PCM
+                                                          │
+                                                          ▼
+                                          LibrePodsMic virtual mic ──▶ any app
+```
+
+| Capability | Status |
+| --- | --- |
+| AAC-ELD decode (FFmpeg/libavcodec, LGPL) + resample to 48 kHz | ✅ clean & in-tune |
+| **Auto-activate** — hi-res stream turns on when an app records, off when it stops | ✅ (+ manual mode) |
+| **A2DP auto-reset** — restores stereo playback after the mic degrades it to mono | ✅ |
+| **Make-up gain** — the mic isn't quiet | ✅ (×3, soft-limited) |
+| **Dynamic name** — the mic shows the connected device ("AirPods Pro de …", Beats…) | ✅ auto, no UAC |
+| Minimal FFmpeg build (aac-only) — avcodec **69 MB → 0.7 MB** | ✅ |
+
+The dynamic name is set by `lp-mic-rename` (writes the endpoint's `DeviceDesc` the
+same way the Sound "Rename" UI does), launched by the tray through an elevated
+on-demand scheduled task — so it happens automatically with no UAC prompt.
 
 ## How it's built — one crate, two operating systems
 
@@ -44,6 +87,7 @@ compile time (`#[cfg(target_os)]`). The protocol/UI code (`aacp`, `att`, `le`,
 | LE advertisements | `bluer::monitor` | WinRT `BluetoothLEAdvertisementWatcher` |
 | Audio routing / volume | PulseAudio | WASAPI (Core Audio) |
 | Media control | MPRIS | SMTC |
+| Microphone | PipeWire virtual input | **LibrePodsMic** virtual audio driver |
 | System tray | `ksni` | `tray-icon` |
 | Paths | XDG | `%APPDATA%` |
 
@@ -53,23 +97,31 @@ compile time (`#[cfg(target_os)]`). The protocol/UI code (`aacp`, `att`, `le`,
   the `platform/` abstraction layer.
 - **`windows-driver/LibrePodsAAP/`** — the open-source KMDF AAP kernel driver
   (`+ prebuilt/` so it installs without the WDK; Test Mode).
+- **`windows-driver/LibrePodsMic/`** — the virtual-microphone audio driver (ACX),
+  plus **`lp-mic-rename/`** (names the mic after the connected device).
 - **`windows-app/`** — a lightweight native **tray app** (battery + ANC + volume
-  + ear-detection auto-pause + the popup overlay) and an egui window, plus the
-  `lp-driver-test` CLI.
+  + ear-detection auto-pause + the hi-res mic + the popup overlay) and an egui
+  window, plus the `lp-driver-test` CLI.
 
 ## Install (Windows, Test Mode)
 
-**Ready-to-install builds are in [`dist/windows/`](dist/windows/)** — both apps,
-the driver, and a one-shot `install.ps1`. The driver is test-signed, so it needs
-Secure Boot **off** + `bcdedit /set testsigning on` + reboot; then run the
+**Ready-to-install builds are in [`dist/windows/`](dist/windows/)** — the apps,
+the driver, and a one-shot `install.ps1`. The drivers are test-signed, so they
+need Secure Boot **off** + `bcdedit /set testsigning on` + reboot; then run the
 installer (elevated). Full steps are in
 [`dist/windows/README.md`](dist/windows/README.md); build instructions + the
 technical log are in `HANDOFF.md`.
 
+> **Signing note.** Kernel drivers must be signed to load. For personal use we
+> test-sign (above). Distributing to others without Test Mode needs an **EV
+> certificate + Microsoft Partner Center** attestation (Azure Trusted Signing
+> covers the user-mode app for SmartScreen, but **not** kernel drivers).
+
 ## Not done yet / in progress
 
-- One-click redistributable installer (bundle driver + app).
+- One-click redistributable installer (bundle both drivers + app).
 - Unify the interim tray app and the iced window into one app.
+- Fold the `LibrePodsMic` driver install into the one-shot `install.ps1`.
 - Release build packaging; precise BLE lid-open detection; heart-rate RE
   (AirPods Pro 3).
 

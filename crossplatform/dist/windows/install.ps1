@@ -55,6 +55,25 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item (Join-Path $here 'librepods-tray.exe') $dest -Force
 Copy-Item (Join-Path $here 'librepods.exe') $dest -Force
 
+# lp-mic-rename + its elevated on-demand task: lets the (unelevated) tray rename
+# the virtual mic to the connected device's name without a UAC prompt.
+$renameExe = Join-Path $here 'lp-mic-rename.exe'
+if (Test-Path $renameExe) {
+    Copy-Item $renameExe $dest -Force
+    $renameDest = Join-Path $dest 'lp-mic-rename.exe'
+    Write-Host '==> Registering the elevated mic-rename task...'
+    $taskName = 'LibrePods Rename Mic'
+    $action    = New-ScheduledTaskAction -Execute $renameDest
+    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+        -LogonType Interactive -RunLevel Highest
+    $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
+        -StartWhenAvailable
+    Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal `
+        -Settings $settings -Description 'Rename the LibrePods virtual mic to the connected device name.' `
+        -Force | Out-Null
+}
+
 Write-Host '==> Adding the tray app to startup...'
 $startup = [Environment]::GetFolderPath('Startup')
 $ws = New-Object -ComObject WScript.Shell
