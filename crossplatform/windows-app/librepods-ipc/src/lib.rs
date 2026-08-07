@@ -4,8 +4,13 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The duplex named pipe the daemon serves and the clients connect to.
-pub const PIPE_NAME: &str = r"\\.\pipe\LibrePods";
+/// Two one-directional named pipes (a single duplex pipe deadlocks: a Windows
+/// *synchronous* handle serializes I/O, so a blocking ReadFile for commands
+/// stalls the WriteFile for events on the same handle). The daemon only WRITES
+/// events on `PIPE_EVENTS` and only READS commands on `PIPE_CMDS`, so no handle
+/// ever does both directions concurrently.
+pub const PIPE_EVENTS: &str = r"\\.\pipe\LibrePods-events";
+pub const PIPE_CMDS: &str = r"\\.\pipe\LibrePods-cmds";
 
 /// Battery levels (percent), each optional — a packet may carry only some.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +46,8 @@ pub enum Command {
     SetAnc { mode: u8 },
     /// Set the hi-res mic mode (auto-enable and/or manual override).
     SetMicMode { auto: bool, manual: bool },
+    /// Start the AAP session (the user accepted the "connect?" prompt).
+    Connect,
     /// Request a fresh `State` snapshot.
     GetState,
     /// Stop the daemon too (e.g. from the tray's "Quit").
@@ -55,6 +62,9 @@ pub enum Event {
     State(Snapshot),
     /// A notification for the client to render with its overlay UI.
     Overlay { title: String, body: String },
+    /// The device is nearby (BLE) but not connected — the client shows a
+    /// clickable card; a click sends `Command::Connect`.
+    ConnectPrompt { name: String },
 }
 
 /// Which UI a client is.

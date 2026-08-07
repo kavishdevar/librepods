@@ -15,15 +15,21 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Pipes",
     "Win32_Storage_FileSystem",
     "Win32_Security",
+    "Win32_Security_Authorization",
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_Bluetooth",
 ] }
-# `windows` (COM/WinRT) for the SMTC ear-detection auto-pause (media.rs).
+# `windows` (COM/WinRT) for SMTC ear-detection auto-pause (media.rs) + the BLE
+# proximity watcher (le.rs).
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_System_Com",
     "Foundation",
+    "Foundation_Collections",
     "Media_Control",
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_Advertisement",
+    "Storage_Streams",
 ] }
 
 [build-dependencies]

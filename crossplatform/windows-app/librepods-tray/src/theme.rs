@@ -40,6 +40,34 @@ pub fn system_dark() -> bool {
     dword("SystemUsesLightTheme").map(|v| v == 0).unwrap_or(true)
 }
 
+/// The user's Windows accent color as a GDI COLORREF (0x00BBGGRR), if set.
+/// Stored as ABGR under HKCU\...\DWM\AccentColor; drop the alpha byte.
+pub fn accent() -> Option<u32> {
+    let sub: Vec<u16> = "Software\\Microsoft\\Windows\\DWM"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let val: Vec<u16> = "AccentColor".encode_utf16().chain(std::iter::once(0)).collect();
+    let mut data: u32 = 0;
+    let mut size = 4u32;
+    let r = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            sub.as_ptr(),
+            val.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            &mut data as *mut u32 as *mut core::ffi::c_void,
+            &mut size,
+        )
+    };
+    if r == 0 {
+        Some(data & 0x00FF_FFFF)
+    } else {
+        None
+    }
+}
+
 /// Make Win32 context menus (the tray's right-click menu) follow the app theme,
 /// via the undocumented uxtheme ordinals SetPreferredAppMode (135) +
 /// FlushMenuThemes (136). Win32 menus don't honor dark mode otherwise. No-op on

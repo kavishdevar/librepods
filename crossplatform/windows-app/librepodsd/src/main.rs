@@ -1,7 +1,9 @@
 //! librepodsd — the LibrePods Windows daemon. Owns the exclusive AAP driver
 //! handle, the AAP session, and the hi-res mic pipeline, and serves the tray /
 //! full app over a named-pipe IPC (NDJSON). See ../../daemon-ipc/PLAN.md.
+//! Runs headless — no console window (it's spawned by the tray/app).
 
+#![windows_subsystem = "windows"]
 #![allow(dead_code)]
 
 mod a2dp;
@@ -9,6 +11,7 @@ mod aap;
 mod bt;
 mod driver;
 mod eld;
+mod le;
 mod media;
 mod micpipe;
 mod rename;
@@ -19,12 +22,14 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use librepods_ipc::{from_line, to_line, Command, Event, Snapshot, PIPE_NAME};
+use librepods_ipc::{from_line, to_line, Command, Event, Snapshot, PIPE_CMDS, PIPE_EVENTS};
 
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_PIPE_CONNECTED, HANDLE,
     INVALID_HANDLE_VALUE,
 };
+use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
+use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
 use windows_sys::Win32::Storage::FileSystem::{ReadFile, WriteFile, PIPE_ACCESS_DUPLEX};
 use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, PIPE_READMODE_BYTE, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
@@ -36,6 +41,19 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+fn log(s: &str) {
+    use std::io::Write;
+    if let Ok(la) = std::env::var("LOCALAPPDATA") {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(format!("{la}\\LibrePods\\daemon.log"))
+        {
+            let _ = writeln!(f, "{s}");
+        }
+    }
+}
+
 fn battery_text(b: &librepods_ipc::Battery, connected: bool) -> String {
     if !connected {
         return "Disconnected".to_string();
@@ -44,31 +62,44 @@ fn battery_text(b: &librepods_ipc::Battery, connected: bool) -> String {
     format!("Left {}   Right {}   Case {}", f(b.left), f(b.right), f(b.case))
 }
 
-/// A named-pipe HANDLE we can share across threads (broadcast writer + reader).
-/// Duplex pipes allow concurrent read/write on the same handle.
-struct Client(HANDLE);
-unsafe impl Send for Client {}
+/// Owns a client's pipe HANDLE; closes it once both the reader and writer
+/// threads have dropped their `Arc<Pipe>`. Duplex pipes allow the reader and
+/// writer to use the same handle concurrently.
+struct Pipe(HANDLE);
+impl Drop for Pipe {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.0) };
+    }
+}
+unsafe impl Send for Pipe {}
+unsafe impl Sync for Pipe {}
+
+/// Outgoing queue to one client (drained by its writer thread — so a slow client
+/// never blocks the session/broadcast, i.e. async delivery).
+type ClientTx = std::sync::mpsc::Sender<Vec<u8>>;
 
 /// Everything the session, poll and IPC threads share.
 #[derive(Clone)]
 struct Ctx {
     state: Arc<Mutex<Snapshot>>,
-    clients: Arc<Mutex<Vec<Client>>>,
+    clients: Arc<Mutex<Vec<ClientTx>>>,
     driver_cell: Arc<Mutex<Option<driver::Driver>>>,
     mic_on: Arc<AtomicBool>,
     auto_mode: Arc<AtomicBool>,
+    /// The user accepted the "connect?" prompt — the session may start.
+    connect_requested: Arc<AtomicBool>,
     pipe: Option<Arc<micpipe::MicPipe>>,
     dev_name: String,
     mac: u64,
 }
 
 impl Ctx {
-    /// Write one NDJSON event to every client; drop any that error (disconnected).
+    /// Queue one NDJSON event for every client (never blocks — each client's
+    /// writer thread drains its own queue). Drops clients whose writer has gone.
     fn send_event(&self, ev: &Event) {
-        let line = to_line(ev);
-        let bytes = line.as_bytes();
+        let bytes = to_line(ev).into_bytes();
         let mut clients = self.clients.lock().unwrap();
-        clients.retain(|c| unsafe { write_all(c.0, bytes) });
+        clients.retain(|tx| tx.send(bytes.clone()).is_ok());
     }
 
     /// Broadcast the current state (with the live mic/auto flags folded in).
@@ -113,12 +144,14 @@ unsafe fn write_all(h: HANDLE, buf: &[u8]) -> bool {
 }
 
 /// Per-client reader: parse NDJSON commands and apply them until it disconnects.
-unsafe fn client_reader(h: HANDLE, ctx: Ctx) {
+fn client_reader(pipe: Arc<Pipe>, ctx: Ctx) {
+    let h = pipe.0;
     let mut buf = [0u8; 4096];
     let mut acc = String::new();
     loop {
         let mut read = 0u32;
-        let ok = ReadFile(h, buf.as_mut_ptr(), buf.len() as u32, &mut read, ptr::null_mut());
+        let ok =
+            unsafe { ReadFile(h, buf.as_mut_ptr(), buf.len() as u32, &mut read, ptr::null_mut()) };
         if ok == 0 || read == 0 {
             break; // disconnected
         }
@@ -130,42 +163,97 @@ unsafe fn client_reader(h: HANDLE, ctx: Ctx) {
             }
         }
     }
-    CloseHandle(h);
+    // The pipe closes once this Arc and the writer thread's Arc both drop.
 }
 
-/// The IPC server: a multi-instance named pipe. Each connection is registered
-/// for broadcasts and gets its own reader thread.
-unsafe fn ipc_server(ctx: Ctx) {
-    let name = wide(PIPE_NAME);
+/// Build a security descriptor that lets same-user clients connect (the default
+/// null descriptor denies them). Leaks one small SD per server — negligible.
+unsafe fn pipe_sa(psd: &mut PSECURITY_DESCRIPTOR) -> SECURITY_ATTRIBUTES {
+    let sddl = wide("D:(A;;GA;;;AU)(A;;GA;;;SY)");
+    let ok = ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        sddl.as_ptr(),
+        1, // SDDL_REVISION_1
+        psd,
+        ptr::null_mut(),
+    );
+    SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: if ok != 0 { *psd } else { ptr::null_mut() },
+        bInheritHandle: 0,
+    }
+}
+
+/// Create one pipe instance and block until a client connects; returns its handle.
+unsafe fn accept(name: &[u16], sa: *const SECURITY_ATTRIBUTES) -> Option<HANDLE> {
+    let h = CreateNamedPipeW(
+        name.as_ptr(),
+        PIPE_ACCESS_DUPLEX,
+        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+        PIPE_UNLIMITED_INSTANCES,
+        4096,
+        4096,
+        0,
+        sa,
+    );
+    if h == INVALID_HANDLE_VALUE {
+        thread::sleep(Duration::from_secs(1));
+        return None;
+    }
+    // ERROR_PIPE_CONNECTED = the client beat us to it (still a success).
+    let ok = ConnectNamedPipe(h, ptr::null_mut());
+    if ok == 0 && GetLastError() != ERROR_PIPE_CONNECTED {
+        CloseHandle(h);
+        return None;
+    }
+    Some(h)
+}
+
+/// Events pipe: the daemon only WRITES here (one direction → no sync-handle
+/// serialization). Each client gets a queue drained by its own writer thread.
+unsafe fn events_server(ctx: Ctx) {
+    let name = wide(PIPE_EVENTS);
+    let mut psd: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    let sa = pipe_sa(&mut psd);
     loop {
-        let h = CreateNamedPipeW(
-            name.as_ptr(),
-            PIPE_ACCESS_DUPLEX,
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-            PIPE_UNLIMITED_INSTANCES,
-            4096,
-            4096,
-            0,
-            ptr::null(),
-        );
-        if h == INVALID_HANDLE_VALUE {
-            thread::sleep(Duration::from_secs(1));
-            continue;
-        }
-        // Block until a client connects (ERROR_PIPE_CONNECTED = it beat us to it).
-        let ok = ConnectNamedPipe(h, ptr::null_mut());
-        if ok == 0 && GetLastError() != ERROR_PIPE_CONNECTED {
-            CloseHandle(h);
-            continue;
-        }
-        ctx.clients.lock().unwrap().push(Client(h));
-        ctx.push_state(); // greet the newcomer (and refresh everyone)
-        let c = ctx.clone();
-        let sh = Client(h); // Send wrapper so the raw HANDLE can cross the thread
+        let h = match accept(&name, &sa) {
+            Some(h) => h,
+            None => continue,
+        };
+        let pipe = Arc::new(Pipe(h));
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let n = {
+            let mut cl = ctx.clients.lock().unwrap();
+            cl.push(tx);
+            cl.len()
+        };
+        log(&format!("events: client connected ({n} total)"));
+        let p = pipe.clone();
         thread::spawn(move || {
-            let sh = sh; // capture the whole (Send) Client, not just the raw field
-            client_reader(sh.0, c)
+            for msg in rx {
+                if !unsafe { write_all(p.0, &msg) } {
+                    break;
+                }
+            }
         });
+        ctx.push_state(); // greet the newcomer
+    }
+}
+
+/// Commands pipe: the daemon only READS here (one direction). Commands are
+/// global, so any client's commands just apply to the daemon.
+unsafe fn cmds_server(ctx: Ctx) {
+    let name = wide(PIPE_CMDS);
+    let mut psd: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    let sa = pipe_sa(&mut psd);
+    loop {
+        let h = match accept(&name, &sa) {
+            Some(h) => h,
+            None => continue,
+        };
+        log("cmds: client connected");
+        let pipe = Arc::new(Pipe(h));
+        let c = ctx.clone();
+        thread::spawn(move || client_reader(pipe, c));
     }
 }
 
@@ -189,6 +277,7 @@ fn set_mic(ctx: &Ctx, on: bool) {
 }
 
 fn apply_command(ctx: &Ctx, cmd: Command) {
+    log(&format!("cmd received: {cmd:?}"));
     match cmd {
         Command::Hello { .. } | Command::GetState => ctx.push_state(),
         Command::SetAnc { mode } => {
@@ -206,6 +295,10 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
                 ctx.push_state();
             }
         }
+        Command::Connect => {
+            // The user accepted the prompt — let the session start.
+            ctx.connect_requested.store(true, Ordering::Relaxed);
+        }
         Command::Shutdown => std::process::exit(0),
     }
 }
@@ -214,30 +307,62 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
 /// detection, and broadcast state + overlay events. (Ported from the tray.)
 fn run_receiver(ctx: Ctx) {
     let mac = ctx.mac;
+    log("run_receiver: entered");
     let mut buf = [0u8; 8192];
     let mut decoder: Option<eld::Decoder> = None;
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause
+    log("run_receiver: media init done");
     let mut last_anc = 0u8;
     let mut last_case_present: Option<bool> = None;
     let mut pending_card = false;
+    // Consecutive failures to reach the AirPods. After a few (they're on the
+    // iPhone / gone), we give up so we DON'T keep stealing them back — reset the
+    // gate and wait for a fresh prompt/Connect.
+    let mut reach_fails = 0u32;
+    // The user asked to connect — keep trying for a generous window (the AirPods
+    // may take a few seconds to become reachable) before giving up. We never
+    // *steal* here: a failed connect() doesn't pull them, and once connected a
+    // drop releases the gate (below).
+    let give_up = |ctx: &Ctx, fails: &mut u32| {
+        *fails += 1;
+        if *fails >= 12 {
+            *fails = 0;
+            ctx.connect_requested.store(false, Ordering::Relaxed);
+            log("run_receiver: gave up reaching AirPods — releasing");
+        }
+    };
     loop {
+        // Gate: stay idle until the user accepts the "connect?" prompt.
+        if !ctx.connect_requested.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(500));
+            continue;
+        }
         let driver = match driver::Driver::open() {
-            Ok(d) => d,
+            Ok(d) => {
+                log("run_receiver: driver opened");
+                d
+            }
             Err(_) => {
+                log("run_receiver: driver open FAILED");
                 ctx.state.lock().unwrap().connected = false;
                 *ctx.driver_cell.lock().unwrap() = None;
                 ctx.push_state();
-                thread::sleep(Duration::from_secs(3));
+                give_up(&ctx, &mut reach_fails);
+                thread::sleep(Duration::from_millis(1500));
                 continue;
             }
         };
         *ctx.driver_cell.lock().unwrap() = Some(driver.clone());
-        if !driver.connect(mac, aap::PSM_AACP).unwrap_or(false) {
+        let connected = driver.connect(mac, aap::PSM_AACP).unwrap_or(false);
+        log(&format!("run_receiver: connect({mac:#x}) = {connected}"));
+        if !connected {
             ctx.state.lock().unwrap().connected = false;
             ctx.push_state();
-            thread::sleep(Duration::from_secs(3));
+            give_up(&ctx, &mut reach_fails);
+            thread::sleep(Duration::from_millis(1500));
             continue;
         }
+        reach_fails = 0; // reached them — reset the give-up counter
         let _ = driver.send(&aap::HANDSHAKE);
         thread::sleep(Duration::from_millis(300));
         let _ = driver.send(&aap::SET_FEATURES);
@@ -246,6 +371,7 @@ fn run_receiver(ctx: Ctx) {
         ctx.state.lock().unwrap().connected = true;
         pending_card = true;
         ctx.push_state();
+        log("run_receiver: handshake done, connected=true");
 
         let mut we_paused = false;
         let mut last_status = Instant::now();
@@ -342,8 +468,11 @@ fn run_receiver(ctx: Ctx) {
                         *ctx.driver_cell.lock().unwrap() = None;
                         last_anc = 0;
                         last_case_present = None;
+                        // Released: never reconnect on our own (that would steal
+                        // them back from the iPhone) — wait for a fresh prompt.
+                        ctx.connect_requested.store(false, Ordering::Relaxed);
                         ctx.push_state();
-                        break; // reconnect
+                        break;
                     }
                 }
             }
@@ -409,12 +538,15 @@ fn main() {
         }
     }
 
+    log("=== librepodsd start ===");
     let (mac, dev_name) = match bt::find_airpods() {
         Some((m, n)) => (m, n),
         None => (0, "AirPods".to_string()),
     };
+    log(&format!("find_airpods: mac={mac:#x} name='{dev_name}'"));
 
     let pipe = micpipe::MicPipe::open().map(Arc::new);
+    log(&format!("mic pipe opened: {}", pipe.is_some()));
     let ctx = Ctx {
         state: Arc::new(Mutex::new(Snapshot {
             dev_name: dev_name.clone(),
@@ -425,6 +557,7 @@ fn main() {
         driver_cell: Arc::new(Mutex::new(None)),
         mic_on: Arc::new(AtomicBool::new(false)),
         auto_mode: Arc::new(AtomicBool::new(true)),
+        connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
         dev_name: dev_name.clone(),
         mac,
@@ -435,10 +568,43 @@ fn main() {
         rename::apply(&dev_name);
     }
 
-    // IPC server.
+    // IPC: two one-directional pipe servers (events out, commands in).
     {
         let c = ctx.clone();
-        thread::spawn(move || unsafe { ipc_server(c) });
+        thread::spawn(move || unsafe { events_server(c) });
+    }
+    {
+        let c = ctx.clone();
+        thread::spawn(move || unsafe { cmds_server(c) });
+    }
+
+    // BLE proximity: when the AirPods advertise nearby and we're neither
+    // connected nor already accepted, prompt "connect?" (debounced ~20 s).
+    if mac != 0 {
+        let c = ctx.clone();
+        let c_scan = ctx.clone();
+        let last_prompt: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        thread::spawn(move || {
+            le::watch_nearby(
+                move || {
+                    if c.state.lock().unwrap().connected
+                        || c.connect_requested.load(Ordering::Relaxed)
+                    {
+                        return;
+                    }
+                    let now = Instant::now();
+                    let mut lp = last_prompt.lock().unwrap();
+                    if lp.map_or(true, |t| now.duration_since(t) > Duration::from_secs(20)) {
+                        *lp = Some(now);
+                        drop(lp);
+                        c.send_event(&Event::ConnectPrompt { name: c.dev_name.clone() });
+                        log("ble: AirPods nearby → connect prompt");
+                    }
+                },
+                // Only scan while idle (disconnected) — no BLE radio during audio.
+                move || !c_scan.state.lock().unwrap().connected,
+            );
+        });
     }
 
     // AAP session + auto-activate poll (only if we have a paired device).
@@ -453,7 +619,7 @@ fn main() {
         }
     }
 
-    eprintln!("librepodsd: serving {PIPE_NAME}");
+    log("threads spawned; serving events + cmds pipes");
     loop {
         thread::sleep(Duration::from_secs(3600));
     }
