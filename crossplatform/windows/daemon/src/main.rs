@@ -554,6 +554,8 @@ fn run_receiver(ctx: Ctx) {
         let mut low_warned = false; // low-battery overlay fired (hysteresis)
         let mut prev_charging = false; // earbuds were charging last packet
         let mut charged_notified = false; // "fully charged" already shown this cycle
+        let mut left_chg = false; // accumulated charging state (packets are partial)
+        let mut right_chg = false;
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -628,14 +630,25 @@ fn run_receiver(ctx: Ctx) {
                             }
                         }
                         // Charging notifications (fire when a bud is charging —
-                        // e.g. one cased while the other stays connected).
-                        let charging = b.left_charging || b.right_charging;
+                        // e.g. one cased while the other stays connected). Battery
+                        // packets are partial, so accumulate per-bud charging
+                        // across packets instead of reading a single packet.
+                        if let Some(c) = b.left_charging {
+                            left_chg = c;
+                        }
+                        if let Some(c) = b.right_charging {
+                            right_chg = c;
+                        }
+                        let charging = left_chg || right_chg;
                         if charging && !prev_charging {
                             ctx.overlay("Charging");
                         }
                         prev_charging = charging;
-                        let full = (b.left_charging && b.left == Some(100))
-                            || (b.right_charging && b.right == Some(100));
+                        let (ll, rl) = {
+                            let s = ctx.state.lock().unwrap();
+                            (s.battery.left, s.battery.right)
+                        };
+                        let full = (left_chg && ll == Some(100)) || (right_chg && rl == Some(100));
                         if full && !charged_notified {
                             ctx.overlay("Fully charged");
                             charged_notified = true;
@@ -684,7 +697,14 @@ fn run_receiver(ctx: Ctx) {
                     // Conversational Awareness: the AirPods signal speech start/stop;
                     // we (the host, single volume owner) duck/restore the volume.
                     if let Some(status) = aap::parse_conversational_awareness(data) {
-                        ctx.conv_duck.lock().unwrap().on_status(status);
+                        // Don't duck while the hi-res mic is in use (you're on a
+                        // call — you ARE talking, but the call audio shouldn't
+                        // drop). Restore if a duck was already in progress.
+                        if ctx.mic_on.load(Ordering::Relaxed) {
+                            ctx.conv_duck.lock().unwrap().restore();
+                        } else {
+                            ctx.conv_duck.lock().unwrap().on_status(status);
+                        }
                     }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
                         let new_ear = [primary.in_ear(), secondary.in_ear()];

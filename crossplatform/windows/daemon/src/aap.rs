@@ -102,10 +102,11 @@ pub struct Battery {
     pub left: Option<u8>,
     pub right: Option<u8>,
     pub case: Option<u8>,
-    // Per-component charging state (status byte 0x01 = charging).
-    pub left_charging: bool,
-    pub right_charging: bool,
-    pub case_charging: bool,
+    // Per-component charging state, only for components present in the packet
+    // (Some(true) = charging, Some(false) = not, None = absent from this packet).
+    pub left_charging: Option<bool>,
+    pub right_charging: Option<bool>,
+    pub case_charging: Option<bool>,
 }
 
 const HEADER: [u8; 4] = [0x04, 0x00, 0x04, 0x00];
@@ -130,7 +131,8 @@ pub fn parse_battery(data: &[u8]) -> Option<Battery> {
         } else {
             Some(payload[base + 2])
         };
-        let charging = status == 0x01;
+        // status 0x04 = absent → charging unknown (None); else Some(charging).
+        let charging = if status == 0x04 { None } else { Some(status == 0x01) };
         match payload[base] {
             0x01 => b.headphone = level,
             0x02 => {
