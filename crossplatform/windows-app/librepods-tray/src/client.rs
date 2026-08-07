@@ -119,6 +119,9 @@ pub fn start(state: Arc<Mutex<Snapshot>>, on_overlay: fn(&str, &str)) -> Client 
                     match from_line::<Event>(&line) {
                         Some(Event::State(s)) => *state.lock().unwrap() = s,
                         Some(Event::Overlay { title, body }) => on_overlay(&title, &body),
+                        Some(Event::ConnectPrompt { name }) => {
+                            crate::overlay::show_prompt(&name, "Nearby — click to connect")
+                        }
                         None => {}
                     }
                 }

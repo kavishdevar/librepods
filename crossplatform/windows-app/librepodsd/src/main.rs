@@ -11,6 +11,7 @@ mod aap;
 mod bt;
 mod driver;
 mod eld;
+mod le;
 mod media;
 mod micpipe;
 mod rename;
@@ -85,6 +86,8 @@ struct Ctx {
     driver_cell: Arc<Mutex<Option<driver::Driver>>>,
     mic_on: Arc<AtomicBool>,
     auto_mode: Arc<AtomicBool>,
+    /// The user accepted the "connect?" prompt — the session may start.
+    connect_requested: Arc<AtomicBool>,
     pipe: Option<Arc<micpipe::MicPipe>>,
     dev_name: String,
     mac: u64,
@@ -292,6 +295,10 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
                 ctx.push_state();
             }
         }
+        Command::Connect => {
+            // The user accepted the prompt — let the session start.
+            ctx.connect_requested.store(true, Ordering::Relaxed);
+        }
         Command::Shutdown => std::process::exit(0),
     }
 }
@@ -309,6 +316,11 @@ fn run_receiver(ctx: Ctx) {
     let mut last_case_present: Option<bool> = None;
     let mut pending_card = false;
     loop {
+        // Gate: stay idle until the user accepts the "connect?" prompt.
+        if !ctx.connect_requested.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(500));
+            continue;
+        }
         let driver = match driver::Driver::open() {
             Ok(d) => {
                 log("run_receiver: driver opened");
@@ -523,6 +535,7 @@ fn main() {
         driver_cell: Arc::new(Mutex::new(None)),
         mic_on: Arc::new(AtomicBool::new(false)),
         auto_mode: Arc::new(AtomicBool::new(true)),
+        connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
         dev_name: dev_name.clone(),
         mac,
@@ -541,6 +554,30 @@ fn main() {
     {
         let c = ctx.clone();
         thread::spawn(move || unsafe { cmds_server(c) });
+    }
+
+    // BLE proximity: when the AirPods advertise nearby and we're neither
+    // connected nor already accepted, prompt "connect?" (debounced ~20 s).
+    if mac != 0 {
+        let c = ctx.clone();
+        let last_prompt: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        thread::spawn(move || {
+            le::watch_nearby(move || {
+                if c.state.lock().unwrap().connected
+                    || c.connect_requested.load(Ordering::Relaxed)
+                {
+                    return;
+                }
+                let now = Instant::now();
+                let mut lp = last_prompt.lock().unwrap();
+                if lp.map_or(true, |t| now.duration_since(t) > Duration::from_secs(20)) {
+                    *lp = Some(now);
+                    drop(lp);
+                    c.send_event(&Event::ConnectPrompt { name: c.dev_name.clone() });
+                    log("ble: AirPods nearby → connect prompt");
+                }
+            });
+        });
     }
 
     // AAP session + auto-activate poll (only if we have a paired device).

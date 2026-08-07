@@ -46,6 +46,8 @@ pub enum Command {
     SetAnc { mode: u8 },
     /// Set the hi-res mic mode (auto-enable and/or manual override).
     SetMicMode { auto: bool, manual: bool },
+    /// Start the AAP session (the user accepted the "connect?" prompt).
+    Connect,
     /// Request a fresh `State` snapshot.
     GetState,
     /// Stop the daemon too (e.g. from the tray's "Quit").
@@ -60,6 +62,9 @@ pub enum Event {
     State(Snapshot),
     /// A notification for the client to render with its overlay UI.
     Overlay { title: String, body: String },
+    /// The device is nearby (BLE) but not connected — the client shows a
+    /// clickable card; a click sends `Command::Connect`.
+    ConnectPrompt { name: String },
 }
 
 /// Which UI a client is.

@@ -8,6 +8,7 @@
 //! from any thread — it stashes the text and posts a message to the window,
 //! which the main thread's `GetMessage` loop dispatches to `wnd_proc`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -20,7 +21,8 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, GetSystemMetrics, KillTimer, PostMessageW, RegisterClassW,
     SM_CXSCREEN, SW_HIDE, SW_SHOWNA, SWP_NOACTIVATE, SetTimer, SetWindowPos, ShowWindow, WM_APP,
-    WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_LBUTTONDOWN, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP,
 };
 
 const WIDTH: i32 = 380;
@@ -47,6 +49,10 @@ const DWMWCP_ROUND: u32 = 2;
 static CONTENT: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
 /// The overlay window handle as usize (HWND isn't Send). Set once in `init()`.
 static HWND_CELL: OnceLock<usize> = OnceLock::new();
+/// The current card is a clickable "connect?" prompt.
+static PROMPT_MODE: AtomicBool = AtomicBool::new(false);
+/// Set when the user clicks a prompt card; the tray polls + clears it.
+static CONNECT_CLICKED: AtomicBool = AtomicBool::new(false);
 
 fn to_utf16(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -62,8 +68,9 @@ unsafe fn dwm_set_u32(hwnd: HWND, attr: u32, value: u32) {
 unsafe fn apply_theme(hwnd: HWND) {
     let dark = crate::theme::apps_dark();
     dwm_set_u32(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, dark as u32);
-    // Subtle 1px border (COLORREF 0x00BBGGRR), a touch lighter/darker than the card.
-    let border = if dark { 0x0045_4545 } else { 0x00D0_D0D0 };
+    // Border: the user's Windows accent color if set, else a subtle neutral tone
+    // (COLORREF 0x00BBGGRR).
+    let border = crate::theme::accent().unwrap_or(if dark { 0x0045_4545 } else { 0x00D0_D0D0 });
     dwm_set_u32(hwnd, DWMWA_BORDER_COLOR, border);
 }
 
@@ -114,14 +121,30 @@ pub fn init() {
 /// Show the overlay with the given title + subtitle. Any thread; no-op if
 /// `init()` hasn't run.
 pub fn show(title: &str, subtitle: &str) {
+    show_inner(title, subtitle, false);
+}
+
+/// Show a clickable "connect?" prompt card; a click is picked up by
+/// `take_connect_clicked()`.
+pub fn show_prompt(title: &str, subtitle: &str) {
+    show_inner(title, subtitle, true);
+}
+
+fn show_inner(title: &str, subtitle: &str, prompt: bool) {
     if let Ok(mut c) = CONTENT.lock() {
         *c = (title.to_string(), subtitle.to_string());
     }
+    PROMPT_MODE.store(prompt, Ordering::Relaxed);
     if let Some(&h) = HWND_CELL.get() {
         unsafe {
             PostMessageW(h as HWND, WM_SHOW_OVERLAY, 0, 0);
         }
     }
+}
+
+/// True (once) if the user clicked a prompt card since the last check.
+pub fn take_connect_clicked() -> bool {
+    CONNECT_CLICKED.swap(false, Ordering::Relaxed)
 }
 
 unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
@@ -139,6 +162,15 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
         WM_TIMER if wp == HIDE_TIMER_ID => {
             KillTimer(hwnd, HIDE_TIMER_ID);
             ShowWindow(hwnd, SW_HIDE);
+            0
+        }
+        WM_LBUTTONDOWN => {
+            // A click on a "connect?" prompt card accepts it.
+            if PROMPT_MODE.swap(false, Ordering::Relaxed) {
+                CONNECT_CLICKED.store(true, Ordering::Relaxed);
+                KillTimer(hwnd, HIDE_TIMER_ID);
+                ShowWindow(hwnd, SW_HIDE);
+            }
             0
         }
         WM_PAINT => {
@@ -171,11 +203,18 @@ unsafe fn paint(hwnd: HWND) {
     // we just fill the whole client with the flyout card color. Dark card + light
     // text in dark mode; light card + dark text in light mode.
     let dark = crate::theme::apps_dark();
-    let (card_col, title_col, sub_col) = if dark {
+    let (card_col, title_col, mut sub_col) = if dark {
         (0x002B_2B2B, 0x00FF_FFFF, 0x00C8_C8C8)
     } else {
         (0x00F3_F3F3, 0x0020_2020, 0x0060_6060)
     };
+    // On a "connect?" prompt, tint the subtitle with the accent color so it reads
+    // as an action ("click to connect").
+    if PROMPT_MODE.load(Ordering::Relaxed) {
+        if let Some(a) = crate::theme::accent() {
+            sub_col = a;
+        }
+    }
 
     let full = RECT { left: 0, top: 0, right: WIDTH, bottom: HEIGHT };
     let bg = CreateSolidBrush(card_col);

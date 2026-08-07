@@ -113,6 +113,7 @@ fn main() {
     // --- Tray menu ---
     let title = MenuItem::new("LibrePods", false, None);
     let battery = MenuItem::new("Connecting…", false, None);
+    let m_connect = MenuItem::new("Connect", true, None);
     let anc_header = MenuItem::new("Noise Control", false, None);
     let m_off = CheckMenuItem::new("Off", true, false, None);
     let m_anc = CheckMenuItem::new("Noise Cancellation", true, false, None);
@@ -128,6 +129,7 @@ fn main() {
     let m_open = MenuItem::new("Open App", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
+    let connect_id = m_connect.id().clone();
     let off_id = m_off.id().clone();
     let anc_id = m_anc.id().clone();
     let trans_id = m_trans.id().clone();
@@ -143,6 +145,7 @@ fn main() {
     let menu = Menu::new();
     menu.append(&title).unwrap();
     menu.append(&battery).unwrap();
+    menu.append(&m_connect).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
     menu.append(&anc_header).unwrap();
     menu.append(&m_off).unwrap();
@@ -189,6 +192,7 @@ fn main() {
         let s = state.lock().unwrap().clone();
         title.set_text(if s.dev_name.is_empty() { "LibrePods" } else { &s.dev_name });
         battery.set_text(&battery_text(&s.battery, s.connected));
+        m_connect.set_enabled(!s.connected); // only offer Connect when disconnected
         m_off.set_checked(s.anc == 1);
         m_anc.set_checked(s.anc == 2);
         m_trans.set_checked(s.anc == 3);
@@ -232,6 +236,9 @@ fn main() {
                 if ev.id == quit_id {
                     client.send(&Command::Shutdown); // stop the daemon too
                     PostQuitMessage(0);
+                } else if ev.id == connect_id {
+                    client.send(&Command::Connect);
+                    overlay::show("LibrePods", "Connecting…");
                 } else if ev.id == open_id {
                     // Phase 2: hand the driver to the standalone app (until the
                     // app is a client too), so free the daemon and quit.
@@ -268,6 +275,11 @@ fn main() {
                 } else if let Some(mode) = mode_for(&ev.id) {
                     client.send(&Command::SetAnc { mode });
                 }
+            }
+            // A click on the "connect?" prompt card accepts it.
+            if overlay::take_connect_clicked() {
+                client.send(&Command::Connect);
+                overlay::show("LibrePods", "Connecting…");
             }
         }
     }
