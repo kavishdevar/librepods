@@ -165,12 +165,14 @@ public sealed class IslandWindow : Window
         try { AppWindow.Resize(new SizeInt32(_width, _height)); } catch { }
 
         // Centre horizontally on the display containing this window; rest a small
-        // margin below the top of the work area, and start fully off the top.
+        // margin above the bottom of the work area, and slide in from off the
+        // bottom edge (rising up into view, then sliding back down to close).
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest);
         var work = area.WorkArea;
+        int margin = (int)Math.Round(TopMarginDip * scale);
         _centerX = work.X + (work.Width - _width) / 2;
-        _targetY = work.Y + (int)Math.Round(TopMarginDip * scale);
-        _startY = work.Y - _height;
+        _targetY = work.Y + work.Height - _height - margin;
+        _startY = work.Y + work.Height; // fully off the bottom
 
         _prepared = true;
     }
