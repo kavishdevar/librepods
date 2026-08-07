@@ -108,6 +108,41 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
   Open-App handoff. The daemon's own session vs the app's session over one L2CAP
   channel is the open design question (state-client vs raw-L2CAP-proxy).
 
+## Phase 3 — the "web-app" model (approach A, user's decision)
+
+The user's framing: **tray and app are both clients; the daemon is the single
+server/arbiter** — like a web app where many clients interact but every action is
+**atomic, serialized through the server**. So the app does NOT run its own AAP
+session on Windows: it renders its iced GUI from the daemon's state and sends
+commands, exactly like the tray. One connection, one owner, no dual sessions.
+
+Implementation sketch (to do together, with hardware testing):
+1. **Extend the protocol** (`librepods-ipc`) with everything the full app shows/
+   controls that the tray doesn't: device info (model / serials / firmware), the
+   available ANC modes, ear-detection state, conversational awareness, etc.
+   (add `#[serde(default)]` to new `Snapshot` fields). New `Command`s for the
+   extra controls. The daemon already serializes commands (single `apply_command`).
+2. **Daemon**: parse + publish the extra data in the `Snapshot` (its session
+   already parses battery/ANC/ear; add the rest).
+3. **App (`crossplatform-rust`, Windows only)**: source the GUI's state from the
+   daemon IPC instead of a live session. The clean shape: abstract the app's
+   "state source" — Linux = the `bluer` session (unchanged), Windows = an IPC
+   client of the daemon. The iced GUI renders from the state stream either way.
+   This is the big, riskier change — do it behind `#[cfg(windows)]`, test each
+   step, keep Linux untouched.
+- **Do NOT** rewrite the app's core blindly (it would break the working app);
+  implement + validate on hardware with the user present.
+
+## Mic aligns with PR #655 ✅
+
+Our Windows hi-res mic uses the **same** AAP commands (`START_AUDIO`/`STOP_AUDIO`,
+0x58), AAC-ELD params (64 kHz true → resample 48 kHz, 480-sample/7.5 ms mono, ASC
+`F8 E6 30 00`), 0x58 framing (22-byte AU header), and decoder (FFmpeg libavcodec,
+LGPL) as Linux [PR #655](https://github.com/librepods-org/librepods/pull/655) —
+so the decode/protocol is shareable. Deltas: we add a ×3 make-up gain (mic ran
+quiet); PR #655 has a **missing-SDU watchdog** we don't (follow-up). When both
+land in `cross-platform`, unify the decode into the shared crate.
+
 ## Risks / notes
 
 - **Multi-client pipe:** the daemon must serve several pipe instances at once
