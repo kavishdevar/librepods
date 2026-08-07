@@ -81,6 +81,8 @@ pub enum Command {
     SetControl { id: u8, value: u8 },
     /// Nudge the output volume by `delta` percent (the daemon owns volume).
     StepVolume { delta: i32 },
+    /// Set the output volume to an absolute percent 0..=100 (e.g. a slider).
+    SetVolume { percent: u8 },
     /// Mute/unmute the output.
     ToggleMute,
     /// Start the AAP session (the user accepted the "connect?" prompt).

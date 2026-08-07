@@ -477,6 +477,10 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             volume::step(delta);
             ctx.sync_volume();
         }
+        Command::SetVolume { percent } => {
+            volume::set(percent.min(100));
+            ctx.sync_volume();
+        }
         Command::ToggleMute => {
             volume::toggle_mute();
             ctx.sync_volume();
