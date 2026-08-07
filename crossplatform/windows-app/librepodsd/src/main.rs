@@ -315,6 +315,18 @@ fn run_receiver(ctx: Ctx) {
     let mut last_anc = 0u8;
     let mut last_case_present: Option<bool> = None;
     let mut pending_card = false;
+    // Consecutive failures to reach the AirPods. After a few (they're on the
+    // iPhone / gone), we give up so we DON'T keep stealing them back — reset the
+    // gate and wait for a fresh prompt/Connect.
+    let mut reach_fails = 0u32;
+    let give_up = |ctx: &Ctx, fails: &mut u32| {
+        *fails += 1;
+        if *fails >= 3 {
+            *fails = 0;
+            ctx.connect_requested.store(false, Ordering::Relaxed);
+            log("run_receiver: can't reach AirPods 3x — releasing (won't steal)");
+        }
+    };
     loop {
         // Gate: stay idle until the user accepts the "connect?" prompt.
         if !ctx.connect_requested.load(Ordering::Relaxed) {
@@ -331,6 +343,7 @@ fn run_receiver(ctx: Ctx) {
                 ctx.state.lock().unwrap().connected = false;
                 *ctx.driver_cell.lock().unwrap() = None;
                 ctx.push_state();
+                give_up(&ctx, &mut reach_fails);
                 thread::sleep(Duration::from_secs(3));
                 continue;
             }
@@ -341,9 +354,11 @@ fn run_receiver(ctx: Ctx) {
         if !connected {
             ctx.state.lock().unwrap().connected = false;
             ctx.push_state();
+            give_up(&ctx, &mut reach_fails);
             thread::sleep(Duration::from_secs(3));
             continue;
         }
+        reach_fails = 0; // reached them — reset the give-up counter
         let _ = driver.send(&aap::HANDSHAKE);
         thread::sleep(Duration::from_millis(300));
         let _ = driver.send(&aap::SET_FEATURES);
@@ -449,8 +464,11 @@ fn run_receiver(ctx: Ctx) {
                         *ctx.driver_cell.lock().unwrap() = None;
                         last_anc = 0;
                         last_case_present = None;
+                        // Released: never reconnect on our own (that would steal
+                        // them back from the iPhone) — wait for a fresh prompt.
+                        ctx.connect_requested.store(false, Ordering::Relaxed);
                         ctx.push_state();
-                        break; // reconnect
+                        break;
                     }
                 }
             }
