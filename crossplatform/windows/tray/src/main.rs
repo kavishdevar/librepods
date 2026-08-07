@@ -11,7 +11,9 @@ mod theme;
 
 use std::sync::{Arc, Mutex};
 
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{
+    CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem, Submenu,
+};
 use tray_icon::{Icon, TrayIconBuilder};
 
 use librepods_ipc::{Battery, Command, Snapshot};
@@ -128,6 +130,15 @@ fn main() {
     let m_conv = CheckMenuItem::new("Conversational Awareness", true, false, None);
     let m_adaptive_vol = CheckMenuItem::new("Adaptive Volume", true, false, None);
     let m_allow_off = CheckMenuItem::new("Allow \"Off\" mode", true, false, None);
+    // Adaptive Audio noise strength (0x2E, value 0..=100) — only meaningful in
+    // Adaptive mode. A submenu keeps the main menu tidy.
+    let m_noise_low = MenuItem::new("Low", true, None);
+    let m_noise_mid = MenuItem::new("Medium", true, None);
+    let m_noise_high = MenuItem::new("High", true, None);
+    let noise_sub = Submenu::new("Adaptive noise", true);
+    noise_sub.append(&m_noise_low).unwrap();
+    noise_sub.append(&m_noise_mid).unwrap();
+    noise_sub.append(&m_noise_high).unwrap();
     let m_open = MenuItem::new("Open App", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
@@ -144,6 +155,9 @@ fn main() {
     let conv_id = m_conv.id().clone();
     let adaptive_vol_id = m_adaptive_vol.id().clone();
     let allow_off_id = m_allow_off.id().clone();
+    let noise_low_id = m_noise_low.id().clone();
+    let noise_mid_id = m_noise_mid.id().clone();
+    let noise_high_id = m_noise_high.id().clone();
     let open_id = m_open.id().clone();
     let quit_id = quit.id().clone();
 
@@ -171,6 +185,7 @@ fn main() {
     menu.append(&m_conv).unwrap();
     menu.append(&m_adaptive_vol).unwrap();
     menu.append(&m_allow_off).unwrap();
+    menu.append(&noise_sub).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
     menu.append(&m_open).unwrap();
     menu.append(&quit).unwrap();
@@ -302,6 +317,15 @@ fn main() {
                         feature: librepods_ipc::feature::ALLOW_OFF,
                         on,
                     });
+                } else if ev.id == noise_low_id {
+                    client.send(&Command::SetControl { id: 0x2E, value: 25 });
+                    overlay::show("LibrePods", "Adaptive noise: Low");
+                } else if ev.id == noise_mid_id {
+                    client.send(&Command::SetControl { id: 0x2E, value: 50 });
+                    overlay::show("LibrePods", "Adaptive noise: Medium");
+                } else if ev.id == noise_high_id {
+                    client.send(&Command::SetControl { id: 0x2E, value: 75 });
+                    overlay::show("LibrePods", "Adaptive noise: High");
                 } else if let Some(mode) = mode_for(&ev.id) {
                     client.send(&Command::SetAnc { mode });
                 }

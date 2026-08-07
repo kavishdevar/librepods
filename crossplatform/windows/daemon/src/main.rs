@@ -459,6 +459,11 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             }
             ctx.push_state();
         }
+        Command::SetControl { id, value } => {
+            if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
+                let _ = drv.send(&aap::control_command(id, value));
+            }
+        }
         Command::StepVolume { delta } => {
             volume::step(delta);
             ctx.sync_volume();

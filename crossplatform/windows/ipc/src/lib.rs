@@ -76,6 +76,9 @@ pub enum Command {
     SetMicMode { auto: bool, manual: bool },
     /// Toggle an AAP control-command setting (see the `feature` module).
     SetFeature { feature: u8, on: bool },
+    /// Set a raw AAP control-command value (opcode 0x09) — e.g. Adaptive noise
+    /// strength (id 0x2E, value 0..=100). For settings that aren't on/off.
+    SetControl { id: u8, value: u8 },
     /// Nudge the output volume by `delta` percent (the daemon owns volume).
     StepVolume { delta: i32 },
     /// Mute/unmute the output.
