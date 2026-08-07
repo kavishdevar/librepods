@@ -27,7 +27,6 @@ pub fn airpods_view<'a>(
     let mac = mac.to_string();
     // order: name, noise control, press and hold config, call controls (not sure if why it might be needed, adding it just in case), audio (personalized volume, conversational awareness, adaptive audio slider), connection settings, microphone, head gestures (not adding this), off listening mode, device information
 
-    let aacp_manager_for_rename = aacp_manager.clone();
     let rename_input = container(
         row![
             Space::new().width(10),
@@ -55,25 +54,49 @@ pub fn airpods_view<'a>(
                     }
                 })
                 .align_x(End)
+                // Only update the displayed text on each keystroke; the rename
+                // is committed explicitly via Enter (on_submit) or the button.
                 .on_input({
                     let mac = mac.clone();
                     let state = state.clone();
                     move |new_name| {
-                        let aacp_manager = aacp_manager_for_rename.clone();
-                        run_async_in_thread({
-                            let new_name = new_name.clone();
-                            async move {
-                                aacp_manager
-                                    .send_rename_packet(&new_name)
-                                    .await
-                                    .expect("Failed to send rename packet");
-                            }
-                        });
                         let mut state = state.clone();
-                        state.device_name = new_name.clone();
+                        state.device_name = new_name;
                         Message::StateChanged(mac.to_string(), DeviceState::AirPods(state))
                     }
                 })
+                // Pressing Enter commits the rename with the current name.
+                .on_submit(Message::RenameCommit {
+                    mac: mac.clone(),
+                    name: state.device_name.clone(),
+                }),
+            Space::new().width(6),
+            // Explicit "Rename" button commits the rename with the current name.
+            button(text("Rename").size(14).style(|theme: &Theme| {
+                let mut style = text::Style::default();
+                style.color = Some(theme.palette().primary);
+                style
+            }))
+            .style(|theme: &Theme, _status| {
+                let mut style = Style::default();
+                style.text_color = theme.palette().primary;
+                style.background = Some(Background::Color(Color::TRANSPARENT));
+                let mut border = Border::default();
+                border.color = theme.palette().primary.scale_alpha(0.5);
+                border.width = 1.0;
+                style.border = border.rounded(8);
+                style
+            })
+            .padding(Padding {
+                top: 4.0,
+                bottom: 4.0,
+                left: 10.0,
+                right: 10.0,
+            })
+            .on_press(Message::RenameCommit {
+                mac: mac.clone(),
+                name: state.device_name.clone(),
+            })
         ]
         .align_y(Center),
     )
@@ -523,7 +546,7 @@ pub fn airpods_view<'a>(
     .height(Length::Fill)
 }
 
-fn run_async_in_thread<F>(fut: F)
+pub(crate) fn run_async_in_thread<F>(fut: F)
 where
     F: Future<Output = ()> + Send + 'static,
 {

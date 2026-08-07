@@ -487,6 +487,13 @@ impl AACPManager {
                 let mut batteries = Vec::with_capacity(count);
                 for i in 0..count {
                     let base_index = 3 + i * 5;
+                    let level = payload[base_index + 2];
+                    // 0xFF (255) = component absent — e.g. AirPods Pro have no
+                    // "headphone" battery yet still report the slot as 0xFF. Skip
+                    // it so it never renders as a bogus "255%".
+                    if level == 0xFF {
+                        continue;
+                    }
                     batteries.push(BatteryInfo {
                         component: match payload[base_index] {
                             0x01 => BatteryComponent::Headphone,
@@ -498,7 +505,7 @@ impl AACPManager {
                                 continue;
                             }
                         },
-                        level: payload[base_index + 2],
+                        level,
                         status: match payload[base_index + 3] {
                             // 0x05 is reported while a bud charges in the case
                             // (the iPhone shows them charging with their level).

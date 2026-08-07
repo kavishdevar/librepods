@@ -106,6 +106,7 @@ pub enum Message {
     ConfirmAddDevice,
     CancelAddDevice,
     StateChanged(String, DeviceState),
+    RenameCommit { mac: String, name: String },
     TrayTextModeChanged(bool), // yes, I know I should add all settings to a struct, but I'm lazy
     StemControlChanged(bool),
 }
@@ -627,6 +628,25 @@ impl App {
                         }
                         modes
                     });
+                }
+                Task::none()
+            }
+            Message::RenameCommit { mac, name } => {
+                // Commit the rename exactly once with the final name.
+                let aacp_manager = {
+                    let device_managers = self.device_managers.blocking_read();
+                    device_managers
+                        .get(&mac)
+                        .and_then(|managers| managers.get_aacp())
+                };
+                if let Some(aacp_manager) = aacp_manager {
+                    crate::ui::airpods::run_async_in_thread(async move {
+                        if let Err(e) = aacp_manager.send_rename_packet(&name).await {
+                            error!("Failed to send rename packet: {}", e);
+                        }
+                    });
+                } else {
+                    error!("No AACP manager found for device {} to rename", mac);
                 }
                 Task::none()
             }
