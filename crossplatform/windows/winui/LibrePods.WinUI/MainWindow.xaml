@@ -19,8 +19,10 @@
         </Grid.Resources>
 
         <!-- Standard Fluent shell: left navigation pane + content area. -->
+        <!-- PaneDisplayMode="Auto": expanded when wide, collapses to a hamburger
+             that overlays the content when the window is narrow. -->
         <NavigationView x:Name="NavView"
-                        PaneDisplayMode="Left"
+                        PaneDisplayMode="Auto"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="True"
                         OpenPaneLength="260"
@@ -78,7 +80,10 @@
                                     <!-- Wide: two side-by-side columns -->
                                     <VisualState x:Name="WideState">
                                         <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="720" />
+                                            <!-- Only two columns when the window is
+                                                 genuinely wide (the nav pane eats
+                                                 ~260px); below this stay one column. -->
+                                            <AdaptiveTrigger MinWindowWidth="940" />
                                         </VisualState.StateTriggers>
                                         <VisualState.Setters>
                                             <Setter Target="RightColumn.(Grid.Row)" Value="0" />
