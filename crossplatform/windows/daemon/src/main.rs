@@ -552,6 +552,8 @@ fn run_receiver(ctx: Ctx) {
         let mut last_audio = Instant::now(); // hi-res mic watchdog (PR #655)
         let mut status_fails = 0u32;
         let mut low_warned = false; // low-battery overlay fired (hysteresis)
+        let mut prev_charging = false; // earbuds were charging last packet
+        let mut charged_notified = false; // "fully charged" already shown this cycle
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -603,7 +605,7 @@ fn run_receiver(ctx: Ctx) {
                         };
                         ctx.push_state();
                         if pending_card {
-                            ctx.overlay(&batt_text);
+                            ctx.overlay(&format!("Connected  ·  {batt_text}"));
                             pending_card = false;
                         } else if last_case_present.is_some_and(|prev| prev != present) {
                             let ev = if present { "Case opened" } else { "Case closed" };
@@ -624,6 +626,21 @@ fn run_receiver(ctx: Ctx) {
                             } else if min > 25 {
                                 low_warned = false;
                             }
+                        }
+                        // Charging notifications (fire when a bud is charging —
+                        // e.g. one cased while the other stays connected).
+                        let charging = b.left_charging || b.right_charging;
+                        if charging && !prev_charging {
+                            ctx.overlay("Charging");
+                        }
+                        prev_charging = charging;
+                        let full = (b.left_charging && b.left == Some(100))
+                            || (b.right_charging && b.right == Some(100));
+                        if full && !charged_notified {
+                            ctx.overlay("Fully charged");
+                            charged_notified = true;
+                        } else if !charging {
+                            charged_notified = false; // re-arm once it stops charging
                         }
                     }
                     if let Some(m) = aap::parse_anc_mode(data) {
@@ -734,6 +751,7 @@ fn run_receiver(ctx: Ctx) {
                         status_fails += 1;
                         if status_fails >= 3 {
                             log(&format!("run_receiver: status lost 3s (st={st:?}) — releasing"));
+                            ctx.overlay("Disconnected");
                             ctx.state.lock().unwrap().connected = false;
                             *ctx.driver_cell.lock().unwrap() = None;
                             last_anc = 0;
