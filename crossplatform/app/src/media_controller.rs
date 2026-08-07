@@ -157,6 +157,9 @@ impl MediaController {
         old_statuses: Vec<EarDetectionStatus>,
         new_statuses: Vec<EarDetectionStatus>,
     ) {
+        if cfg!(target_os = "windows") {
+            return; // the daemon owns ear-detection auto-pause on Windows
+        }
         debug!(
             "Entering handle_ear_detection with old_statuses: {:?}, new_statuses: {:?}",
             old_statuses, new_statuses
@@ -255,6 +258,7 @@ impl MediaController {
     }
 
     pub async fn activate_a2dp_profile(&self) {
+        if cfg!(target_os = "windows") { return; } // daemon handles this on Windows
         let mac = self.state.lock().await.connected_device_mac.clone();
         self.audio.activate_a2dp(&mac).await;
     }
@@ -277,6 +281,7 @@ impl MediaController {
     }
 
     pub async fn pause_all_media(&self) {
+        if cfg!(target_os = "windows") { return; } // daemon handles this on Windows
         debug!("Pausing all media (without tracking for resume)");
         let media = self.media.clone();
         let _ = tokio::task::spawn_blocking(move || media.pause_all()).await;
@@ -308,11 +313,13 @@ impl MediaController {
     }
 
     pub async fn deactivate_a2dp_profile(&self) {
+        if cfg!(target_os = "windows") { return; } // daemon handles this on Windows
         let mac = self.state.lock().await.connected_device_mac.clone();
         self.audio.deactivate_a2dp(&mac).await;
     }
 
     pub async fn handle_conversational_awareness(&self, status: u8) {
+        if cfg!(target_os = "windows") { return; } // daemon handles this on Windows
         debug!("Entering handle_conversational_awareness with status: {}", status);
 
         let mac = self.state.lock().await.connected_device_mac.clone();

@@ -44,6 +44,14 @@ fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// Frame a raw AAP packet for the L2CAP proxy: u16 LE length, then the bytes.
+fn frame(packet: &[u8]) -> Vec<u8> {
+    let mut f = Vec::with_capacity(packet.len() + 2);
+    f.extend_from_slice(&(packet.len() as u16).to_le_bytes());
+    f.extend_from_slice(packet);
+    f
+}
+
 fn log(s: &str) {
     use std::io::Write;
     if let Ok(la) = std::env::var("LOCALAPPDATA") {
@@ -89,6 +97,10 @@ struct Ctx {
     /// Raw-L2CAP proxy clients (the full app): each incoming AAP packet is
     /// forwarded to them (length-prefixed) so the app runs its session over us.
     l2cap_clients: Arc<Mutex<Vec<ClientTx>>>,
+    /// The last battery + ANC packets (raw), keyed by kind (0=battery, 1=ANC),
+    /// replayed to a newly-attached app so it shows the current state without us
+    /// re-requesting (which cuts audio).
+    replay: Arc<Mutex<std::collections::HashMap<u8, Vec<u8>>>>,
     driver_cell: Arc<Mutex<Option<driver::Driver>>>,
     mic_on: Arc<AtomicBool>,
     auto_mode: Arc<AtomicBool>,
@@ -135,10 +147,13 @@ impl Ctx {
         if clients.is_empty() {
             return;
         }
-        let mut frame = Vec::with_capacity(packet.len() + 2);
-        frame.extend_from_slice(&(packet.len() as u16).to_le_bytes());
-        frame.extend_from_slice(packet);
-        clients.retain(|tx| tx.send(frame.clone()).is_ok());
+        let f = frame(packet);
+        clients.retain(|tx| tx.send(f.clone()).is_ok());
+    }
+
+    /// Remember a state packet (kind 0=battery, 1=ANC) to replay to new apps.
+    fn cache_replay(&self, kind: u8, packet: &[u8]) {
+        self.replay.lock().unwrap().insert(kind, packet.to_vec());
     }
 }
 
@@ -288,6 +303,11 @@ unsafe fn l2cap_rx_server(ctx: Ctx) {
         };
         let pipe = Arc::new(Pipe(h));
         let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        // Replay the cached battery/ANC packets so the app shows current state
+        // immediately (without us re-requesting, which would cut audio).
+        for pkt in ctx.replay.lock().unwrap().values() {
+            let _ = tx.send(frame(pkt));
+        }
         ctx.l2cap_clients.lock().unwrap().push(tx);
         log("l2cap-rx: app attached");
         let p = pipe.clone();
@@ -505,6 +525,7 @@ fn run_receiver(ctx: Ctx) {
                         decoder = None;
                     }
                     if let Some(b) = aap::parse_battery(data) {
+                        ctx.cache_replay(0, data); // replay to a newly-attached app
                         let (batt_text, present) = {
                             let mut s = ctx.state.lock().unwrap();
                             if b.left.is_some() {
@@ -533,6 +554,7 @@ fn run_receiver(ctx: Ctx) {
                         last_case_present = Some(present);
                     }
                     if let Some(m) = aap::parse_anc_mode(data) {
+                        ctx.cache_replay(1, data); // replay to a newly-attached app
                         ctx.state.lock().unwrap().anc = m;
                         ctx.push_state();
                         if last_anc != 0 && m != last_anc {
@@ -657,6 +679,7 @@ fn main() {
         })),
         clients: Arc::new(Mutex::new(Vec::new())),
         l2cap_clients: Arc::new(Mutex::new(Vec::new())),
+        replay: Arc::new(Mutex::new(std::collections::HashMap::new())),
         driver_cell: Arc::new(Mutex::new(None)),
         mic_on: Arc::new(AtomicBool::new(false)),
         auto_mode: Arc::new(AtomicBool::new(true)),
