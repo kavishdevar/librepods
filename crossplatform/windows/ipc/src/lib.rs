@@ -12,6 +12,15 @@ use serde::{Deserialize, Serialize};
 pub const PIPE_EVENTS: &str = r"\\.\pipe\LibrePods-events";
 pub const PIPE_CMDS: &str = r"\\.\pipe\LibrePods-cmds";
 
+/// Raw L2CAP proxy for the full app (Phase 3): the daemon owns the exclusive
+/// driver, so the app can't open it — it runs its AAP session over these instead.
+/// The daemon writes each incoming AAP packet to `PIPE_L2CAP_RX` (length-prefixed:
+/// a u16 LE length, then the bytes) and reads the app's outgoing packets (same
+/// framing) from `PIPE_L2CAP_TX`, forwarding them to the driver. One pipe per
+/// direction (a sync duplex handle would deadlock).
+pub const PIPE_L2CAP_RX: &str = r"\\.\pipe\LibrePods-l2cap-rx";
+pub const PIPE_L2CAP_TX: &str = r"\\.\pipe\LibrePods-l2cap-tx";
+
 /// Battery levels (percent), each optional — a packet may carry only some.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Battery {

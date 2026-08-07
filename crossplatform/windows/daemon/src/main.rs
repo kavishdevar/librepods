@@ -22,7 +22,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use librepods_ipc::{from_line, to_line, Command, Event, Snapshot, PIPE_CMDS, PIPE_EVENTS};
+use librepods_ipc::{
+    from_line, to_line, Command, Event, Snapshot, PIPE_CMDS, PIPE_EVENTS, PIPE_L2CAP_RX,
+    PIPE_L2CAP_TX,
+};
 
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_PIPE_CONNECTED, HANDLE,
@@ -83,6 +86,9 @@ type ClientTx = std::sync::mpsc::Sender<Vec<u8>>;
 struct Ctx {
     state: Arc<Mutex<Snapshot>>,
     clients: Arc<Mutex<Vec<ClientTx>>>,
+    /// Raw-L2CAP proxy clients (the full app): each incoming AAP packet is
+    /// forwarded to them (length-prefixed) so the app runs its session over us.
+    l2cap_clients: Arc<Mutex<Vec<ClientTx>>>,
     driver_cell: Arc<Mutex<Option<driver::Driver>>>,
     mic_on: Arc<AtomicBool>,
     auto_mode: Arc<AtomicBool>,
@@ -120,6 +126,19 @@ impl Ctx {
             title: self.dev_name.clone(),
             body: body.to_string(),
         });
+    }
+
+    /// Forward one raw AAP packet (length-prefixed: u16 LE + bytes) to every
+    /// L2CAP-proxy client (the app). Never blocks — per-client writer threads.
+    fn forward_l2cap(&self, packet: &[u8]) {
+        let mut clients = self.l2cap_clients.lock().unwrap();
+        if clients.is_empty() {
+            return;
+        }
+        let mut frame = Vec::with_capacity(packet.len() + 2);
+        frame.extend_from_slice(&(packet.len() as u16).to_le_bytes());
+        frame.extend_from_slice(packet);
+        clients.retain(|tx| tx.send(frame.clone()).is_ok());
     }
 }
 
@@ -257,6 +276,86 @@ unsafe fn cmds_server(ctx: Ctx) {
     }
 }
 
+/// L2CAP-RX pipe: the daemon only WRITES forwarded AAP packets here (→ the app).
+unsafe fn l2cap_rx_server(ctx: Ctx) {
+    let name = wide(PIPE_L2CAP_RX);
+    let mut psd: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    let sa = pipe_sa(&mut psd);
+    loop {
+        let h = match accept(&name, &sa) {
+            Some(h) => h,
+            None => continue,
+        };
+        let pipe = Arc::new(Pipe(h));
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        ctx.l2cap_clients.lock().unwrap().push(tx);
+        log("l2cap-rx: app attached");
+        let p = pipe.clone();
+        thread::spawn(move || {
+            for msg in rx {
+                if !unsafe { write_all(p.0, &msg) } {
+                    break;
+                }
+            }
+        });
+    }
+}
+
+/// L2CAP-TX pipe: the daemon only READS the app's outgoing AAP packets and sends
+/// them to the driver — dropping the setup packets it already sent itself.
+unsafe fn l2cap_tx_server(ctx: Ctx) {
+    let name = wide(PIPE_L2CAP_TX);
+    let mut psd: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    let sa = pipe_sa(&mut psd);
+    loop {
+        let h = match accept(&name, &sa) {
+            Some(h) => h,
+            None => continue,
+        };
+        log("l2cap-tx: app attached");
+        let pipe = Arc::new(Pipe(h));
+        let c = ctx.clone();
+        thread::spawn(move || l2cap_reader(pipe, c));
+    }
+}
+
+/// A setup packet the daemon already sent — re-sending it re-negotiates the audio
+/// profile and cuts sound, so we drop the app's copy.
+fn is_setup(p: &[u8]) -> bool {
+    p == aap::HANDSHAKE.as_slice()
+        || p == aap::SET_FEATURES.as_slice()
+        || p == aap::REQUEST_NOTIFS.as_slice()
+}
+
+/// Read length-prefixed ([u16 LE len][bytes]) AAP packets from the app → driver.
+fn l2cap_reader(pipe: Arc<Pipe>, ctx: Ctx) {
+    let h = pipe.0;
+    let mut acc: Vec<u8> = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        let mut read = 0u32;
+        let ok =
+            unsafe { ReadFile(h, buf.as_mut_ptr(), buf.len() as u32, &mut read, ptr::null_mut()) };
+        if ok == 0 || read == 0 {
+            break;
+        }
+        acc.extend_from_slice(&buf[..read as usize]);
+        while acc.len() >= 2 {
+            let len = u16::from_le_bytes([acc[0], acc[1]]) as usize;
+            if acc.len() < 2 + len {
+                break;
+            }
+            let packet = acc[2..2 + len].to_vec();
+            acc.drain(..2 + len);
+            if !is_setup(&packet) {
+                if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
+                    let _ = drv.send(&packet);
+                }
+            }
+        }
+    }
+}
+
 /// Enable/disable the hi-res mic stream (manual path), with the A2DP restore.
 fn set_mic(ctx: &Ctx, on: bool) {
     let was = ctx.mic_on.swap(on, Ordering::Relaxed);
@@ -382,6 +481,9 @@ fn run_receiver(ctx: Ctx) {
                 if n > 0 {
                     got_data = true;
                     let data = &buf[..n];
+                    // Forward the raw packet to the full app (if attached) so it
+                    // runs its own AAP session over us.
+                    ctx.forward_l2cap(data);
                     // Hi-res mic: decode the 0x58 uplink AUs → feed the virtual mic.
                     if ctx.mic_on.load(Ordering::Relaxed) {
                         if aap::is_audio_packet(data) {
@@ -554,6 +656,7 @@ fn main() {
             ..Default::default()
         })),
         clients: Arc::new(Mutex::new(Vec::new())),
+        l2cap_clients: Arc::new(Mutex::new(Vec::new())),
         driver_cell: Arc::new(Mutex::new(None)),
         mic_on: Arc::new(AtomicBool::new(false)),
         auto_mode: Arc::new(AtomicBool::new(true)),
@@ -576,6 +679,15 @@ fn main() {
     {
         let c = ctx.clone();
         thread::spawn(move || unsafe { cmds_server(c) });
+    }
+    // Raw-L2CAP proxy for the full app (Phase 3): RX (packets → app) + TX (app → driver).
+    {
+        let c = ctx.clone();
+        thread::spawn(move || unsafe { l2cap_rx_server(c) });
+    }
+    {
+        let c = ctx.clone();
+        thread::spawn(move || unsafe { l2cap_tx_server(c) });
     }
 
     // BLE proximity: when the AirPods advertise nearby and we're neither

@@ -240,15 +240,14 @@ fn main() {
                     client.send(&Command::Connect);
                     overlay::show("LibrePods", "Connecting…");
                 } else if ev.id == open_id {
-                    // Phase 2: hand the driver to the standalone app (until the
-                    // app is a client too), so free the daemon and quit.
-                    client.send(&Command::Shutdown);
+                    // Phase 3: the app is a client too (it runs its AAP session
+                    // over the daemon's L2CAP proxy), so just launch it — the
+                    // daemon + tray keep running and they coexist.
                     if let Ok(exe) = std::env::current_exe() {
                         if let Some(dir) = exe.parent() {
                             let _ = std::process::Command::new(dir.join("librepods.exe")).spawn();
                         }
                     }
-                    PostQuitMessage(0);
                 } else if ev.id == vol_up_id {
                     volume::step(5);
                     refresh();

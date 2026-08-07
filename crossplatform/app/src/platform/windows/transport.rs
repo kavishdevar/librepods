@@ -227,6 +227,14 @@ pub async fn l2cap_connect(
     psm: u16,
     _timeout: Duration,
 ) -> io::Result<Arc<dyn L2capTransport>> {
+    // Prefer the daemon: it owns the exclusive driver, so when librepodsd is
+    // running the app runs its AAP session over the daemon's L2CAP proxy (both
+    // coexist). Fall back to opening the driver directly when there's no daemon.
+    if let Ok(d) = super::daemon_client::DaemonL2cap::connect().await {
+        log::info!("l2cap_connect: using the librepodsd L2CAP proxy");
+        return Ok(Arc::new(d));
+    }
+
     let bt_addr: u64 = addr.into();
 
     tokio::task::spawn_blocking(move || {
