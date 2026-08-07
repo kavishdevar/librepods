@@ -149,11 +149,16 @@ async fn async_main(
         log::error!("Failed to power on Bluetooth adapter: {e}");
     }
 
-    let le_tray_clone = tray_handle.clone();
-    tokio::spawn(async move {
-        info!("Starting LE monitor...");
-        start_le_monitor(le_tray_clone).await;
-    });
+    // On Windows the daemon owns the BLE watcher (and the AAP session already
+    // provides battery); a second scanner here would just contend on 2.4 GHz
+    // (static) and duplicate it. Linux runs its own monitor as before.
+    if cfg!(not(target_os = "windows")) {
+        let le_tray_clone = tray_handle.clone();
+        tokio::spawn(async move {
+            info!("Starting LE monitor...");
+            start_le_monitor(le_tray_clone).await;
+        });
+    }
 
     info!("Listening for new connections.");
 

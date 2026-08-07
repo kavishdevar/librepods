@@ -245,10 +245,9 @@ fn main() {
                     // daemon + tray keep running and they coexist.
                     if let Ok(exe) = std::env::current_exe() {
                         if let Some(dir) = exe.parent() {
-                            // --no-tray: reuse THIS tray (don't add a 2nd icon).
-                            let _ = std::process::Command::new(dir.join("librepods.exe"))
-                                .arg("--no-tray")
-                                .spawn();
+                            // Show the app's window. On Windows the app doesn't
+                            // make its own tray, so no 2nd icon.
+                            let _ = std::process::Command::new(dir.join("librepods.exe")).spawn();
                         }
                     }
                 } else if ev.id == vol_up_id {

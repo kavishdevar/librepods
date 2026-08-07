@@ -30,11 +30,10 @@ impl WindowsTrayHandle {
     }
 }
 
-pub async fn spawn_tray(tray: MyTray) -> Option<WindowsTrayHandle> {
-    let shared: Shared = Arc::new(Mutex::new(tray));
-    let thread_shared = shared.clone();
-    std::thread::spawn(move || tray_thread(thread_shared));
-    Some(WindowsTrayHandle { shared })
+pub async fn spawn_tray(_tray: MyTray) -> Option<WindowsTrayHandle> {
+    // On Windows the lightweight `librepods-tray` is the tray now; the full app is
+    // window-only (no second icon). Its device state still shows in the window.
+    None
 }
 
 fn make_icon() -> Icon {
