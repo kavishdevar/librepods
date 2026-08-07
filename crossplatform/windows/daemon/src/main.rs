@@ -493,6 +493,7 @@ fn run_receiver(ctx: Ctx) {
         log("run_receiver: handshake done, connected=true");
 
         let mut we_paused = false;
+        let mut prev_ear = [false; 2]; // last [primary, secondary] in-ear state
         let mut last_status = Instant::now();
         let mut status_fails = 0u32;
         loop {
@@ -563,15 +564,23 @@ fn run_receiver(ctx: Ctx) {
                         last_anc = m;
                     }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
-                        let wearing = primary.in_ear() || secondary.in_ear();
-                        if !wearing {
-                            if media::is_playing() {
+                        let new_ear = [primary.in_ear(), secondary.in_ear()];
+                        if new_ear != prev_ear {
+                            let all_in = new_ear[0] && new_ear[1];
+                            let was_wearing = prev_ear[0] || prev_ear[1];
+                            if all_in {
+                                // both back in the ears → resume what we paused
+                                if we_paused {
+                                    media::play();
+                                    we_paused = false;
+                                }
+                            } else if was_wearing && media::is_playing() {
+                                // a bud was just removed (Apple-style: pause on a
+                                // single removal, not only when both are out)
                                 media::pause();
                                 we_paused = true;
                             }
-                        } else if we_paused {
-                            media::play();
-                            we_paused = false;
+                            prev_ear = new_ear;
                         }
                     }
                 }
