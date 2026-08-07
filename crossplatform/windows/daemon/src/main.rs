@@ -557,6 +557,7 @@ fn run_receiver(ctx: Ctx) {
         let mut last_audio = Instant::now(); // hi-res mic watchdog (PR #655)
         let mut status_fails = 0u32;
         let mut low_warned = false; // low-battery overlay fired (hysteresis)
+        let mut case_low_warned = false; // case low-battery overlay fired
         let mut prev_charging = false; // earbuds were charging last packet
         let mut charged_notified = false; // "fully charged" already shown this cycle
         let mut left_chg = false; // accumulated charging state (packets are partial)
@@ -632,6 +633,15 @@ fn run_receiver(ctx: Ctx) {
                                 low_warned = true;
                             } else if min > 25 {
                                 low_warned = false;
+                            }
+                        }
+                        // Case low battery (separate, quieter threshold).
+                        if let Some(cl) = { ctx.state.lock().unwrap().battery.case } {
+                            if cl <= 15 && !case_low_warned {
+                                ctx.overlay(&format!("Case battery low — {cl}%"));
+                                case_low_warned = true;
+                            } else if cl > 20 {
+                                case_low_warned = false;
                             }
                         }
                         // Charging notifications (fire when a bud is charging —
