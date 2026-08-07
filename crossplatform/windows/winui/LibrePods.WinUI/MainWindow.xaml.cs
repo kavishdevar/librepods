@@ -41,6 +41,16 @@ public sealed partial class MainWindow : Window
 
         // Wider default so the responsive 2-column device layout shows at launch.
         AppWindow.Resize(new SizeInt32(1000, 800));
+        // Enforce a minimum size — the layout breaks if the window is dragged
+        // absurdly narrow (no app is usable at ~100px). Clamp on resize.
+        AppWindow.Changed += (sender, e) =>
+        {
+            if (!e.DidSizeChange) return;
+            const int minW = 420, minH = 540;
+            var sz = sender.Size;
+            if (sz.Width < minW || sz.Height < minH)
+                sender.Resize(new SizeInt32(Math.Max(sz.Width, minW), Math.Max(sz.Height, minH)));
+        };
         TrySetWindowIcon();
 
         // Start on the device page.
