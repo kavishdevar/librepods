@@ -76,6 +76,14 @@ Write-Host "==> Copying the apps to $dest"
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item (Join-Path $here 'librepods-tray.exe') $dest -Force
 Copy-Item (Join-Path $here 'librepods.exe') $dest -Force
+# The daemon (owns the driver + mic; the UIs are IPC clients) + its FFmpeg runtime.
+if (Test-Path (Join-Path $here 'librepodsd.exe')) {
+    Copy-Item (Join-Path $here 'librepodsd.exe') $dest -Force
+    foreach ($dll in 'avcodec-61.dll', 'avutil-59.dll', 'swresample-5.dll') {
+        $p = Join-Path $here $dll
+        if (Test-Path $p) { Copy-Item $p $dest -Force }
+    }
+}
 
 # lp-mic-rename + its elevated on-demand task: lets the (unelevated) tray rename
 # the virtual mic to the connected device's name without a UAC prompt.
@@ -96,10 +104,20 @@ if (Test-Path $renameExe) {
         -Force | Out-Null
 }
 
-# ---- 6. auto-start the tray at login ----------------------------------------
-Write-Host '==> Adding the tray app to startup...'
+# ---- 6. auto-start at login -------------------------------------------------
+# The daemon is the always-on background process (per-user, in the session — NOT
+# a SYSTEM service, which couldn't touch the user's audio/mic). The tray is the
+# UI; it also spawns the daemon if needed (single-instance guards prevent dupes).
+Write-Host '==> Adding the daemon + tray to startup...'
 $startup = [Environment]::GetFolderPath('Startup')
 $ws = New-Object -ComObject WScript.Shell
+if (Test-Path (Join-Path $dest 'librepodsd.exe')) {
+    $lnkd = $ws.CreateShortcut((Join-Path $startup 'LibrePods Daemon.lnk'))
+    $lnkd.TargetPath = Join-Path $dest 'librepodsd.exe'
+    $lnkd.WorkingDirectory = $dest
+    $lnkd.Description = 'LibrePods background daemon'
+    $lnkd.Save()
+}
 $lnk = $ws.CreateShortcut((Join-Path $startup 'LibrePods.lnk'))
 $lnk.TargetPath = Join-Path $dest 'librepods-tray.exe'
 $lnk.WorkingDirectory = $dest
