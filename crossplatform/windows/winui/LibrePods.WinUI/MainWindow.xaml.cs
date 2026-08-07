@@ -178,6 +178,8 @@ public sealed partial class MainWindow : Window
             MicStatusText.Text = s.MicRecording ? "Microphone: recording" : "Microphone: idle";
             MicAutoSwitch.IsOn = s.AutoMode;
             MicManualToggle.IsChecked = s.MicRecording && !s.AutoMode;
+
+            HeartRateBpm.Text = s.HeartRate is ushort bpm ? bpm.ToString() : "—";
         }
         finally
         {
@@ -258,6 +260,13 @@ public sealed partial class MainWindow : Window
     private void MicManual_Click(object sender, RoutedEventArgs e) =>
         // Manual toggle: turn the hi-res stream on/off, auto off.
         _client.SetMicMode(auto: false, manual: !_snapshot.MicRecording);
+
+    private void HeartRate_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_applyingSnapshot) return;
+        _client.SetHeartRate(HeartRateSwitch.IsOn);
+        if (!HeartRateSwitch.IsOn) HeartRateBpm.Text = "—";
+    }
 
     // ---- Settings ----------------------------------------------------------
 

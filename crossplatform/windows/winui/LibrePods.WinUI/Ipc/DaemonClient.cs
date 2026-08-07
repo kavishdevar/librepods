@@ -67,6 +67,7 @@ public sealed class DaemonClient : IDisposable
     public void StepVolume(int delta) => Send(new StepVolumeCmd { Delta = delta });
     public void SetVolume(byte percent) => Send(new SetVolumeCmd { Percent = percent });
     public void ToggleMute() => Send(new ToggleMuteCmd());
+    public void SetHeartRate(bool on) => Send(new SetHeartRateCmd { On = on });
     public void Connect() => Send(new ConnectCmd());
     public void Shutdown() => Send(new ShutdownCmd());
 

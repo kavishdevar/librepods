@@ -33,6 +33,7 @@ public sealed class Snapshot
     [JsonPropertyName("allow_off")] public bool AllowOff { get; set; }
     [JsonPropertyName("volume")] public byte Volume { get; set; }
     [JsonPropertyName("muted")] public bool Muted { get; set; }
+    [JsonPropertyName("heart_rate")] public ushort? HeartRate { get; set; }
 }
 
 /// AAP control-command feature ids (the `id` byte of a 0x09 control command).
@@ -107,6 +108,12 @@ public sealed class SetVolumeCmd
 public sealed class ToggleMuteCmd
 {
     [JsonPropertyName("cmd")] public string Cmd => "toggle_mute";
+}
+
+public sealed class SetHeartRateCmd
+{
+    [JsonPropertyName("cmd")] public string Cmd => "set_heart_rate";
+    [JsonPropertyName("on")] public bool On { get; init; }
 }
 
 public sealed class ConnectCmd
