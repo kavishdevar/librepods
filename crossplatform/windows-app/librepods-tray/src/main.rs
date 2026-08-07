@@ -24,7 +24,7 @@ mod volume;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use driver::Driver;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
@@ -184,7 +184,12 @@ fn run_receiver(
         // Ear-detection auto-pause state: we only resume media that WE paused,
         // so we never fight a user who paused it themselves.
         let mut we_paused = false;
-        let mut ticks = 0u32;
+        // Disconnect detection: time-based (not per-iteration — the mic-mode fast
+        // loop would otherwise poll status dozens of times/sec) and debounced, so
+        // a single transient status blip during heavy mic I/O never tears down a
+        // live session (which showed up as a stuck "Disconnected" in the menu).
+        let mut last_status = Instant::now();
+        let mut status_fails = 0u32;
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -302,18 +307,24 @@ fn run_receiver(
             // Passive session: no periodic L2CAP sends — those make Windows
             // re-negotiate the audio profile and cut/switch the output. Detect a
             // real disconnect via GET_STATUS, which reads a driver variable only
-            // (no L2CAP I/O, so it never disturbs the audio).
-            ticks += 1;
-            if ticks >= 5 {
-                ticks = 0;
-                if !driver.status().map(|s| s == 2).unwrap_or(false) {
-                    state.lock().unwrap().connected = false;
-                    *driver_cell.lock().unwrap() = None; // drop the stale handle
-                    // Reset per-session state so the next connect (e.g. lid
-                    // reopened) re-fires the battery card + ANC/case events.
-                    last_anc = 0;
-                    last_case_present = None;
-                    break; // reconnect
+            // (no L2CAP I/O, so it never disturbs the audio). Checked ~once a
+            // second and only acted on after 3 consecutive failures (~3 s), so a
+            // momentary blip during mic streaming doesn't drop a live session.
+            if last_status.elapsed() >= Duration::from_secs(1) {
+                last_status = Instant::now();
+                if driver.status().map(|s| s == 2).unwrap_or(false) {
+                    status_fails = 0;
+                } else {
+                    status_fails += 1;
+                    if status_fails >= 3 {
+                        state.lock().unwrap().connected = false;
+                        *driver_cell.lock().unwrap() = None; // drop the stale handle
+                        // Reset per-session state so the next connect (e.g. lid
+                        // reopened) re-fires the battery card + ANC/case events.
+                        last_anc = 0;
+                        last_case_present = None;
+                        break; // reconnect
+                    }
                 }
             }
         }
