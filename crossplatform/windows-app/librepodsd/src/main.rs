@@ -319,12 +319,16 @@ fn run_receiver(ctx: Ctx) {
     // iPhone / gone), we give up so we DON'T keep stealing them back — reset the
     // gate and wait for a fresh prompt/Connect.
     let mut reach_fails = 0u32;
+    // The user asked to connect — keep trying for a generous window (the AirPods
+    // may take a few seconds to become reachable) before giving up. We never
+    // *steal* here: a failed connect() doesn't pull them, and once connected a
+    // drop releases the gate (below).
     let give_up = |ctx: &Ctx, fails: &mut u32| {
         *fails += 1;
-        if *fails >= 3 {
+        if *fails >= 12 {
             *fails = 0;
             ctx.connect_requested.store(false, Ordering::Relaxed);
-            log("run_receiver: can't reach AirPods 3x — releasing (won't steal)");
+            log("run_receiver: gave up reaching AirPods — releasing");
         }
     };
     loop {
@@ -344,7 +348,7 @@ fn run_receiver(ctx: Ctx) {
                 *ctx.driver_cell.lock().unwrap() = None;
                 ctx.push_state();
                 give_up(&ctx, &mut reach_fails);
-                thread::sleep(Duration::from_secs(3));
+                thread::sleep(Duration::from_millis(1500));
                 continue;
             }
         };
@@ -355,7 +359,7 @@ fn run_receiver(ctx: Ctx) {
             ctx.state.lock().unwrap().connected = false;
             ctx.push_state();
             give_up(&ctx, &mut reach_fails);
-            thread::sleep(Duration::from_secs(3));
+            thread::sleep(Duration::from_millis(1500));
             continue;
         }
         reach_fails = 0; // reached them — reset the give-up counter
