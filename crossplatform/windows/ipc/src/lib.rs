@@ -53,6 +53,9 @@ pub struct Snapshot {
     pub volume: u8,
     /// The output is muted.
     pub muted: bool,
+    /// Latest validated heart-rate BPM (AirPods Pro 3 RTBuddy). `None` when HR
+    /// monitoring is off or no sample has been decoded yet. Opt-in (drains battery).
+    pub heart_rate: Option<u16>,
 }
 
 /// A toggleable AAP control-command setting (the `id` byte of a 0x09 control
@@ -85,6 +88,10 @@ pub enum Command {
     SetVolume { percent: u8 },
     /// Mute/unmute the output.
     ToggleMute,
+    /// Enable/disable AirPods Pro 3 heart-rate monitoring (opt-in; off by
+    /// default because it drains battery). On sends the RTBuddy enable sequence;
+    /// off sends the stop frame and clears `heart_rate`.
+    SetHeartRate { on: bool },
     /// Start the AAP session (the user accepted the "connect?" prompt).
     Connect,
     /// Request a fresh `State` snapshot.

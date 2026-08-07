@@ -22,6 +22,48 @@ pub const STOP_AUDIO: [u8; 12] = [
     0x04, 0x00, 0x04, 0x00, 0x58, 0x00, 0x00, 0x00, 0x02, 0x00, 0x03, 0x01,
 ];
 
+// ---- AirPods Pro 3 RTBuddy heart-rate (PR #702) ----
+//
+// Enable = the AACP 1.3 init handshake (the four CONNECT/CAPABILITIES packets,
+// sent RAW via the driver like `sendPacket` on Android) then the HRM_STATE
+// control command (0x30 on) and finally the START frame. The four init packets
+// and START/STOP already carry the `04 00 04 00` header inline (on Android the
+// init packets go through `sendPacket` as-is; START/STOP go through
+// `sendDataPacket` which *prepends* the header — we bake it in here so every
+// constant is a ready-to-send driver packet). Order + delays mirror
+// `HeartRateMonitor.initializeAacpSession()` / `startStreamAttempt()`.
+
+/// AACP 1.3 init, service 0 — CONNECT (raw `sendPacket`).
+pub const HR_CONNECT_SERVICE_0: [u8; 16] = [
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+/// AACP 1.3 init, service 0 — CAPABILITIES (raw `sendPacket`).
+pub const HR_CAPABILITIES_SERVICE_0: [u8; 7] = [0x04, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00];
+/// AACP 1.3 init, service 4 — CONNECT (raw `sendPacket`).
+pub const HR_CONNECT_SERVICE_4: [u8; 16] = [
+    0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+];
+/// AACP 1.3 init, service 4 — CAPABILITIES (raw `sendPacket`).
+pub const HR_CAPABILITIES_SERVICE_4: [u8; 7] = [0x04, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00];
+
+/// HRM_STATE control command (id 0x30), value 0x01 = on. This is exactly
+/// `control_command(0x30, 0x01)`; the AirPods echo it back as a status.
+pub const HR_ENABLE: [u8; 11] = [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x30, 0x01, 0x00, 0x00, 0x00];
+
+/// RTBuddy SensorDataWX HEARTRATE(19) START frame (1s cadence). Includes the
+/// `04 00 04 00` header (Android's `sendDataPacket` prepends it).
+pub const HR_START: [u8; 28] = [
+    0x04, 0x00, 0x04, 0x00, // header
+    0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x08, 0xE3, 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
+    0x02, 0x1A, 0x05, 0x01, 0x40, 0x42, 0x0F, 0x00,
+];
+/// RTBuddy SensorDataWX HEARTRATE(19) STOP frame. Includes the header.
+pub const HR_STOP: [u8; 28] = [
+    0x04, 0x00, 0x04, 0x00, // header
+    0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x08, 0xED, 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
+    0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00,
+];
+
 /// True if `data` is a 0x58 uplink audio packet (carries AAC-ELD frames).
 pub fn is_audio_packet(data: &[u8]) -> bool {
     data.len() >= 8

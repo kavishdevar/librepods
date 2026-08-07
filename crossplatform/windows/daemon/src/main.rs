@@ -11,6 +11,7 @@ mod aap;
 mod bt;
 mod driver;
 mod eld;
+mod hr;
 mod le;
 mod media;
 mod micpipe;
@@ -106,6 +107,9 @@ struct Ctx {
     driver_cell: Arc<Mutex<Option<driver::Driver>>>,
     mic_on: Arc<AtomicBool>,
     auto_mode: Arc<AtomicBool>,
+    /// AirPods Pro 3 heart-rate monitoring is on (opt-in — off by default). When
+    /// set, `run_receiver` feeds each recv chunk into the RTBuddy HR decoder.
+    hr_on: Arc<AtomicBool>,
     /// The user accepted the "connect?" prompt — the session may start.
     connect_requested: Arc<AtomicBool>,
     pipe: Option<Arc<micpipe::MicPipe>>,
@@ -427,6 +431,43 @@ fn set_mic(ctx: &Ctx, on: bool) {
     ctx.push_state();
 }
 
+/// Enable/disable AirPods Pro 3 heart-rate monitoring. On → send the RTBuddy
+/// AACP 1.3 init handshake (four CONNECT/CAPABILITIES packets, then the HRM_STATE
+/// control command) and finally the START frame, with the same inter-packet
+/// delays as the Android `HeartRateMonitor`. Off → send the STOP frame and clear
+/// the last reading. The decoder itself is driven in `run_receiver` off `hr_on`.
+fn set_heart_rate(ctx: &Ctx, on: bool) {
+    let was = ctx.hr_on.swap(on, Ordering::Relaxed);
+    let drv = ctx.driver_cell.lock().unwrap().clone();
+    if on && !was {
+        if let Some(drv) = drv {
+            // initializeAacpSession(): connect0/caps0/connect4/caps4 (raw).
+            let init: [(&[u8], u64); 4] = [
+                (&aap::HR_CONNECT_SERVICE_0, 180),
+                (&aap::HR_CAPABILITIES_SERVICE_0, 220),
+                (&aap::HR_CONNECT_SERVICE_4, 180),
+                (&aap::HR_CAPABILITIES_SERVICE_4, 220),
+            ];
+            for (pkt, delay) in init {
+                let _ = drv.send(pkt);
+                thread::sleep(Duration::from_millis(delay));
+            }
+            // enableHeartRate(): HRM_STATE control command on.
+            let _ = drv.send(&aap::HR_ENABLE);
+            thread::sleep(Duration::from_millis(120)); // START_COMMAND_DELAY_MILLIS
+            let _ = drv.send(&aap::HR_START);
+        }
+        ctx.overlay("Heart rate monitoring on");
+    } else if !on && was {
+        if let Some(drv) = drv {
+            let _ = drv.send(&aap::HR_STOP);
+        }
+        ctx.state.lock().unwrap().heart_rate = None;
+        ctx.overlay("Heart rate monitoring off");
+    }
+    ctx.push_state();
+}
+
 fn apply_command(ctx: &Ctx, cmd: Command) {
     log(&format!("cmd received: {cmd:?}"));
     match cmd {
@@ -485,6 +526,7 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             volume::toggle_mute();
             ctx.sync_volume();
         }
+        Command::SetHeartRate { on } => set_heart_rate(ctx, on),
         Command::Connect => {
             // The user accepted the prompt — let the session start.
             ctx.connect_requested.store(true, Ordering::Relaxed);
@@ -500,6 +542,9 @@ fn run_receiver(ctx: Ctx) {
     log("run_receiver: entered");
     let mut buf = [0u8; 8192];
     let mut decoder: Option<eld::Decoder> = None;
+    // RTBuddy heart-rate decoder (inert unless `hr_on`). Carry is reset per
+    // connection so a partial frame never straddles a reconnect.
+    let mut hr_decoder = hr::RtBuddyHeartRateDecoder::new();
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause
     volume::init(); // COM for the CA volume duck (same MTA)
     log("run_receiver: media init done");
@@ -563,6 +608,12 @@ fn run_receiver(ctx: Ctx) {
         pending_card = true;
         ctx.push_state();
         log("run_receiver: handshake done, connected=true");
+        hr_decoder.reset(); // fresh connection — drop any stale HR carry
+        // Re-arm the HR stream if the user had it on before the (re)connect.
+        if ctx.hr_on.load(Ordering::Relaxed) {
+            ctx.hr_on.store(false, Ordering::Relaxed);
+            set_heart_rate(&ctx, true);
+        }
 
         let mut we_paused = false;
         let mut prev_ear = [false; 2]; // last [primary, secondary] in-ear state
@@ -582,6 +633,23 @@ fn run_receiver(ctx: Ctx) {
                     // Forward the raw packet to the full app (if attached) so it
                     // runs its own AAP session over us.
                     ctx.forward_l2cap(data);
+                    // Heart rate (opt-in): feed each chunk into the RTBuddy
+                    // decoder; publish the latest validated BPM. Inert when off.
+                    if ctx.hr_on.load(Ordering::Relaxed) {
+                        if let Some(bpm) = hr_decoder.feed(data).into_iter().last() {
+                            let changed = {
+                                let mut s = ctx.state.lock().unwrap();
+                                let c = s.heart_rate != Some(bpm);
+                                s.heart_rate = Some(bpm);
+                                c
+                            };
+                            if changed {
+                                ctx.push_state();
+                            }
+                        }
+                    } else if ctx.state.lock().unwrap().heart_rate.take().is_some() {
+                        ctx.push_state();
+                    }
                     // Hi-res mic: decode the 0x58 uplink AUs → feed the virtual mic.
                     if ctx.mic_on.load(Ordering::Relaxed) {
                         if aap::is_audio_packet(data) {
@@ -786,8 +854,13 @@ fn run_receiver(ctx: Ctx) {
                         if status_fails >= 3 {
                             log(&format!("run_receiver: status lost 3s (st={st:?}) — releasing"));
                             ctx.overlay("Disconnected");
-                            ctx.state.lock().unwrap().connected = false;
+                            {
+                                let mut s = ctx.state.lock().unwrap();
+                                s.connected = false;
+                                s.heart_rate = None; // stale once the link is gone
+                            }
                             *ctx.driver_cell.lock().unwrap() = None;
+                            hr_decoder.reset(); // drop HR carry across the reconnect
                             last_anc = 0;
                             last_case_present = None;
                             // Released: never reconnect on our own (that would
@@ -882,6 +955,7 @@ fn main() {
         driver_cell: Arc::new(Mutex::new(None)),
         mic_on: Arc::new(AtomicBool::new(false)),
         auto_mode: Arc::new(AtomicBool::new(true)),
+        hr_on: Arc::new(AtomicBool::new(false)),
         connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
         conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
