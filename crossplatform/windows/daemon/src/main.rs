@@ -15,6 +15,7 @@ mod le;
 mod media;
 mod micpipe;
 mod rename;
+mod volume;
 
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -156,6 +157,23 @@ impl Ctx {
     fn cache_replay(&self, kind: u8, packet: &[u8]) {
         self.replay.lock().unwrap().insert(kind, packet.to_vec());
     }
+
+    /// Read the live WASAPI volume/mute into the snapshot; push only on change so
+    /// we don't spam clients. The caller's thread must have COM initialized.
+    fn sync_volume(&self) {
+        let vol = volume::get().unwrap_or(0);
+        let muted = volume::is_muted();
+        let changed = {
+            let mut s = self.state.lock().unwrap();
+            let c = s.volume != vol || s.muted != muted;
+            s.volume = vol;
+            s.muted = muted;
+            c
+        };
+        if changed {
+            self.push_state();
+        }
+    }
 }
 
 /// Write the whole buffer to a pipe handle. Returns false if the client is gone.
@@ -180,6 +198,7 @@ unsafe fn write_all(h: HANDLE, buf: &[u8]) -> bool {
 
 /// Per-client reader: parse NDJSON commands and apply them until it disconnects.
 fn client_reader(pipe: Arc<Pipe>, ctx: Ctx) {
+    volume::init(); // this thread applies StepVolume/ToggleMute (WASAPI needs COM)
     let h = pipe.0;
     let mut buf = [0u8; 4096];
     let mut acc = String::new();
@@ -432,6 +451,14 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             }
             ctx.push_state();
         }
+        Command::StepVolume { delta } => {
+            volume::step(delta);
+            ctx.sync_volume();
+        }
+        Command::ToggleMute => {
+            volume::toggle_mute();
+            ctx.sync_volume();
+        }
         Command::Connect => {
             // The user accepted the prompt — let the session start.
             ctx.connect_requested.store(true, Ordering::Relaxed);
@@ -447,7 +474,9 @@ fn run_receiver(ctx: Ctx) {
     log("run_receiver: entered");
     let mut buf = [0u8; 8192];
     let mut decoder: Option<eld::Decoder> = None;
+    let mut conv_duck = volume::ConvDuck::default(); // Conversational Awareness ducking
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause
+    volume::init(); // COM for the CA volume duck (same MTA)
     log("run_receiver: media init done");
     let mut last_anc = 0u8;
     let mut last_case_present: Option<bool> = None;
@@ -612,6 +641,11 @@ fn run_receiver(ctx: Ctx) {
                             ctx.push_state();
                         }
                     }
+                    // Conversational Awareness: the AirPods signal speech start/stop;
+                    // we (the host, single volume owner) duck/restore the volume.
+                    if let Some(status) = aap::parse_conversational_awareness(data) {
+                        conv_duck.on_status(status);
+                    }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
                         let new_ear = [primary.in_ear(), secondary.in_ear()];
                         if new_ear != prev_ear {
@@ -659,20 +693,34 @@ fn run_receiver(ctx: Ctx) {
             }
             if last_status.elapsed() >= Duration::from_secs(1) {
                 last_status = Instant::now();
-                if driver.status().map(|s| s == 2).unwrap_or(false) {
+                let st = driver.status();
+                if matches!(st, Ok(2)) {
                     status_fails = 0;
                 } else {
-                    status_fails += 1;
-                    if status_fails >= 3 {
-                        ctx.state.lock().unwrap().connected = false;
-                        *ctx.driver_cell.lock().unwrap() = None;
-                        last_anc = 0;
-                        last_case_present = None;
-                        // Released: never reconnect on our own (that would steal
-                        // them back from the iPhone) — wait for a fresh prompt.
-                        ctx.connect_requested.store(false, Ordering::Relaxed);
-                        ctx.push_state();
-                        break;
+                    // Removing both AirPods from the ears makes them idle the AAP
+                    // link (a soft, non-2 status) — that is NOT a disconnect, so
+                    // don't tear down (doing so dropped the driver handle and
+                    // churned the BT link → "disconnects and comes back"). Only a
+                    // hard driver error (device actually gone, e.g. cased) counts
+                    // while unworn.
+                    let both_out = !prev_ear[0] && !prev_ear[1];
+                    let soft_idle = st.is_ok();
+                    if both_out && soft_idle {
+                        status_fails = 0;
+                    } else {
+                        status_fails += 1;
+                        if status_fails >= 3 {
+                            log(&format!("run_receiver: status lost 3s (st={st:?}) — releasing"));
+                            ctx.state.lock().unwrap().connected = false;
+                            *ctx.driver_cell.lock().unwrap() = None;
+                            last_anc = 0;
+                            last_case_present = None;
+                            // Released: never reconnect on our own (that would
+                            // steal them back from the iPhone) — wait for a prompt.
+                            ctx.connect_requested.store(false, Ordering::Relaxed);
+                            ctx.push_state();
+                            break;
+                        }
                     }
                 }
             }
@@ -828,6 +876,18 @@ fn main() {
             let c = ctx.clone();
             thread::spawn(move || poll_mic(c));
         }
+    }
+    // Volume poller: keep the Snapshot's volume/mute fresh (the daemon owns
+    // volume) so the tray renders it — runs regardless of a paired device.
+    {
+        let c = ctx.clone();
+        thread::spawn(move || {
+            volume::init();
+            loop {
+                c.sync_volume();
+                thread::sleep(Duration::from_millis(1000));
+            }
+        });
     }
 
     log("threads spawned; serving events + cmds pipes");

@@ -48,6 +48,11 @@ pub struct Snapshot {
     pub adaptive_volume: bool,
     /// Allow the "Off" option in noise control (vs. only ANC/Transparency/Adaptive).
     pub allow_off: bool,
+    /// System output volume 0..=100 (the default render endpoint — the AirPods
+    /// when they're active). Owned by the daemon so it can duck for CA.
+    pub volume: u8,
+    /// The output is muted.
+    pub muted: bool,
 }
 
 /// A toggleable AAP control-command setting (the `id` byte of a 0x09 control
@@ -71,6 +76,10 @@ pub enum Command {
     SetMicMode { auto: bool, manual: bool },
     /// Toggle an AAP control-command setting (see the `feature` module).
     SetFeature { feature: u8, on: bool },
+    /// Nudge the output volume by `delta` percent (the daemon owns volume).
+    StepVolume { delta: i32 },
+    /// Mute/unmute the output.
+    ToggleMute,
     /// Start the AAP session (the user accepted the "connect?" prompt).
     Connect,
     /// Request a fresh `State` snapshot.

@@ -75,6 +75,17 @@ pub fn parse_control_value(data: &[u8], id: u8) -> Option<u8> {
     }
 }
 
+/// Conversational Awareness event (opcode 0x4B): the AirPods signal that you
+/// started/stopped speaking; the status byte drives the host-side volume duck.
+/// 1 = start, 2 = reduce, 3 = partial, 4/6/7 = end.
+pub fn parse_conversational_awareness(data: &[u8]) -> Option<u8> {
+    if data.len() >= 10 && data[..4] == HEADER && data[4] == 0x4B {
+        Some(data[9])
+    } else {
+        None
+    }
+}
+
 pub fn anc_name(mode: u8) -> &'static str {
     match mode {
         1 => "Off",

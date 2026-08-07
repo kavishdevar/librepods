@@ -8,7 +8,6 @@
 mod client;
 mod overlay;
 mod theme;
-mod volume;
 
 use std::sync::{Arc, Mutex};
 
@@ -101,7 +100,6 @@ fn main() {
         }
     }
 
-    volume::init(); // COM for Core Audio (volume is client-side)
     overlay::init(); // the hidden centered popup window on this thread
     theme::apply_menu_theme();
 
@@ -210,10 +208,10 @@ fn main() {
         m_anc.set_checked(s.anc == 2);
         m_trans.set_checked(s.anc == 3);
         m_adapt.set_checked(s.anc == 4);
-        let vol = if volume::is_muted() {
+        let vol = if s.muted {
             "muted".to_string()
         } else {
-            volume::get().map(|p| format!("{p}%")).unwrap_or_else(|| "—".into())
+            format!("{}%", s.volume)
         };
         vol_line.set_text(&format!("Volume: {vol}"));
         m_mic.set_text(if s.mic_recording {
@@ -267,14 +265,11 @@ fn main() {
                         }
                     }
                 } else if ev.id == vol_up_id {
-                    volume::step(5);
-                    refresh();
+                    client.send(&Command::StepVolume { delta: 5 });
                 } else if ev.id == vol_down_id {
-                    volume::step(-5);
-                    refresh();
+                    client.send(&Command::StepVolume { delta: -5 });
                 } else if ev.id == mute_id {
-                    volume::toggle_mute();
-                    refresh();
+                    client.send(&Command::ToggleMute);
                 } else if ev.id == auto_id {
                     let (auto, mic) = {
                         let s = state.lock().unwrap();
