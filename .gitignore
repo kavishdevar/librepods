@@ -669,3 +669,6 @@ result-*
 
 # direnv
 .direnv
+
+# Claude Code local config
+.claude/
