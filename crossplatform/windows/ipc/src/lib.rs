@@ -42,6 +42,20 @@ pub struct Snapshot {
     pub mic_recording: bool,
     /// Auto-enable the hi-res mic on recording (vs. manual control).
     pub auto_mode: bool,
+    /// Conversational Awareness: lower the volume automatically when you speak.
+    pub conversational_awareness: bool,
+    /// Adaptive/Personalized Volume: adjust the volume to the environment.
+    pub adaptive_volume: bool,
+    /// Allow the "Off" option in noise control (vs. only ANC/Transparency/Adaptive).
+    pub allow_off: bool,
+}
+
+/// A toggleable AAP control-command setting (the `id` byte of a 0x09 control
+/// command). Values are sent as 0x01 (on) / 0x02 (off).
+pub mod feature {
+    pub const ADAPTIVE_VOLUME: u8 = 0x26;
+    pub const CONVERSATIONAL_AWARENESS: u8 = 0x28;
+    pub const ALLOW_OFF: u8 = 0x34;
 }
 
 /// Client → daemon. (Volume stays client-side via WASAPI — not the exclusive
@@ -55,6 +69,8 @@ pub enum Command {
     SetAnc { mode: u8 },
     /// Set the hi-res mic mode (auto-enable and/or manual override).
     SetMicMode { auto: bool, manual: bool },
+    /// Toggle an AAP control-command setting (see the `feature` module).
+    SetFeature { feature: u8, on: bool },
     /// Start the AAP session (the user accepted the "connect?" prompt).
     Connect,
     /// Request a fresh `State` snapshot.

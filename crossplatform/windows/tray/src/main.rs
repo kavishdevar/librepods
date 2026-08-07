@@ -126,6 +126,10 @@ fn main() {
     let m_mic = MenuItem::new("Microphone: idle", false, None);
     let m_auto = CheckMenuItem::new("Auto-enable on recording", true, true, None);
     let m_mic_manual = CheckMenuItem::new("Hi-res microphone (manual)", true, false, None);
+    let feat_header = MenuItem::new("Features", false, None);
+    let m_conv = CheckMenuItem::new("Conversational Awareness", true, false, None);
+    let m_adaptive_vol = CheckMenuItem::new("Adaptive Volume", true, false, None);
+    let m_allow_off = CheckMenuItem::new("Allow \"Off\" mode", true, false, None);
     let m_open = MenuItem::new("Open App", true, None);
     let quit = MenuItem::new("Quit", true, None);
 
@@ -139,6 +143,9 @@ fn main() {
     let mute_id = m_mute.id().clone();
     let auto_id = m_auto.id().clone();
     let mic_manual_id = m_mic_manual.id().clone();
+    let conv_id = m_conv.id().clone();
+    let adaptive_vol_id = m_adaptive_vol.id().clone();
+    let allow_off_id = m_allow_off.id().clone();
     let open_id = m_open.id().clone();
     let quit_id = quit.id().clone();
 
@@ -161,6 +168,12 @@ fn main() {
     menu.append(&m_mic).unwrap();
     menu.append(&m_auto).unwrap();
     menu.append(&m_mic_manual).unwrap();
+    menu.append(&PredefinedMenuItem::separator()).unwrap();
+    menu.append(&feat_header).unwrap();
+    menu.append(&m_conv).unwrap();
+    menu.append(&m_adaptive_vol).unwrap();
+    menu.append(&m_allow_off).unwrap();
+    menu.append(&PredefinedMenuItem::separator()).unwrap();
     menu.append(&m_open).unwrap();
     menu.append(&quit).unwrap();
 
@@ -210,6 +223,9 @@ fn main() {
         });
         m_auto.set_checked(s.auto_mode);
         m_mic_manual.set_checked(s.mic_recording && !s.auto_mode);
+        m_conv.set_checked(s.conversational_awareness);
+        m_adaptive_vol.set_checked(s.adaptive_volume);
+        m_allow_off.set_checked(s.allow_off);
         let icon = match (s.connected, avg_battery(&s.battery)) {
             (true, Some(avg)) => battery_icon(avg),
             _ => make_icon(),
@@ -273,6 +289,24 @@ fn main() {
                 } else if ev.id == mic_manual_id {
                     let mic = state.lock().unwrap().mic_recording;
                     client.send(&Command::SetMicMode { auto: false, manual: !mic });
+                } else if ev.id == conv_id {
+                    let on = !state.lock().unwrap().conversational_awareness;
+                    client.send(&Command::SetFeature {
+                        feature: librepods_ipc::feature::CONVERSATIONAL_AWARENESS,
+                        on,
+                    });
+                } else if ev.id == adaptive_vol_id {
+                    let on = !state.lock().unwrap().adaptive_volume;
+                    client.send(&Command::SetFeature {
+                        feature: librepods_ipc::feature::ADAPTIVE_VOLUME,
+                        on,
+                    });
+                } else if ev.id == allow_off_id {
+                    let on = !state.lock().unwrap().allow_off;
+                    client.send(&Command::SetFeature {
+                        feature: librepods_ipc::feature::ALLOW_OFF,
+                        on,
+                    });
                 } else if let Some(mode) = mode_for(&ev.id) {
                     client.send(&Command::SetAnc { mode });
                 }

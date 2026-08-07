@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use librepods_ipc as ipc;
 use librepods_ipc::{
     from_line, to_line, Command, Event, Snapshot, PIPE_CMDS, PIPE_EVENTS, PIPE_L2CAP_RX,
     PIPE_L2CAP_TX,
@@ -414,6 +415,23 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
                 ctx.push_state();
             }
         }
+        Command::SetFeature { feature, on } => {
+            if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
+                let _ = drv.send(&aap::feature_command(feature, on));
+            }
+            // Optimistic: reflect the toggle immediately; the AirPods echo a
+            // status which run_receiver uses to correct it if it differs.
+            {
+                let mut s = ctx.state.lock().unwrap();
+                match feature {
+                    ipc::feature::CONVERSATIONAL_AWARENESS => s.conversational_awareness = on,
+                    ipc::feature::ADAPTIVE_VOLUME => s.adaptive_volume = on,
+                    ipc::feature::ALLOW_OFF => s.allow_off = on,
+                    _ => {}
+                }
+            }
+            ctx.push_state();
+        }
         Command::Connect => {
             // The user accepted the prompt — let the session start.
             ctx.connect_requested.store(true, Ordering::Relaxed);
@@ -564,6 +582,35 @@ fn run_receiver(ctx: Ctx) {
                             ctx.overlay(aap::anc_name(m));
                         }
                         last_anc = m;
+                    }
+                    // Sync the feature toggles from the AirPods' own status echoes
+                    // (0x01 = on, 0x02 = off), so the tray checkmarks reflect the
+                    // real device state — including whatever the iPhone last set.
+                    {
+                        let mut changed = false;
+                        let mut s = ctx.state.lock().unwrap();
+                        for (id, field) in [
+                            (ipc::feature::CONVERSATIONAL_AWARENESS, 0),
+                            (ipc::feature::ADAPTIVE_VOLUME, 1),
+                            (ipc::feature::ALLOW_OFF, 2),
+                        ] {
+                            if let Some(v) = aap::parse_control_value(data, id) {
+                                let on = v == 0x01;
+                                let slot = match field {
+                                    0 => &mut s.conversational_awareness,
+                                    1 => &mut s.adaptive_volume,
+                                    _ => &mut s.allow_off,
+                                };
+                                if *slot != on {
+                                    *slot = on;
+                                    changed = true;
+                                }
+                            }
+                        }
+                        drop(s);
+                        if changed {
+                            ctx.push_state();
+                        }
                     }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
                         let new_ear = [primary.in_ear(), secondary.in_ear()];

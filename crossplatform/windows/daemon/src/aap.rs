@@ -52,7 +52,27 @@ pub fn for_each_au(sdu: &[u8], mut f: impl FnMut(&[u8])) {
 
 /// Listening-mode (ANC) control command. value = mode (1 off, 2 anc, 3 transparency, 4 adaptive).
 pub fn anc_command(mode: u8) -> [u8; 11] {
-    [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, mode, 0x00, 0x00, 0x00]
+    control_command(0x0D, mode)
+}
+
+/// Generic AAP control command (opcode 0x09): `[HEADER, 0x09, 0x00, id, value, 0,0,0]`.
+/// ANC and the boolean feature toggles are all this shape.
+pub fn control_command(id: u8, value: u8) -> [u8; 11] {
+    [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, id, value, 0x00, 0x00, 0x00]
+}
+
+/// Boolean feature toggle: 0x01 = on, 0x02 = off (matches the AirPods encoding).
+pub fn feature_command(id: u8, on: bool) -> [u8; 11] {
+    control_command(id, if on { 0x01 } else { 0x02 })
+}
+
+/// If `data` is a control-command status for `id` (opcode 0x09), return its value byte.
+pub fn parse_control_value(data: &[u8], id: u8) -> Option<u8> {
+    if data.len() >= 8 && data[..4] == HEADER && data[4] == 0x09 && data[6] == id {
+        Some(data[7])
+    } else {
+        None
+    }
 }
 
 pub fn anc_name(mode: u8) -> &'static str {
