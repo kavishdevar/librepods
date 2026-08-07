@@ -110,6 +110,14 @@ struct Ctx {
     /// AirPods Pro 3 heart-rate monitoring is on (opt-in — off by default). When
     /// set, `run_receiver` feeds each recv chunk into the RTBuddy HR decoder.
     hr_on: Arc<AtomicBool>,
+    /// Set by `run_receiver` the moment the decoder yields its first BPM sample.
+    /// The HR retry thread polls this to know an enable attempt actually took
+    /// (the RTBuddy stream almost never starts on the first try) — cleared before
+    /// each attempt. This is the run_receiver↔retry-thread rendezvous.
+    hr_got_sample: Arc<AtomicBool>,
+    /// True while an HR retry thread is live. A one-thread guard so rapid on/off
+    /// never stacks two retry campaigns over the one driver.
+    hr_retrying: Arc<AtomicBool>,
     /// The user accepted the "connect?" prompt — the session may start.
     connect_requested: Arc<AtomicBool>,
     pipe: Option<Arc<micpipe::MicPipe>>,
@@ -431,46 +439,147 @@ fn set_mic(ctx: &Ctx, on: bool) {
     ctx.push_state();
 }
 
-/// Enable/disable AirPods Pro 3 heart-rate monitoring. On → send the RTBuddy
-/// AACP 1.3 init handshake (four CONNECT/CAPABILITIES packets, then the HRM_STATE
-/// control command) and finally the START frame, with the same inter-packet
-/// delays as the Android `HeartRateMonitor`. Off → send the STOP frame and clear
-/// the last reading. The decoder itself is driven in `run_receiver` off `hr_on`.
+// ---- HR retry constants (mirror the Android HeartRateMonitor companion) ----
+/// Wait this long for the FIRST decoded sample before re-enabling.
+const HR_FIRST_SAMPLE_TIMEOUT_MS: u64 = 8_000;
+/// Total budget across all attempts before we give up (transport stays up).
+const HR_RECONNECT_WINDOW_MS: u64 = 15_000;
+/// Gap between HR_ENABLE and HR_START.
+const HR_START_COMMAND_DELAY_MS: u64 = 120;
+/// Backoff between attempts, indexed by attempt number (last value repeats).
+const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
+
+/// How one retry campaign ended.
+enum HrOutcome {
+    /// The stream came up — a sample was decoded; run_receiver keeps decoding.
+    Live,
+    /// The user turned HR off mid-campaign (`hr_on` went false).
+    Stopped,
+    /// The 15 s window (or a lost transport) exhausted with no sample — give up.
+    GiveUp,
+}
+
+/// Enable/disable AirPods Pro 3 heart-rate monitoring. On → spawn a retry thread
+/// that re-sends the RTBuddy AACP 1.3 enable sequence until the first sample
+/// arrives (the stream almost never starts on the first attempt). Off → send the
+/// STOP frame, clear the reading, and let the retry thread notice `hr_on` and
+/// exit. The decoder itself is driven in `run_receiver` off `hr_on`.
 fn set_heart_rate(ctx: &Ctx, on: bool) {
     let was = ctx.hr_on.swap(on, Ordering::Relaxed);
-    let drv = ctx.driver_cell.lock().unwrap().clone();
+    let has_driver = ctx.driver_cell.lock().unwrap().is_some();
     log(&format!(
         "HR: set on={on} was={was} driver={}",
-        if drv.is_some() { "connected" } else { "NONE(no session yet)" }
+        if has_driver { "connected" } else { "NONE(no session yet)" }
     ));
     if on && !was {
-        if let Some(drv) = drv {
-            log("HR: sending enable sequence (init + HRM_STATE + START)");
-            // initializeAacpSession(): connect0/caps0/connect4/caps4 (raw).
-            let init: [(&[u8], u64); 4] = [
-                (&aap::HR_CONNECT_SERVICE_0, 180),
-                (&aap::HR_CAPABILITIES_SERVICE_0, 220),
-                (&aap::HR_CONNECT_SERVICE_4, 180),
-                (&aap::HR_CAPABILITIES_SERVICE_4, 220),
-            ];
-            for (pkt, delay) in init {
-                let _ = drv.send(pkt);
-                thread::sleep(Duration::from_millis(delay));
-            }
-            // enableHeartRate(): HRM_STATE control command on.
-            let _ = drv.send(&aap::HR_ENABLE);
-            thread::sleep(Duration::from_millis(120)); // START_COMMAND_DELAY_MILLIS
-            let _ = drv.send(&aap::HR_START);
-        }
+        spawn_hr_retry(ctx);
         ctx.overlay("Heart rate monitoring on");
     } else if !on && was {
-        if let Some(drv) = drv {
+        if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
             let _ = drv.send(&aap::HR_STOP);
         }
         ctx.state.lock().unwrap().heart_rate = None;
         ctx.overlay("Heart rate monitoring off");
+        // Any running retry thread observes hr_on=false on its next poll and exits.
     }
     ctx.push_state();
+}
+
+/// Start the HR retry campaign on its own thread — so the ~1 s of init sleeps and
+/// the up-to-8 s sample waits never block the command reader or the recv loop.
+/// Guarded by `hr_retrying` so two campaigns can't run over the one driver.
+fn spawn_hr_retry(ctx: &Ctx) {
+    // One-thread guard: bail if a campaign is already live.
+    if ctx.hr_retrying.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let ctx = ctx.clone();
+    thread::spawn(move || {
+        // Loop only to cover a rapid off→on that lost its spawn to the guard: a
+        // campaign that Stopped (user off) re-runs iff hr_on is true again.
+        loop {
+            match hr_retry_campaign(&ctx) {
+                HrOutcome::Live | HrOutcome::GiveUp => break,
+                HrOutcome::Stopped => {
+                    if !ctx.hr_on.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
+            }
+        }
+        ctx.hr_retrying.store(false, Ordering::SeqCst);
+    });
+}
+
+/// One 15 s campaign: keep re-sending the enable sequence and waiting for the
+/// first sample, backing off between attempts. Non-disruptive — this only
+/// re-sends the AACP init + STOP frames (a service-level reset), never touching
+/// the L2CAP/driver connection.
+fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
+    let deadline = Instant::now() + Duration::from_millis(HR_RECONNECT_WINDOW_MS);
+    let mut attempt: u32 = 0;
+    while ctx.hr_on.load(Ordering::Relaxed) && Instant::now() < deadline {
+        ctx.hr_got_sample.store(false, Ordering::Relaxed);
+        let drv = match ctx.driver_cell.lock().unwrap().clone() {
+            Some(d) => d,
+            None => {
+                log("HR: no driver — retry aborted (re-arms on reconnect)");
+                return HrOutcome::GiveUp;
+            }
+        };
+        // stopSessionLocked reset → init (connect0/caps0/connect4/caps4) →
+        // HR_ENABLE → 120 ms → HR_START. Same order/delays as the Android impl.
+        let _ = drv.send(&aap::HR_STOP);
+        thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
+        let init: [(&[u8], u64); 4] = [
+            (&aap::HR_CONNECT_SERVICE_0, 180),
+            (&aap::HR_CAPABILITIES_SERVICE_0, 220),
+            (&aap::HR_CONNECT_SERVICE_4, 180),
+            (&aap::HR_CAPABILITIES_SERVICE_4, 220),
+        ];
+        for (pkt, delay) in init {
+            if !ctx.hr_on.load(Ordering::Relaxed) {
+                return HrOutcome::Stopped;
+            }
+            let _ = drv.send(pkt);
+            thread::sleep(Duration::from_millis(delay));
+        }
+        let _ = drv.send(&aap::HR_ENABLE);
+        thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
+        let _ = drv.send(&aap::HR_START);
+
+        // Wait up to FIRST_SAMPLE_TIMEOUT for the decoder to yield a sample,
+        // polling so we react promptly to the user turning HR off.
+        let wait_until = Instant::now() + Duration::from_millis(HR_FIRST_SAMPLE_TIMEOUT_MS);
+        while Instant::now() < wait_until {
+            if !ctx.hr_on.load(Ordering::Relaxed) {
+                return HrOutcome::Stopped;
+            }
+            if ctx.hr_got_sample.load(Ordering::Relaxed) {
+                log("HR: stream live (first sample decoded) — retries done");
+                return HrOutcome::Live;
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+
+        // No sample in 8 s — back off (capped to the remaining window) and retry.
+        attempt += 1;
+        log(&format!("HR retry: attempt={attempt} (no sample in 8s)"));
+        let backoff = HR_RETRY_BACKOFF_MS[(attempt as usize - 1).min(HR_RETRY_BACKOFF_MS.len() - 1)];
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let nap_until = Instant::now() + Duration::from_millis(backoff).min(remaining);
+        while Instant::now() < nap_until && ctx.hr_on.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+    if !ctx.hr_on.load(Ordering::Relaxed) {
+        return HrOutcome::Stopped;
+    }
+    log("HR: could not start after retries");
+    HrOutcome::GiveUp
 }
 
 fn apply_command(ctx: &Ctx, cmd: Command) {
@@ -614,10 +723,10 @@ fn run_receiver(ctx: Ctx) {
         ctx.push_state();
         log("run_receiver: handshake done, connected=true");
         hr_decoder.reset(); // fresh connection — drop any stale HR carry
-        // Re-arm the HR stream if the user had it on before the (re)connect.
+        // Re-arm the HR stream if the user had it on before the (re)connect —
+        // through the same retry path (the stream rarely starts first try).
         if ctx.hr_on.load(Ordering::Relaxed) {
-            ctx.hr_on.store(false, Ordering::Relaxed);
-            set_heart_rate(&ctx, true);
+            spawn_hr_retry(&ctx);
         }
 
         let mut we_paused = false;
@@ -650,6 +759,10 @@ fn run_receiver(ctx: Ctx) {
                         }
                         let samples = hr_decoder.feed(data);
                         hr_samples += samples.len() as u32;
+                        if !samples.is_empty() {
+                            // Rendezvous with the retry thread: the stream is live.
+                            ctx.hr_got_sample.store(true, Ordering::Relaxed);
+                        }
                         if let Some(bpm) = samples.into_iter().last() {
                             let changed = {
                                 let mut s = ctx.state.lock().unwrap();
@@ -979,6 +1092,8 @@ fn main() {
         mic_on: Arc::new(AtomicBool::new(false)),
         auto_mode: Arc::new(AtomicBool::new(true)),
         hr_on: Arc::new(AtomicBool::new(false)),
+        hr_got_sample: Arc::new(AtomicBool::new(false)),
+        hr_retrying: Arc::new(AtomicBool::new(false)),
         connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
         conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
