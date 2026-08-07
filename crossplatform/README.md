@@ -119,9 +119,11 @@ technical log are in `HANDOFF.md`.
 
 ## Not done yet / in progress
 
-- One-click redistributable installer (bundle both drivers + app).
+- ~~Fold the `LibrePodsMic` driver install into the one-shot `install.ps1`.~~ ✅
+  `install.ps1` now installs **both** drivers + the mic-rename task in one shot.
+- One-click installer polish: drop the Windows SDK requirement (bundle
+  `signtool`), and wrap it in a plain double-click `.cmd`.
 - Unify the interim tray app and the iced window into one app.
-- Fold the `LibrePodsMic` driver install into the one-shot `install.ps1`.
 - Release build packaging; precise BLE lid-open detection; heart-rate RE
   (AirPods Pro 3).
 

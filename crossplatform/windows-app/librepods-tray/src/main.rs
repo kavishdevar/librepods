@@ -24,7 +24,7 @@ mod volume;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use driver::Driver;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
@@ -184,7 +184,12 @@ fn run_receiver(
         // Ear-detection auto-pause state: we only resume media that WE paused,
         // so we never fight a user who paused it themselves.
         let mut we_paused = false;
-        let mut ticks = 0u32;
+        // Disconnect detection: time-based (not per-iteration — the mic-mode fast
+        // loop would otherwise poll status dozens of times/sec) and debounced, so
+        // a single transient status blip during heavy mic I/O never tears down a
+        // live session (which showed up as a stuck "Disconnected" in the menu).
+        let mut last_status = Instant::now();
+        let mut status_fails = 0u32;
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -285,25 +290,41 @@ fn run_receiver(
             // immediately with 0 bytes when idle (ACL_SHORT_TRANSFER_OK), so
             // without this the loop spins a core AND floods the Bluetooth stack
             // with back-to-back ACL reads that contend with the A2DP audio
-            // (the crackle). Pushed events still arrive within ~150 ms.
+            // (the crackle). BUT while streaming the mic, a 150 ms nap starves
+            // the ring between the ~7.5 ms uplink packets → underrun static while
+            // you talk. So poll tightly (near the packet rate) when the mic is on
+            // — still a sleep (not a spin), so it doesn't flood ACL reads — and
+            // throttle hard only when idle (pushed events arrive within ~150 ms).
             if !got_data {
-                thread::sleep(Duration::from_millis(150));
+                // While streaming the mic, poll near the ~7.5 ms packet rate so
+                // the ring doesn't underrun (mic static while you talk); still a
+                // sleep (not a spin) so it doesn't flood ACL reads. Idle: throttle
+                // hard. (The static in the A2DP *output* is a pre-existing AirPods
+                // -on-Windows issue — it happens with any mic — not ours to fix.)
+                let nap = if mic_on.load(Ordering::Relaxed) { 4 } else { 150 };
+                thread::sleep(Duration::from_millis(nap));
             }
             // Passive session: no periodic L2CAP sends — those make Windows
             // re-negotiate the audio profile and cut/switch the output. Detect a
             // real disconnect via GET_STATUS, which reads a driver variable only
-            // (no L2CAP I/O, so it never disturbs the audio).
-            ticks += 1;
-            if ticks >= 5 {
-                ticks = 0;
-                if !driver.status().map(|s| s == 2).unwrap_or(false) {
-                    state.lock().unwrap().connected = false;
-                    *driver_cell.lock().unwrap() = None; // drop the stale handle
-                    // Reset per-session state so the next connect (e.g. lid
-                    // reopened) re-fires the battery card + ANC/case events.
-                    last_anc = 0;
-                    last_case_present = None;
-                    break; // reconnect
+            // (no L2CAP I/O, so it never disturbs the audio). Checked ~once a
+            // second and only acted on after 3 consecutive failures (~3 s), so a
+            // momentary blip during mic streaming doesn't drop a live session.
+            if last_status.elapsed() >= Duration::from_secs(1) {
+                last_status = Instant::now();
+                if driver.status().map(|s| s == 2).unwrap_or(false) {
+                    status_fails = 0;
+                } else {
+                    status_fails += 1;
+                    if status_fails >= 3 {
+                        state.lock().unwrap().connected = false;
+                        *driver_cell.lock().unwrap() = None; // drop the stale handle
+                        // Reset per-session state so the next connect (e.g. lid
+                        // reopened) re-fires the battery card + ANC/case events.
+                        last_anc = 0;
+                        last_case_present = None;
+                        break; // reconnect
+                    }
                 }
             }
         }
@@ -377,6 +398,13 @@ fn main() {
         let poll_cell = driver_cell.clone();
         let poll_name = dev_name.clone();
         let poll_auto = auto_mode.clone();
+        // Poll interval is 500 ms. We tear the stream down only after a long
+        // *sustained* idle, so a call doesn't flap: call apps briefly open/close
+        // capture at the start (probes/echo-cancel init) and pause it during
+        // silence/mute — a short debounce reacted to each, and every AAP
+        // mode switch is an audible glitch. 20 polls = 10 s bridges all of that;
+        // only a genuine end-of-call restores stereo (a ~10 s stereo delay after).
+        const MIC_IDLE_STOP_POLLS: u32 = 20;
         thread::spawn(move || {
             let mut prev = poll_pipe.as_ref().map(|p| p.status()).unwrap_or(0);
             let mut idle = 0u32;
@@ -407,7 +435,7 @@ fn main() {
                     }
                 } else {
                     idle += 1;
-                    if on && idle >= 3 {
+                    if on && idle >= MIC_IDLE_STOP_POLLS {
                         on = false;
                         poll_mic.store(false, Ordering::Relaxed);
                         if let Some(drv) = poll_cell.lock().unwrap().clone() {
