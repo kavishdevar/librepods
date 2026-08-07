@@ -398,6 +398,12 @@ fn read_le16(data: &[u8], offset: usize) -> usize {
     (data[offset] as usize) | ((data[offset + 1] as usize) << 8)
 }
 
+/// Diagnostic: does this chunk contain an RTBuddy live-frame prefix? Used only
+/// for logging whether the AirPods are actually streaming HR frames.
+pub fn contains_frame_prefix(data: &[u8]) -> bool {
+    index_of_prefix(data, &RTBUDDY_FRAME_PREFIX, 0).is_some()
+}
+
 fn index_of_prefix(data: &[u8], prefix: &[u8], start_index: usize) -> Option<usize> {
     if prefix.is_empty() {
         return Some(start_index.min(data.len()));

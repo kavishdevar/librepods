@@ -439,8 +439,13 @@ fn set_mic(ctx: &Ctx, on: bool) {
 fn set_heart_rate(ctx: &Ctx, on: bool) {
     let was = ctx.hr_on.swap(on, Ordering::Relaxed);
     let drv = ctx.driver_cell.lock().unwrap().clone();
+    log(&format!(
+        "HR: set on={on} was={was} driver={}",
+        if drv.is_some() { "connected" } else { "NONE(no session yet)" }
+    ));
     if on && !was {
         if let Some(drv) = drv {
+            log("HR: sending enable sequence (init + HRM_STATE + START)");
             // initializeAacpSession(): connect0/caps0/connect4/caps4 (raw).
             let init: [(&[u8], u64); 4] = [
                 (&aap::HR_CONNECT_SERVICE_0, 180),
@@ -624,6 +629,9 @@ fn run_receiver(ctx: Ctx) {
         let mut case_low_warned = false; // case low-battery overlay fired
         // Per-bud ear status, to notify on the transition into the case.
         let mut prev_status = [aap::EarStatus::Disconnected; 2];
+        // HR diagnostics (logged every ~3s while monitoring).
+        let mut hr_last_log = Instant::now();
+        let (mut hr_bytes, mut hr_frames, mut hr_samples) = (0usize, 0u32, 0u32);
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -636,7 +644,13 @@ fn run_receiver(ctx: Ctx) {
                     // Heart rate (opt-in): feed each chunk into the RTBuddy
                     // decoder; publish the latest validated BPM. Inert when off.
                     if ctx.hr_on.load(Ordering::Relaxed) {
-                        if let Some(bpm) = hr_decoder.feed(data).into_iter().last() {
+                        hr_bytes += data.len();
+                        if hr::contains_frame_prefix(data) {
+                            hr_frames += 1;
+                        }
+                        let samples = hr_decoder.feed(data);
+                        hr_samples += samples.len() as u32;
+                        if let Some(bpm) = samples.into_iter().last() {
                             let changed = {
                                 let mut s = ctx.state.lock().unwrap();
                                 let c = s.heart_rate != Some(bpm);
@@ -646,6 +660,15 @@ fn run_receiver(ctx: Ctx) {
                             if changed {
                                 ctx.push_state();
                             }
+                        }
+                        if hr_last_log.elapsed() >= Duration::from_secs(3) {
+                            log(&format!(
+                                "HR diag: bytes={hr_bytes} frame_prefix_hits={hr_frames} bpm_samples={hr_samples}"
+                            ));
+                            hr_last_log = Instant::now();
+                            hr_bytes = 0;
+                            hr_frames = 0;
+                            hr_samples = 0;
                         }
                     } else if ctx.state.lock().unwrap().heart_rate.take().is_some() {
                         ctx.push_state();
