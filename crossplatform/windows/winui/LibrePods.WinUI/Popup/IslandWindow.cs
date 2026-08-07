@@ -151,11 +151,14 @@ public sealed class IslandWindow : Window
     {
         if (_prepared) return;
 
-        _view.UpdateLayout();
         double scale = _view.XamlRoot?.RasterizationScale ?? 1.0;
         if (scale <= 0) scale = 1.0;
 
-        double heightDip = _view.ActualHeight > 0 ? _view.ActualHeight : FallbackHeightDip;
+        // Measure the card's NATURAL height at the fixed width. ActualHeight here
+        // is the (screen-tall) window it currently fills — circular — which made
+        // the popup gigantic; DesiredSize is the content's real ~92px.
+        _view.Measure(new Windows.Foundation.Size(DesignWidthDip, double.PositiveInfinity));
+        double heightDip = _view.DesiredSize.Height > 0 ? _view.DesiredSize.Height : FallbackHeightDip;
 
         _width = (int)Math.Ceiling(DesignWidthDip * scale);
         _height = (int)Math.Ceiling(heightDip * scale);
