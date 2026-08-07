@@ -7,6 +7,7 @@
 
 mod client;
 mod overlay;
+mod pref;
 mod theme;
 
 use std::sync::{Arc, Mutex};
@@ -140,6 +141,13 @@ fn main() {
     noise_sub.append(&m_noise_mid).unwrap();
     noise_sub.append(&m_noise_high).unwrap();
     let m_open = MenuItem::new("Open App", true, None);
+    // Which front-end "Open App" launches (both are IPC clients of the daemon).
+    let cur_ui = pref::get();
+    let m_ui_iced = CheckMenuItem::new("iced (cross-platform)", true, cur_ui == pref::Ui::Iced, None);
+    let m_ui_winui = CheckMenuItem::new("WinUI 3 (native)", true, cur_ui == pref::Ui::WinUi, None);
+    let ui_sub = Submenu::new("Interface", true);
+    ui_sub.append(&m_ui_iced).unwrap();
+    ui_sub.append(&m_ui_winui).unwrap();
     let quit = MenuItem::new("Quit", true, None);
 
     let connect_id = m_connect.id().clone();
@@ -159,6 +167,8 @@ fn main() {
     let noise_mid_id = m_noise_mid.id().clone();
     let noise_high_id = m_noise_high.id().clone();
     let open_id = m_open.id().clone();
+    let ui_iced_id = m_ui_iced.id().clone();
+    let ui_winui_id = m_ui_winui.id().clone();
     let quit_id = quit.id().clone();
 
     let menu = Menu::new();
@@ -188,6 +198,7 @@ fn main() {
     menu.append(&noise_sub).unwrap();
     menu.append(&PredefinedMenuItem::separator()).unwrap();
     menu.append(&m_open).unwrap();
+    menu.append(&ui_sub).unwrap();
     menu.append(&quit).unwrap();
 
     let tray = TrayIconBuilder::new()
@@ -269,16 +280,17 @@ fn main() {
                     client.send(&Command::Connect);
                     overlay::show("LibrePods", "Connecting…");
                 } else if ev.id == open_id {
-                    // Phase 3: the app is a client too (it runs its AAP session
-                    // over the daemon's L2CAP proxy), so just launch it — the
-                    // daemon + tray keep running and they coexist.
-                    if let Ok(exe) = std::env::current_exe() {
-                        if let Some(dir) = exe.parent() {
-                            // Show the app's window. On Windows the app doesn't
-                            // make its own tray, so no 2nd icon.
-                            let _ = std::process::Command::new(dir.join("librepods.exe")).spawn();
-                        }
-                    }
+                    // Launch the user's preferred front-end (iced or WinUI 3) —
+                    // both are IPC clients of the daemon, so they coexist with us.
+                    pref::launch();
+                } else if ev.id == ui_iced_id {
+                    pref::set(pref::Ui::Iced);
+                    m_ui_iced.set_checked(true);
+                    m_ui_winui.set_checked(false);
+                } else if ev.id == ui_winui_id {
+                    pref::set(pref::Ui::WinUi);
+                    m_ui_winui.set_checked(true);
+                    m_ui_iced.set_checked(false);
                 } else if ev.id == vol_up_id {
                     client.send(&Command::StepVolume { delta: 5 });
                 } else if ev.id == vol_down_id {
