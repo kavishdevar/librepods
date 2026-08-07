@@ -6,7 +6,8 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:controls="using:LibrePods.WinUI.Controls"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    SizeChanged="OnSizeChanged">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
@@ -20,34 +21,10 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <VisualStateManager.VisualStateGroups>
-                <VisualStateGroup>
-                    <!-- Narrow: right column drops below the left (single column) -->
-                    <VisualState x:Name="NarrowState">
-                        <VisualState.StateTriggers>
-                            <AdaptiveTrigger MinWindowWidth="0" />
-                        </VisualState.StateTriggers>
-                        <VisualState.Setters>
-                            <Setter Target="RightColumn.(Grid.Row)" Value="1" />
-                            <Setter Target="RightColumn.(Grid.Column)" Value="0" />
-                            <Setter Target="Col1.Width" Value="0" />
-                        </VisualState.Setters>
-                    </VisualState>
-                    <!-- Wide: two side-by-side columns -->
-                    <VisualState x:Name="WideState">
-                        <VisualState.StateTriggers>
-                            <!-- Only two columns when the window is genuinely wide
-                                 (the nav pane eats ~260px); below this stay one column. -->
-                            <AdaptiveTrigger MinWindowWidth="940" />
-                        </VisualState.StateTriggers>
-                        <VisualState.Setters>
-                            <Setter Target="RightColumn.(Grid.Row)" Value="0" />
-                            <Setter Target="RightColumn.(Grid.Column)" Value="1" />
-                            <Setter Target="Col1.Width" Value="*" />
-                        </VisualState.Setters>
-                    </VisualState>
-                </VisualStateGroup>
-            </VisualStateManager.VisualStateGroups>
+            <!-- Responsive 1↔2 columns is driven from code-behind (OnSizeChanged)
+                 off the page's actual content width — an AdaptiveTrigger nested in
+                 the ScrollViewer didn't fire, and content width (not window width)
+                 is what decides whether two columns fit. -->
 
             <!-- Header: AirPods image + name/status, full width -->
             <controls:DeviceHeader x:Name="Header" Grid.Row="0" />

@@ -1,4 +1,5 @@
 using LibrePods.WinUI.Ipc;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace LibrePods.WinUI.Pages;
@@ -71,4 +72,15 @@ public sealed partial class DevicePage : UserControl
 
     /// The events pipe dropped — surface it in the header.
     public void ShowWaitingForDaemon() => Header.ShowWaitingForDaemon();
+
+    /// Responsive layout: two side-by-side columns only when the page is wide
+    /// enough (measured on the page's own content width, since the nav pane is
+    /// separate); otherwise the right column stacks below the left (one column).
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        bool wide = e.NewSize.Width >= 720;
+        Grid.SetRow(RightColumn, wide ? 0 : 1);
+        Grid.SetColumn(RightColumn, wide ? 1 : 0);
+        Col1.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+    }
 }
