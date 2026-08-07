@@ -1,4 +1,5 @@
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using LibrePods.WinUI.Tray;
 using Microsoft.UI.Xaml;
 
@@ -30,9 +31,16 @@ public partial class App : Application
             client: Daemon);
         _tray.Show();
 
-        // Surface daemon overlays as a tray balloon as well as the in-app InfoBar.
+        // Register native toast notifications (Windows App SDK AppNotificationManager)
+        // before the daemon starts producing overlays. A toast click ("action=open")
+        // reactivates the window — marshal to the UI thread, same as the tray "Open".
+        Notifier.Register(() =>
+            _window.DispatcherQueue.TryEnqueue(() => _window.ShowFromTray()));
+
+        // Surface daemon overlays as a native toast (persists in the Action Center,
+        // clickable) as well as the in-app InfoBar. Marshalled to the UI thread.
         Daemon.OverlayReceived += (title, body) =>
-            _window.DispatcherQueue.TryEnqueue(() => _tray?.ShowBalloon(title, body));
+            _window.DispatcherQueue.TryEnqueue(() => Notifier.Show(title, body));
 
         // Drive the tray's tooltip / menu / icon badge from daemon state. Snapshots
         // arrive on a background thread; marshal to the UI thread (same as the window).
@@ -52,6 +60,7 @@ public partial class App : Application
     /// running. The tray's own Quit is what stops the daemon.
     public void ExitApp()
     {
+        Notifier.Unregister();
         _tray?.Dispose();
         Daemon.Dispose();
         Exit();
