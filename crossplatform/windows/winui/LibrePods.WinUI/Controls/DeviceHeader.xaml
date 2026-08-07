@@ -36,7 +36,7 @@
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <HyperlinkButton x:Name="ConnectButton"
-                                     Content="Connect"
+                                     x:Uid="HeaderConnectBtn"
                                      Padding="0"
                                      Visibility="Collapsed"
                                      Click="Connect_Click" />

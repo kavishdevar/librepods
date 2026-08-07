@@ -15,7 +15,7 @@
                     MaxWidth="640"
                     HorizontalAlignment="Left">
 
-            <TextBlock Text="Settings" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock x:Uid="SettingsTitle" Style="{ThemeResource TitleTextBlockStyle}" />
 
             <InfoBar x:Name="SettingsInfoBar"
                      IsOpen="False"
@@ -24,16 +24,16 @@
             <!-- Appearance -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Appearance" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <TextBlock Text="Theme"
+                    <TextBlock x:Uid="SettingsAppearance" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Uid="SettingsTheme"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <RadioButtons x:Name="ThemeButtons"
                                   MaxColumns="3"
                                   SelectedIndex="0"
                                   SelectionChanged="Theme_SelectionChanged">
-                        <RadioButton Content="System" />
-                        <RadioButton Content="Light" />
-                        <RadioButton Content="Dark" />
+                        <RadioButton x:Uid="ThemeSystemRadio" />
+                        <RadioButton x:Uid="ThemeLightRadio" />
+                        <RadioButton x:Uid="ThemeDarkRadio" />
                     </RadioButtons>
                 </StackPanel>
             </Border>
@@ -41,15 +41,15 @@
             <!-- Front-end preference -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="Default front-end" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <TextBlock Text="Choose which UI the tray's &quot;Open App&quot; launches next time."
+                    <TextBlock x:Uid="SettingsDefaultFrontend" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Uid="SettingsDefaultFrontendHint"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Style="{ThemeResource CaptionTextBlockStyle}"
                                TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="Refresh state" Click="Refresh_Click" />
+                        <Button x:Uid="SettingsRefreshBtn" Click="Refresh_Click" />
                         <Button x:Name="SwitchUiButton"
-                                Content="Switch default UI to iced"
+                                x:Uid="SettingsSwitchUiBtn"
                                 Click="SwitchUi_Click" />
                     </StackPanel>
                 </StackPanel>
@@ -58,10 +58,10 @@
             <!-- About -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="4">
-                    <TextBlock Text="About" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Uid="SettingsAbout" Style="{ThemeResource BodyStrongTextBlockStyle}" />
                     <TextBlock Text="LibrePods"
                                Style="{ThemeResource SubtitleTextBlockStyle}" />
-                    <TextBlock Text="LibrePods — native Windows client of librepodsd"
+                    <TextBlock x:Uid="SettingsAppDesc"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap" />
                 </StackPanel>

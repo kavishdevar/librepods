@@ -21,7 +21,7 @@
                         OpenPaneLength="260"
                         SelectionChanged="Nav_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItemHeader Content="Devices" />
+                <NavigationViewItemHeader x:Uid="NavDevicesHeader" />
                 <!-- The daemon is single-device: one item, populated from the
                      snapshot's dev_name. Structured so more could be added later. -->
                 <!-- One line (icon + name); the connection status shows in the

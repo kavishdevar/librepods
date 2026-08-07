@@ -10,14 +10,14 @@
     <!-- Noise control -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="8">
-            <TextBlock Text="Noise Control" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Uid="NoiseControlTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
             <RadioButtons x:Name="AncButtons"
                           MaxColumns="1"
                           SelectionChanged="Anc_SelectionChanged">
-                <RadioButton x:Name="AncOff" Content="Off" />
-                <RadioButton Content="Noise Cancellation" />
-                <RadioButton Content="Transparency" />
-                <RadioButton Content="Adaptive" />
+                <RadioButton x:Name="AncOff" x:Uid="AncOffRadio" />
+                <RadioButton x:Uid="AncNcRadio" />
+                <RadioButton x:Uid="AncTransparencyRadio" />
+                <RadioButton x:Uid="AncAdaptiveRadio" />
             </RadioButtons>
         </StackPanel>
     </Border>

@@ -37,8 +37,8 @@ public sealed partial class SettingsPage : UserControl
     private void SwitchUi_Click(object sender, RoutedEventArgs e)
     {
         UiPreference.Set(UiPreference.Iced);
-        SettingsInfoBar.Title = "Default UI changed";
-        SettingsInfoBar.Message = "The iced app will be the default front-end next time you open LibrePods.";
+        SettingsInfoBar.Title = Localize.Get("Settings_DefaultUiChanged_Title");
+        SettingsInfoBar.Message = Localize.Get("Settings_DefaultUiChanged_Message");
         SettingsInfoBar.Severity = InfoBarSeverity.Success;
         SettingsInfoBar.IsOpen = true;
     }

@@ -1,4 +1,5 @@
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -28,7 +29,7 @@ public sealed partial class MicCard : UserControl
         try
         {
             _recording = s.MicRecording;
-            MicStatusText.Text = s.MicRecording ? "Microphone: recording" : "Microphone: idle";
+            MicStatusText.Text = Localize.Get(s.MicRecording ? "Mic_Recording" : "Mic_Idle");
             MicAutoSwitch.IsOn = s.AutoMode;
             MicManualToggle.IsChecked = s.MicRecording && !s.AutoMode;
         }

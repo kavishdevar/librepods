@@ -77,7 +77,7 @@
 
                 <StackPanel x:Name="CaseItem" Spacing="3" MinWidth="56">
                     <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="Case" FontSize="11"
+                        <TextBlock x:Uid="IslandCaseLabel" FontSize="11"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock x:Name="CaseText" Text="—" FontSize="11" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}" />

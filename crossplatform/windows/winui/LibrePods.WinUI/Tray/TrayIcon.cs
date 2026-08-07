@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Input;
 using H.NotifyIcon;
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -63,25 +64,25 @@ public sealed class TrayIcon : IDisposable
         menu.MenuFlyoutPresenterStyle = presenterStyle;
 
         _headerItem = new MenuFlyoutItem { Text = "LibrePods", IsEnabled = false };
-        _batteryItem = new MenuFlyoutItem { Text = "No battery data", IsEnabled = false };
+        _batteryItem = new MenuFlyoutItem { Text = Localize.Get("Tray_NoBatteryData"), IsEnabled = false };
 
-        var ancLabel = new MenuFlyoutItem { Text = "Noise Control", IsEnabled = false };
-        _ancOff = new RadioMenuFlyoutItem { Text = "Off", GroupName = "TrayAnc" };
-        _ancNc = new RadioMenuFlyoutItem { Text = "Noise Cancellation", GroupName = "TrayAnc" };
-        _ancTransparency = new RadioMenuFlyoutItem { Text = "Transparency", GroupName = "TrayAnc" };
-        _ancAdaptive = new RadioMenuFlyoutItem { Text = "Adaptive", GroupName = "TrayAnc" };
+        var ancLabel = new MenuFlyoutItem { Text = Localize.Get("Tray_NoiseControl"), IsEnabled = false };
+        _ancOff = new RadioMenuFlyoutItem { Text = Localize.Get("Anc_Off"), GroupName = "TrayAnc" };
+        _ancNc = new RadioMenuFlyoutItem { Text = Localize.Get("Anc_NoiseCancellation"), GroupName = "TrayAnc" };
+        _ancTransparency = new RadioMenuFlyoutItem { Text = Localize.Get("Anc_Transparency"), GroupName = "TrayAnc" };
+        _ancAdaptive = new RadioMenuFlyoutItem { Text = Localize.Get("Anc_Adaptive"), GroupName = "TrayAnc" };
         _ancOff.Click += (_, _) => OnAncClick(1);
         _ancNc.Click += (_, _) => OnAncClick(2);
         _ancTransparency.Click += (_, _) => OnAncClick(3);
         _ancAdaptive.Click += (_, _) => OnAncClick(4);
 
-        _muteItem = new MenuFlyoutItem { Text = "Mute" };
+        _muteItem = new MenuFlyoutItem { Text = Localize.Get("Action_Mute") };
         _muteItem.Click += (_, _) => _client.ToggleMute();
 
-        var open = new MenuFlyoutItem { Text = "Open" };
+        var open = new MenuFlyoutItem { Text = Localize.Get("Action_Open") };
         open.Click += (_, _) => onOpen();
 
-        var quit = new MenuFlyoutItem { Text = "Quit" };
+        var quit = new MenuFlyoutItem { Text = Localize.Get("Action_Quit") };
         quit.Click += (_, _) => onQuit();
 
         menu.Items.Add(_headerItem);
@@ -142,15 +143,15 @@ public sealed class TrayIcon : IDisposable
         string tip;
         if (!s.Connected)
         {
-            tip = $"{name} — Disconnected";
+            tip = $"{name} — {Localize.Get("Status_Disconnected")}";
         }
         else
         {
             var parts = new List<string>();
             if (left is byte l) parts.Add($"L {l}%");
             if (right is byte r) parts.Add($"R {r}%");
-            if (@case is byte c) parts.Add($"Case {c}%");
-            tip = parts.Count > 0 ? $"{name} — {string.Join("  ", parts)}" : $"{name} — Connected";
+            if (@case is byte c) parts.Add($"{Localize.Get("Tray_CaseShort")} {c}%");
+            tip = parts.Count > 0 ? $"{name} — {string.Join("  ", parts)}" : $"{name} — {Localize.Get("Status_Connected")}";
         }
         // Win32 NOTIFYICONDATA tooltip caps at 127 chars.
         _icon.ToolTipText = tip.Length > 127 ? tip[..127] : tip;
@@ -164,8 +165,8 @@ public sealed class TrayIcon : IDisposable
             var battParts = new List<string>();
             if (left is byte bl) battParts.Add($"L {bl}%");
             if (right is byte br) battParts.Add($"R {br}%");
-            if (@case is byte bc) battParts.Add($"Case {bc}%");
-            _batteryItem.Text = battParts.Count > 0 ? string.Join(" · ", battParts) : "No battery data";
+            if (@case is byte bc) battParts.Add($"{Localize.Get("Tray_CaseShort")} {bc}%");
+            _batteryItem.Text = battParts.Count > 0 ? string.Join(" · ", battParts) : Localize.Get("Tray_NoBatteryData");
 
             // "Off" is only selectable when the daemon reports allow_off.
             _ancOff.IsEnabled = s.AllowOff;
@@ -174,7 +175,7 @@ public sealed class TrayIcon : IDisposable
             _ancTransparency.IsChecked = s.Anc == 3;
             _ancAdaptive.IsChecked = s.Anc == 4;
 
-            _muteItem.Text = s.Muted ? "Unmute" : "Mute";
+            _muteItem.Text = Localize.Get(s.Muted ? "Action_Unmute" : "Action_Mute");
         }
         finally
         {

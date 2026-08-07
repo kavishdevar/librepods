@@ -1,4 +1,5 @@
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -58,9 +59,9 @@ public sealed partial class DevicePage : UserControl
     /// Show the "nearby — connect?" prompt with a Connect action.
     public void ShowConnectPrompt(string name)
     {
-        ConnectPromptBar.Title = $"Connect {name}?";
-        ConnectPromptBar.Message = "Nearby — click Connect to start a session.";
-        var btn = new Button { Content = "Connect" };
+        ConnectPromptBar.Title = Localize.Get("ConnectPrompt_Title", name);
+        ConnectPromptBar.Message = Localize.Get("ConnectPrompt_Message");
+        var btn = new Button { Content = Localize.Get("Action_Connect") };
         btn.Click += (_, _) =>
         {
             _client?.Connect();

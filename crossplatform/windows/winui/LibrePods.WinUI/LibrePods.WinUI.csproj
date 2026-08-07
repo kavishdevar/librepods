@@ -26,7 +26,19 @@
 
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+
+    <!-- Localization: en-US is the default/base language baked into resources.pri.
+         Add a language by copying Strings\en-US to Strings\<lang> (e.g. pt-PT).
+         We opt out of the default .resw globbing and include Strings explicitly so
+         the resources are added exactly once (no duplicate-item build error). -->
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <EnableDefaultPRIResourceItems>false</EnableDefaultPRIResourceItems>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- UI strings (x:Uid + code lookups) compiled into resources.pri. -->
+    <PRIResource Include="Strings\**\*.resw" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />

@@ -1,4 +1,5 @@
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -18,7 +19,7 @@ public sealed partial class IslandView : UserControl
     /// Populate the card from a daemon Snapshot (name + battery + model image).
     public void Apply(Snapshot s)
     {
-        DeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? "AirPods" : s.DevName;
+        DeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? Localize.Get("Island_DefaultName") : s.DevName;
 
         try
         {

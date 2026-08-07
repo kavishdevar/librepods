@@ -10,15 +10,14 @@
     <!-- Hi-res microphone -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="8">
-            <TextBlock Text="Hi-res Microphone" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Uid="MicTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
             <TextBlock x:Name="MicStatusText"
-                       Text="Microphone: idle"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <ToggleSwitch x:Name="MicAutoSwitch"
-                          Header="Auto-enable on recording"
+                          x:Uid="MicAutoSwitch"
                           Toggled="MicAuto_Toggled" />
             <ToggleButton x:Name="MicManualToggle"
-                          Content="Enable hi-res mic now"
+                          x:Uid="MicEnableBtn"
                           Click="MicManual_Click" />
         </StackPanel>
     </Border>

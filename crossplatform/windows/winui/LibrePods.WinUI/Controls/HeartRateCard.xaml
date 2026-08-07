@@ -10,20 +10,20 @@
     <!-- Heart rate (AirPods Pro 3, experimental) -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="8">
-            <TextBlock Text="Heart Rate" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-            <TextBlock Text="AirPods Pro 3 only — experimental. Drains battery."
+            <TextBlock x:Uid="HeartRateTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Uid="HeartRateSubtitle"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                        Style="{ThemeResource CaptionTextBlockStyle}"
                        TextWrapping="Wrap" />
             <ToggleSwitch x:Name="HeartRateSwitch"
-                          Header="Monitor heart rate"
+                          x:Uid="HeartRateSwitch"
                           Toggled="HeartRate_Toggled" />
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
                 <TextBlock x:Name="HeartRateBpm"
                            Text="—"
                            Style="{ThemeResource TitleTextBlockStyle}"
                            Foreground="{ThemeResource LibrePodsAccentBrush}" />
-                <TextBlock Text="bpm"
+                <TextBlock x:Uid="HeartRateBpmLabel"
                            VerticalAlignment="Bottom"
                            Margin="0,0,0,4"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

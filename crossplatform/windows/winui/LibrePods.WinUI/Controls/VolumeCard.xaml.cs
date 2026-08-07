@@ -1,4 +1,5 @@
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -33,7 +34,7 @@ public sealed partial class VolumeCard : UserControl
             _suppressVolume = true;
             VolumeSlider.Value = s.Volume;
             _suppressVolume = false;
-            VolumeText.Text = s.Muted ? "muted" : $"{s.Volume}%";
+            VolumeText.Text = s.Muted ? Localize.Get("Volume_Muted") : $"{s.Volume}%";
             MuteToggle.IsChecked = s.Muted;
         }
         finally

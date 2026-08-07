@@ -10,7 +10,7 @@
     <!-- Battery -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="12">
-            <TextBlock Text="Battery" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Uid="BatteryTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
             <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -19,17 +19,17 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Spacing="4">
-                    <TextBlock Text="Left" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Uid="BatteryLeftLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ProgressBar x:Name="LeftBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
                     <TextBlock x:Name="LeftText" Text="—" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="4">
-                    <TextBlock Text="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Uid="BatteryRightLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ProgressBar x:Name="RightBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
                     <TextBlock x:Name="RightText" Text="—" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Spacing="4">
-                    <TextBlock Text="Case" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Uid="BatteryCaseLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ProgressBar x:Name="CaseBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
                     <TextBlock x:Name="CaseText" Text="—" />
                 </StackPanel>

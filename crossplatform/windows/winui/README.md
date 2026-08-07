@@ -135,6 +135,22 @@ winui/
       airpods.png                    AirPods product image for the device card
 ```
 
+## Localization
+
+UI strings are externalized to `Strings/en-US/Resources.resw` (the base language).
+Two mechanisms use it:
+
+- **XAML** labels carry `x:Uid` — the framework resolves `<Uid>.Text` /
+  `.Content` / `.Header` against the `.resw` automatically (no code).
+- **Runtime** strings (connection status, mute/unmute, the tray menu, toasts) are
+  fetched in code via `Services/Localize.cs` (`Localize.Get("Key")`), a thin
+  wrapper over the Windows App SDK `ResourceLoader`.
+
+To add a language, copy `Strings/en-US` to `Strings/<lang>` (e.g. `Strings/pt-PT`)
+and translate the `<value>`s — the build merges them into `resources.pri` and the
+OS display language selects the match at runtime. `en-US` stays the fallback
+(`<DefaultLanguage>` in the csproj).
+
 ## Visual identity
 
 The UI follows the LibrePods look (Android app + iced app), adapted to native
