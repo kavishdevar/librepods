@@ -115,6 +115,12 @@ struct Ctx {
     /// (the RTBuddy stream almost never starts on the first try) — cleared before
     /// each attempt. This is the run_receiver↔retry-thread rendezvous.
     hr_got_sample: Arc<AtomicBool>,
+    /// Set by `run_receiver` when an HR-prefixed frame arrives (the HEARTRATE
+    /// service is streaming, even if it carries no reading payload yet). Once the
+    /// service is live the retry campaign stops churning STOP/re-init and just
+    /// keeps the stream open, so a reading can land whenever the sensor produces
+    /// one (it may take real sustained activity). Cleared before each attempt.
+    hr_stream_live: Arc<AtomicBool>,
     /// True while an HR retry thread is live. A one-thread guard so rapid on/off
     /// never stacks two retry campaigns over the one driver.
     hr_retrying: Arc<AtomicBool>,
@@ -520,6 +526,7 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
     let mut attempt: u32 = 0;
     while ctx.hr_on.load(Ordering::Relaxed) && Instant::now() < deadline {
         ctx.hr_got_sample.store(false, Ordering::Relaxed);
+        ctx.hr_stream_live.store(false, Ordering::Relaxed);
         let drv = match ctx.driver_cell.lock().unwrap().clone() {
             Some(d) => d,
             None => {
@@ -557,6 +564,14 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             }
             if ctx.hr_got_sample.load(Ordering::Relaxed) {
                 log("HR: stream live (first sample decoded) — retries done");
+                return HrOutcome::Live;
+            }
+            // Frames are arriving (HEARTRATE service is streaming) but carry no
+            // reading yet — the enable worked, so stop the STOP/re-init churn and
+            // keep the stream open; run_receiver keeps decoding, so a reading
+            // publishes whenever the sensor produces one.
+            if ctx.hr_stream_live.load(Ordering::Relaxed) {
+                log("HR: service streaming (frames arriving, awaiting a reading) — retries done, keeping stream");
                 return HrOutcome::Live;
             }
             thread::sleep(Duration::from_millis(200));
@@ -756,6 +771,7 @@ fn run_receiver(ctx: Ctx) {
                         hr_bytes += data.len();
                         if hr::contains_frame_prefix(data) {
                             hr_frames += 1;
+                            ctx.hr_stream_live.store(true, Ordering::Relaxed);
                             // Dump the raw bytes of an HR-prefixed frame so we can
                             // see why the decoder rejects it (bpm_samples stays 0).
                             let dump: String = data
@@ -1102,6 +1118,7 @@ fn main() {
         auto_mode: Arc::new(AtomicBool::new(true)),
         hr_on: Arc::new(AtomicBool::new(false)),
         hr_got_sample: Arc::new(AtomicBool::new(false)),
+        hr_stream_live: Arc::new(AtomicBool::new(false)),
         hr_retrying: Arc::new(AtomicBool::new(false)),
         connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
