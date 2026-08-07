@@ -183,7 +183,10 @@ fn main() {
     };
 
     let refresh = || {
-        let s = state.lock().unwrap();
+        // Clone + release the state lock immediately so we never hold it during
+        // the (COM) volume calls or the icon render (which would let a busy IPC
+        // reader thread stall the UI thread → a frozen tray menu).
+        let s = state.lock().unwrap().clone();
         title.set_text(if s.dev_name.is_empty() { "LibrePods" } else { &s.dev_name });
         battery.set_text(&battery_text(&s.battery, s.connected));
         m_off.set_checked(s.anc == 1);

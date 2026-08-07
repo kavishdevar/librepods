@@ -4,8 +4,13 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The duplex named pipe the daemon serves and the clients connect to.
-pub const PIPE_NAME: &str = r"\\.\pipe\LibrePods";
+/// Two one-directional named pipes (a single duplex pipe deadlocks: a Windows
+/// *synchronous* handle serializes I/O, so a blocking ReadFile for commands
+/// stalls the WriteFile for events on the same handle). The daemon only WRITES
+/// events on `PIPE_EVENTS` and only READS commands on `PIPE_CMDS`, so no handle
+/// ever does both directions concurrently.
+pub const PIPE_EVENTS: &str = r"\\.\pipe\LibrePods-events";
+pub const PIPE_CMDS: &str = r"\\.\pipe\LibrePods-cmds";
 
 /// Battery levels (percent), each optional — a packet may carry only some.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
