@@ -2810,6 +2810,7 @@ dependencies = [
  "imageproc",
  "ksni",
  "libpulse-binding",
+ "librepods-ipc",
  "log",
  "serde",
  "serde_json",
@@ -2818,6 +2819,14 @@ dependencies = [
  "uuid",
  "windows 0.58.0",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "librepods-ipc"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
