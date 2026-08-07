@@ -756,6 +756,15 @@ fn run_receiver(ctx: Ctx) {
                         hr_bytes += data.len();
                         if hr::contains_frame_prefix(data) {
                             hr_frames += 1;
+                            // Dump the raw bytes of an HR-prefixed frame so we can
+                            // see why the decoder rejects it (bpm_samples stays 0).
+                            let dump: String = data
+                                .iter()
+                                .take(80)
+                                .map(|b| format!("{b:02x}"))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            log(&format!("HR frame ({} bytes): {dump}", data.len()));
                         }
                         let samples = hr_decoder.feed(data);
                         hr_samples += samples.len() as u32;
