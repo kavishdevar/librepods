@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Input;
 using H.NotifyIcon;
 using LibrePods.WinUI.Ipc;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
 
@@ -51,6 +52,12 @@ public sealed class TrayIcon : IDisposable
         _client = client;
 
         var menu = new MenuFlyout();
+        // The SecondWindow context-menu host doesn't grow to the content, so long
+        // labels ("Noise Cancellation", the device name) get clipped. Give the
+        // presenter a floor width so every item shows in full.
+        var presenterStyle = new Style(typeof(MenuFlyoutPresenter));
+        presenterStyle.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 240.0));
+        menu.MenuFlyoutPresenterStyle = presenterStyle;
 
         _headerItem = new MenuFlyoutItem { Text = "LibrePods", IsEnabled = false };
         _batteryItem = new MenuFlyoutItem { Text = "No battery data", IsEnabled = false };
@@ -225,7 +232,10 @@ public sealed class TrayIcon : IDisposable
     /// Icon. Returns the Icon plus its backing HICON (to DestroyIcon on replace).
     private static (Icon icon, IntPtr handle) RenderNumberIcon(string text, bool lightTaskbar)
     {
-        const int size = 32;
+        // Render large (64px) for a crisp downscale in the tray, and MEASURE-fit the
+        // font so 1, 2 or 3 digits ("5", "58", "100") always fit inside the box —
+        // a fixed size clipped "58" to "5".
+        const int size = 64;
         using var bmp = new Bitmap(size, size);
         using (var g = Graphics.FromImage(bmp))
         {
@@ -233,9 +243,6 @@ public sealed class TrayIcon : IDisposable
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
             g.Clear(Color.Transparent);
 
-            // 3-digit "100" needs a smaller face than 1–2 digits.
-            var emSize = text.Length >= 3 ? 15f : 22f;
-            using var font = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
             using var brush = new SolidBrush(lightTaskbar
                 ? Color.FromArgb(255, 32, 32, 32)
                 : Color.White);
@@ -244,6 +251,17 @@ public sealed class TrayIcon : IDisposable
                 Alignment = StringAlignment.Center,
                 LineAlignment = StringAlignment.Center,
             };
+
+            // Shrink the face until the text fits within ~92% of the icon.
+            float emSize = 54f;
+            while (emSize > 12f)
+            {
+                using var probe = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
+                var m = g.MeasureString(text, probe);
+                if (m.Width <= size * 0.92f && m.Height <= size * 0.98f) break;
+                emSize -= 2f;
+            }
+            using var font = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
             g.DrawString(text, font, brush, new RectangleF(0, 0, size, size), fmt);
         }
 
