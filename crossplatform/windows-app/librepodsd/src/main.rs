@@ -582,23 +582,28 @@ fn main() {
     // connected nor already accepted, prompt "connect?" (debounced ~20 s).
     if mac != 0 {
         let c = ctx.clone();
+        let c_scan = ctx.clone();
         let last_prompt: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
         thread::spawn(move || {
-            le::watch_nearby(move || {
-                if c.state.lock().unwrap().connected
-                    || c.connect_requested.load(Ordering::Relaxed)
-                {
-                    return;
-                }
-                let now = Instant::now();
-                let mut lp = last_prompt.lock().unwrap();
-                if lp.map_or(true, |t| now.duration_since(t) > Duration::from_secs(20)) {
-                    *lp = Some(now);
-                    drop(lp);
-                    c.send_event(&Event::ConnectPrompt { name: c.dev_name.clone() });
-                    log("ble: AirPods nearby → connect prompt");
-                }
-            });
+            le::watch_nearby(
+                move || {
+                    if c.state.lock().unwrap().connected
+                        || c.connect_requested.load(Ordering::Relaxed)
+                    {
+                        return;
+                    }
+                    let now = Instant::now();
+                    let mut lp = last_prompt.lock().unwrap();
+                    if lp.map_or(true, |t| now.duration_since(t) > Duration::from_secs(20)) {
+                        *lp = Some(now);
+                        drop(lp);
+                        c.send_event(&Event::ConnectPrompt { name: c.dev_name.clone() });
+                        log("ble: AirPods nearby → connect prompt");
+                    }
+                },
+                // Only scan while idle (disconnected) — no BLE radio during audio.
+                move || !c_scan.state.lock().unwrap().connected,
+            );
         });
     }
 

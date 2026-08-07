@@ -1,6 +1,11 @@
 //! BLE advertisement watcher: detect the AirPods nearby (their Apple
 //! proximity-pairing advertisement) so the daemon can prompt "connect?" before
 //! it opens the AAP session. Ported/trimmed from crossplatform-rust's le_scan.rs.
+//!
+//! Scanning is PASSIVE (listen only, no scan requests) and only runs while
+//! `should_scan` is true — i.e. while disconnected — so the 2.4 GHz radio never
+//! contends with the AirPods' A2DP audio while you're listening (which caused
+//! static spikes, esp. on combo cards with poor coexistence).
 
 use windows::Devices::Bluetooth::Advertisement::{
     BluetoothLEAdvertisementReceivedEventArgs, BluetoothLEAdvertisementWatcher,
@@ -14,24 +19,38 @@ const APPLE_COMPANY_ID: u16 = 0x004C;
 /// Apple manufacturer-data message type for proximity pairing (AirPods / Beats).
 const PROXIMITY_PAIRING: u8 = 0x07;
 
-/// Start watching and call `on_nearby` on each AirPods proximity advertisement.
-/// Blocks (keeps this thread's COM apartment + the watcher alive), so run it on
-/// its own thread.
-pub fn watch_nearby(on_nearby: impl Fn() + Send + Sync + 'static) {
+/// Watch for AirPods proximity advertisements, calling `on_nearby` on each — but
+/// only scan while `should_scan()` is true. Blocks (keeps COM + the watcher
+/// alive), so run it on its own thread.
+pub fn watch_nearby(
+    on_nearby: impl Fn() + Send + Sync + 'static,
+    should_scan: impl Fn() -> bool + Send + 'static,
+) {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
     }
-    if start(on_nearby).is_err() {
-        return;
-    }
+    let watcher = match setup(on_nearby) {
+        Ok(w) => w,
+        Err(_) => return,
+    };
+    let mut scanning = false;
     loop {
-        std::thread::sleep(std::time::Duration::from_secs(3600));
+        let want = should_scan();
+        if want && !scanning {
+            scanning = watcher.Start().is_ok();
+        } else if !want && scanning {
+            let _ = watcher.Stop();
+            scanning = false;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(2));
     }
 }
 
-fn start(on_nearby: impl Fn() + Send + Sync + 'static) -> windows::core::Result<()> {
+fn setup(
+    on_nearby: impl Fn() + Send + Sync + 'static,
+) -> windows::core::Result<BluetoothLEAdvertisementWatcher> {
     let watcher = BluetoothLEAdvertisementWatcher::new()?;
-    watcher.SetScanningMode(BluetoothLEScanningMode::Active)?;
+    watcher.SetScanningMode(BluetoothLEScanningMode::Passive)?;
     let handler = TypedEventHandler::new(
         move |_s: &Option<BluetoothLEAdvertisementWatcher>,
               args: &Option<BluetoothLEAdvertisementReceivedEventArgs>| {
@@ -44,9 +63,7 @@ fn start(on_nearby: impl Fn() + Send + Sync + 'static) -> windows::core::Result<
         },
     );
     watcher.Received(&handler)?;
-    watcher.Start()?;
-    std::mem::forget(watcher); // keep it alive for the daemon's lifetime
-    Ok(())
+    Ok(watcher)
 }
 
 /// True if this advertisement is an Apple proximity-pairing message (AirPods /
