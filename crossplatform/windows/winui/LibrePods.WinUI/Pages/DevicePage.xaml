@@ -84,16 +84,16 @@
                     <controls:BatteryCard x:Name="BatteryCard" />
                     <controls:VolumeCard x:Name="VolumeCard" />
                     <controls:AdaptiveNoiseCard x:Name="AdaptiveNoiseCard" />
+                    <controls:HeartRateCard x:Name="HeartRateCard" />
                 </StackPanel>
 
-                <!-- Right column: Noise Control, Features, Hi-res Mic, Heart Rate -->
+                <!-- Right column: Noise Control, Features, Hi-res Mic -->
                 <StackPanel x:Name="RightColumn"
                             Grid.Row="0" Grid.Column="1"
                             Spacing="16">
                     <controls:NoiseControlCard x:Name="NoiseControlCard" />
                     <controls:FeaturesCard x:Name="FeaturesCard" />
                     <controls:MicCard x:Name="MicCard" />
-                    <controls:HeartRateCard x:Name="HeartRateCard" />
                 </StackPanel>
             </Grid>
         </Grid>
