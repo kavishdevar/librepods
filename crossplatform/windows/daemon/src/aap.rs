@@ -50,6 +50,16 @@ pub const HR_CAPABILITIES_SERVICE_4: [u8; 7] = [0x04, 0x00, 0x04, 0x00, 0x01, 0x
 /// `control_command(0x30, 0x01)`; the AirPods echo it back as a status.
 pub const HR_ENABLE: [u8; 11] = [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x30, 0x01, 0x00, 0x00, 0x00];
 
+/// Opcode 0x44 "workout" command, captured with PacketLogger from a real iOS
+/// Fitness/Strava HR session: the iPhone emits it at the instant the workout
+/// starts (value 0x07; it toggles 0x06/0x07 across the session), interleaved with
+/// the SensorDataWX frames. The PR #702 enable (HRM_STATE + START) only makes the
+/// HEARTRATE service stream empty status heartbeats; the sensor never emits a
+/// reading payload without an active workout. This 0x44 command is the suspected
+/// "enter workout sampling mode" trigger that iOS sends and we were missing.
+pub const HR_WORKOUT_ON: [u8; 12] =
+    [0x04, 0x00, 0x04, 0x00, 0x44, 0x00, 0x04, 0x00, 0x02, 0x00, 0x03, 0x07];
+
 /// RTBuddy SensorDataWX HEARTRATE(19) START frame (1s cadence). Includes the
 /// `04 00 04 00` header (Android's `sendDataPacket` prepends it).
 pub const HR_START: [u8; 28] = [

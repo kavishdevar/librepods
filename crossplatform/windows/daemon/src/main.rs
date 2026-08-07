@@ -553,6 +553,11 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
         }
         let _ = drv.send(&aap::HR_ENABLE);
         thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
+        // Opcode 0x44 "workout mode" — the trigger iOS sends at workout start
+        // (captured via PacketLogger). Suspected to make the sensor actually
+        // sample; sent right before START, mirroring the iPhone's ordering.
+        let _ = drv.send(&aap::HR_WORKOUT_ON);
+        thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
         let _ = drv.send(&aap::HR_START);
 
         // Wait up to FIRST_SAMPLE_TIMEOUT for the decoder to yield a sample,
