@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="LibrePods.WinUI.Popup.IslandView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Width="380">
+
+    <!-- The card fills the (acrylic-backed, DWM-rounded) island window. The Grid
+         background is transparent so the window's DesktopAcrylic shows through;
+         a thin LibrePods-accent stripe on the left edge gives brand identity.
+         Theme-aware: all colours are ThemeResource brushes. -->
+    <Grid x:Name="Root" Background="Transparent" Padding="0">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Accent stripe (LibrePods #039BE5, theme-recoloured) -->
+        <Border Grid.Column="0"
+                Width="4"
+                CornerRadius="2"
+                Margin="6,10,0,10"
+                Background="{ThemeResource LibrePodsAccentBrush}" />
+
+        <!-- AirPods case image (the "connected" card look) -->
+        <Image x:Name="DeviceImage"
+               Grid.Column="1"
+               Width="60" Height="60"
+               Margin="14,14,14,14"
+               Stretch="Uniform"
+               Source="ms-appx:///Assets/airpods.png"
+               VerticalAlignment="Center" />
+
+        <StackPanel Grid.Column="2"
+                    Margin="0,14,18,14"
+                    VerticalAlignment="Center"
+                    Spacing="8">
+
+            <TextBlock x:Name="DeviceName"
+                       Text="AirPods"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+
+            <!-- L / R / Case battery — each a tiny labelled accent bar. Absent
+                 components are collapsed by the code-behind. -->
+            <StackPanel Orientation="Horizontal" Spacing="16">
+
+                <StackPanel x:Name="LeftItem" Spacing="3" MinWidth="56">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="L" FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock x:Name="LeftText" Text="—" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                    </StackPanel>
+                    <ProgressBar x:Name="LeftBar" Minimum="0" Maximum="100" Value="0"
+                                 Height="4"
+                                 Foreground="{ThemeResource LibrePodsAccentBrush}" />
+                </StackPanel>
+
+                <StackPanel x:Name="RightItem" Spacing="3" MinWidth="56">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="R" FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock x:Name="RightText" Text="—" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                    </StackPanel>
+                    <ProgressBar x:Name="RightBar" Minimum="0" Maximum="100" Value="0"
+                                 Height="4"
+                                 Foreground="{ThemeResource LibrePodsAccentBrush}" />
+                </StackPanel>
+
+                <StackPanel x:Name="CaseItem" Spacing="3" MinWidth="56">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <TextBlock Text="Case" FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock x:Name="CaseText" Text="—" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                    </StackPanel>
+                    <ProgressBar x:Name="CaseBar" Minimum="0" Maximum="100" Value="0"
+                                 Height="4"
+                                 Foreground="{ThemeResource LibrePodsAccentBrush}" />
+                </StackPanel>
+
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>
