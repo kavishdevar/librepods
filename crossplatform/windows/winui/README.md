@@ -1,5 +1,7 @@
 # LibrePods — WinUI 3 client (`librepods-winui.exe`)
 
+![The WinUI 3 client](docs/screenshot-device.png)
+
 A native **C# / WinUI 3 (Windows App SDK)** front-end for LibrePods. It is an
 alternative to the cross-platform iced app (`librepods.exe`) and the Rust tray
 (`librepods-tray.exe`). All three are thin IPC clients of the same Rust daemon,
