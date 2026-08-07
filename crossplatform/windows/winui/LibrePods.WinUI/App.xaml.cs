@@ -36,7 +36,9 @@ public partial class App : Application
         // Begin talking to the daemon (background reader + writer loops).
         Daemon.Start();
 
-        // Intentionally NOT calling _window.Activate(): start hidden to tray.
+        // Show the window on launch (closing it hides back to the tray). Autostart
+        // can later pass a "--tray"/"--minimized" arg to start hidden instead.
+        _window.Activate();
     }
 
     /// The tray "Quit": tear down the tray and exit. We do NOT send `shutdown`
