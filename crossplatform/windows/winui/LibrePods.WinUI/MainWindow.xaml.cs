@@ -133,7 +133,6 @@ public sealed partial class MainWindow : Window
             if (!connected)
             {
                 StatusText.Text = "Waiting for daemon…";
-                NavDeviceStatus.Text = "Waiting for daemon…";
             }
         });
 
@@ -154,9 +153,8 @@ public sealed partial class MainWindow : Window
                 s.Connected ? Microsoft.UI.Colors.LimeGreen : Microsoft.UI.Colors.Gray);
             ConnectButton.Visibility = s.Connected ? Visibility.Collapsed : Visibility.Visible;
 
-            // The device NavigationViewItem mirrors the header.
+            // The device NavigationViewItem mirrors the header (name only).
             NavDeviceName.Text = name;
-            NavDeviceStatus.Text = status;
 
             SetBattery(LeftBar, LeftText, s.Battery.Left);
             SetBattery(RightBar, RightText, s.Battery.Right);

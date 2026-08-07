@@ -31,20 +31,16 @@
                 <NavigationViewItemHeader Content="Devices" />
                 <!-- The daemon is single-device: one item, populated from the
                      snapshot's dev_name. Structured so more could be added later. -->
-                <NavigationViewItem x:Name="DeviceNavItem" Tag="device"
-                                    Height="Auto" MinHeight="60">
+                <!-- One line (icon + name); the connection status shows in the
+                     device page header, so the nav item stays a normal height
+                     (a 2-line item became a tall block in icon-only compact mode). -->
+                <NavigationViewItem x:Name="DeviceNavItem" Tag="device">
                     <NavigationViewItem.Icon>
                         <ImageIcon Source="ms-appx:///Assets/airpods.png" />
                     </NavigationViewItem.Icon>
-                    <StackPanel Spacing="2" Padding="0,10" VerticalAlignment="Center">
-                        <TextBlock x:Name="NavDeviceName"
-                                   Text="LibrePods"
-                                   TextTrimming="CharacterEllipsis" />
-                        <TextBlock x:Name="NavDeviceStatus"
-                                   Text="Connecting…"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    </StackPanel>
+                    <TextBlock x:Name="NavDeviceName"
+                               Text="LibrePods"
+                               TextTrimming="CharacterEllipsis" />
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
