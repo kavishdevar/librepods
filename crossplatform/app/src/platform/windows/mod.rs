@@ -7,6 +7,10 @@ pub use device_id::DeviceId;
 mod transport;
 pub use transport::l2cap_connect;
 
+// Phase 3: IPC client of librepodsd (additive; wired into the GUI incrementally).
+#[allow(unused_imports)]
+pub mod daemon_client;
+
 mod watcher;
 pub use watcher::{local_adapter_address, power_on_adapter, watch_connections};
 

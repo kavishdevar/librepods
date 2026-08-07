@@ -32,6 +32,8 @@ ksni = "0.3.1"
 # Windows-only backend dependencies (platform/windows/*). Not built on Linux.
 [target.'cfg(target_os = "windows")'.dependencies]
 directories = "6"
+# IPC to librepodsd (Phase 3: the app is a client of the daemon's single session).
+librepods-ipc = { path = "../windows/ipc" }
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_IO",
