@@ -47,6 +47,11 @@ impl AirPodsDevice {
                 .await;
         }
 
+        // On Windows the app runs over the daemon's L2CAP proxy and the daemon
+        // already did the session setup — repeating it here re-negotiates the
+        // audio/feature profile and breaks ANC (e.g. Adaptive). So respect the
+        // daemon's channel: skip our own setup, just listen + send controls.
+        if cfg!(not(target_os = "windows")) {
         info!("Sending handshake");
         if let Err(e) = aacp_manager.send_handshake().await {
             error!("Failed to send handshake to AirPods device: {}", e);
@@ -78,6 +83,7 @@ impl AirPodsDevice {
         {
             error!("Failed to request proximity keys: {}", e);
         }
+        } // end: skip our own session setup on Windows (daemon owns it)
 
         let app_settings_path = get_app_settings_path();
         let settings = std::fs::read_to_string(&app_settings_path)
