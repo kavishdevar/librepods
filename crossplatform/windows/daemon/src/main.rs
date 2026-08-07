@@ -112,6 +112,10 @@ struct Ctx {
     /// Conversational Awareness volume duck — shared so `apply_command` can
     /// restore the volume if the user turns CA off mid-duck (no end event comes).
     conv_duck: Arc<Mutex<volume::ConvDuck>>,
+    /// Latest rename seen on the app→driver proxy + when. Flushed to an overlay
+    /// once it settles (the app may send several as you type), so there's a
+    /// visible "Renamed to X" confirmation.
+    pending_rename: Arc<Mutex<Option<(String, Instant)>>>,
     dev_name: String,
     mac: u64,
 }
@@ -391,6 +395,11 @@ fn l2cap_reader(pipe: Arc<Pipe>, ctx: Ctx) {
             let packet = acc[2..2 + len].to_vec();
             acc.drain(..2 + len);
             if !is_setup(&packet) {
+                // The app renames over the proxy; remember the latest name so we
+                // can show a "Renamed to X" confirmation once typing settles.
+                if let Some(name) = aap::parse_rename(&packet) {
+                    *ctx.pending_rename.lock().unwrap() = Some((name, Instant::now()));
+                }
                 if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
                     let _ = drv.send(&packet);
                 }
@@ -872,6 +881,7 @@ fn main() {
         connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
         conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
+        pending_rename: Arc::new(Mutex::new(None)),
         dev_name: dev_name.clone(),
         mac,
     };
@@ -948,7 +958,18 @@ fn main() {
             volume::init();
             loop {
                 c.sync_volume();
-                thread::sleep(Duration::from_millis(1000));
+                // Flush a settled rename into a confirmation overlay.
+                let ready = {
+                    let mut p = c.pending_rename.lock().unwrap();
+                    match p.as_ref() {
+                        Some((_, t)) if t.elapsed() >= Duration::from_millis(900) => p.take(),
+                        _ => None,
+                    }
+                };
+                if let Some((name, _)) = ready {
+                    c.overlay(&format!("Renamed to “{name}”"));
+                }
+                thread::sleep(Duration::from_millis(500));
             }
         });
     }

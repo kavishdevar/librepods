@@ -51,18 +51,31 @@ AirPods occasionally send battery status packets. The packet format is as follow
 04 00 04 00 04 00 [battery count] ([component] 01 [level] [status] 01) times the battery count
 ```
 
-| Components | Byte value |
-|------------|------------|
-| Case       | 08         |
-| Left       | 04         |
-| Right      | 02         |
+| Components      | Byte value |
+|-----------------|------------|
+| Headphone*      | 01         |
+| Case            | 08         |
+| Left            | 04         |
+| Right           | 02         |
 
-| Status       | Byte value |
-|------------- |------------|
-| Unknown      | 00         |
-| Charging     | 01         |
-| Discharging  | 02         |
-| Disconnected | 04         |
+*The `Headphone` component only exists on over-ear models (AirPods Max). On
+earbuds (AirPods Pro/regular) the slot may still be reported with a **level of
+`0xFF` (255)**, which means *absent* — treat it as "no such component" and skip
+it (otherwise it renders as a bogus "255%").
+
+| Status               | Byte value |
+|----------------------|------------|
+| Unknown              | 00         |
+| Charging             | 01         |
+| Discharging          | 02         |
+| Disconnected         | 04         |
+| Charging (in case)** | 05         |
+
+**`0x05` is reported for an earbud that is **charging inside the case** (the
+iPhone shows it charging with its current level). Discovered empirically — it was
+previously only handled in the app's parser (`aacp.rs`), not documented here nor
+in the Windows daemon's separate parser. Treat `0x01` and `0x05` both as
+*charging*.
 
 
 Example packet from AirPods Pro 2

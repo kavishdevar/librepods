@@ -75,6 +75,18 @@ pub fn parse_control_value(data: &[u8], id: u8) -> Option<u8> {
     }
 }
 
+/// Parse a rename packet the app sends over the proxy: `[HEADER, 0x1A, 0x00,
+/// 0x01, size, 0x00, ...name]`. Returns the new device name.
+pub fn parse_rename(data: &[u8]) -> Option<String> {
+    if data.len() >= 9 && data[..4] == HEADER && data[4] == 0x1A {
+        let size = data[7] as usize;
+        if data.len() >= 9 + size {
+            return String::from_utf8(data[9..9 + size].to_vec()).ok();
+        }
+    }
+    None
+}
+
 /// Conversational Awareness event (opcode 0x4B): the AirPods signal that you
 /// started/stopped speaking; the status byte drives the host-side volume duck.
 /// 1 = start, 2 = reduce, 3 = partial, 4/6/7 = end.
@@ -119,12 +131,15 @@ pub fn parse_battery(data: &[u8]) -> Option<Battery> {
         if base + 3 >= payload.len() {
             break;
         }
-        // status 0x04 = component not connected/present -> report as unknown.
+        // status 0x04 = component not connected/present; level 0xFF (255) = the
+        // slot exists but is absent (e.g. the headphone slot on earbuds) -> both
+        // report as unknown. (0x05 = charging in case, level valid.)
         let status = payload[base + 3];
-        let level = if status == 0x04 {
+        let raw = payload[base + 2];
+        let level = if status == 0x04 || raw == 0xFF {
             None
         } else {
-            Some(payload[base + 2])
+            Some(raw)
         };
         match payload[base] {
             0x01 => b.headphone = level,
