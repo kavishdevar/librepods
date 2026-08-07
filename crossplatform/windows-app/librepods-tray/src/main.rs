@@ -285,9 +285,19 @@ fn run_receiver(
             // immediately with 0 bytes when idle (ACL_SHORT_TRANSFER_OK), so
             // without this the loop spins a core AND floods the Bluetooth stack
             // with back-to-back ACL reads that contend with the A2DP audio
-            // (the crackle). Pushed events still arrive within ~150 ms.
+            // (the crackle). BUT while streaming the mic, a 150 ms nap starves
+            // the ring between the ~7.5 ms uplink packets → underrun static while
+            // you talk. So poll tightly (near the packet rate) when the mic is on
+            // — still a sleep (not a spin), so it doesn't flood ACL reads — and
+            // throttle hard only when idle (pushed events arrive within ~150 ms).
             if !got_data {
-                thread::sleep(Duration::from_millis(150));
+                // While streaming the mic, poll near the ~7.5 ms packet rate so
+                // the ring doesn't underrun (mic static while you talk); still a
+                // sleep (not a spin) so it doesn't flood ACL reads. Idle: throttle
+                // hard. (The static in the A2DP *output* is a pre-existing AirPods
+                // -on-Windows issue — it happens with any mic — not ours to fix.)
+                let nap = if mic_on.load(Ordering::Relaxed) { 4 } else { 150 };
+                thread::sleep(Duration::from_millis(nap));
             }
             // Passive session: no periodic L2CAP sends — those make Windows
             // re-negotiate the audio profile and cut/switch the output. Detect a
@@ -377,6 +387,13 @@ fn main() {
         let poll_cell = driver_cell.clone();
         let poll_name = dev_name.clone();
         let poll_auto = auto_mode.clone();
+        // Poll interval is 500 ms. We tear the stream down only after a long
+        // *sustained* idle, so a call doesn't flap: call apps briefly open/close
+        // capture at the start (probes/echo-cancel init) and pause it during
+        // silence/mute — a short debounce reacted to each, and every AAP
+        // mode switch is an audible glitch. 20 polls = 10 s bridges all of that;
+        // only a genuine end-of-call restores stereo (a ~10 s stereo delay after).
+        const MIC_IDLE_STOP_POLLS: u32 = 20;
         thread::spawn(move || {
             let mut prev = poll_pipe.as_ref().map(|p| p.status()).unwrap_or(0);
             let mut idle = 0u32;
@@ -407,7 +424,7 @@ fn main() {
                     }
                 } else {
                     idle += 1;
-                    if on && idle >= 3 {
+                    if on && idle >= MIC_IDLE_STOP_POLLS {
                         on = false;
                         poll_mic.store(false, Ordering::Relaxed);
                         if let Some(drv) = poll_cell.lock().unwrap().clone() {
