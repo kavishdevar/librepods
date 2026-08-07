@@ -17,179 +17,339 @@
                 <Setter Property="Padding" Value="16" />
             </Style>
         </Grid.Resources>
-        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled"
-                      Padding="0,0,0,24">
-            <StackPanel Spacing="16"
-                        Padding="24"
-                        MaxWidth="560"
-                        HorizontalAlignment="Stretch">
 
-                <!-- Device header: AirPods image + name/status (LibrePods look) -->
-                <Border Style="{StaticResource Card}">
-                    <Grid ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <Image x:Name="DeviceImage"
-                               Grid.Column="0"
-                               Width="96" Height="96"
-                               Stretch="Uniform"
-                               Source="ms-appx:///Assets/airpods.png"
-                               VerticalAlignment="Center" />
-
-                        <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                            <TextBlock x:Name="DeviceName"
-                                       Text="LibrePods"
-                                       Style="{ThemeResource TitleTextBlockStyle}"
-                                       TextTrimming="CharacterEllipsis" />
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <Ellipse x:Name="StatusDot" Width="10" Height="10"
-                                         Fill="{ThemeResource TextFillColorDisabledBrush}"
-                                         VerticalAlignment="Center" />
-                                <TextBlock x:Name="StatusText"
-                                           Text="Connecting…"
-                                           VerticalAlignment="Center"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <HyperlinkButton x:Name="ConnectButton"
-                                                 Content="Connect"
-                                                 Padding="0"
-                                                 Visibility="Collapsed"
-                                                 Click="Connect_Click" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Grid>
-                </Border>
-
-                <!-- Transient daemon overlay notifications -->
-                <InfoBar x:Name="OverlayBar"
-                         IsOpen="False"
-                         IsClosable="True" />
-
-                <!-- Nearby-but-not-connected prompt -->
-                <InfoBar x:Name="ConnectPromptBar"
-                         IsOpen="False"
-                         IsClosable="True"
-                         Severity="Informational" />
-
-                <!-- Battery -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="Battery" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-
-                            <StackPanel Grid.Column="0" Spacing="4">
-                                <TextBlock Text="Left" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <ProgressBar x:Name="LeftBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
-                                <TextBlock x:Name="LeftText" Text="—" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="4">
-                                <TextBlock Text="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <ProgressBar x:Name="RightBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
-                                <TextBlock x:Name="RightText" Text="—" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="2" Spacing="4">
-                                <TextBlock Text="Case" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <ProgressBar x:Name="CaseBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
-                                <TextBlock x:Name="CaseText" Text="—" />
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <!-- Noise control -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Noise Control" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                        <RadioButtons x:Name="AncButtons"
-                                      MaxColumns="1"
-                                      SelectionChanged="Anc_SelectionChanged">
-                            <RadioButton x:Name="AncOff" Content="Off" />
-                            <RadioButton Content="Noise Cancellation" />
-                            <RadioButton Content="Transparency" />
-                            <RadioButton Content="Adaptive" />
-                        </RadioButtons>
-                    </StackPanel>
-                </Border>
-
-                <!-- Volume -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="Volume" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                            <Button Content="&#x2212;" Click="VolDown_Click" MinWidth="44" />
-                            <ProgressBar x:Name="VolumeBar" Maximum="100" Value="0" Width="240"
-                                         VerticalAlignment="Center" Foreground="{ThemeResource LibrePodsAccentBrush}" />
-                            <Button Content="&#x2B;" Click="VolUp_Click" MinWidth="44" />
-                            <TextBlock x:Name="VolumeText" Text="—" VerticalAlignment="Center" MinWidth="56" />
-                        </StackPanel>
-                        <ToggleButton x:Name="MuteToggle" Content="Mute" Click="Mute_Click" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Feature toggles -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel Spacing="4">
-                        <TextBlock Text="Features" Style="{ThemeResource BodyStrongTextBlockStyle}" Margin="0,0,0,8" />
-                        <ToggleSwitch x:Name="ConvAwarenessSwitch"
-                                      Header="Conversational Awareness"
-                                      Toggled="ConvAwareness_Toggled" />
-                        <ToggleSwitch x:Name="AdaptiveVolumeSwitch"
-                                      Header="Adaptive Volume"
-                                      Toggled="AdaptiveVolume_Toggled" />
-                        <ToggleSwitch x:Name="AllowOffSwitch"
-                                      Header="Allow &quot;Off&quot; mode"
-                                      Toggled="AllowOff_Toggled" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Adaptive Audio noise strength -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Adaptive Noise" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                        <TextBlock Text="Only affects Adaptive mode."
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Style="{ThemeResource CaptionTextBlockStyle}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="Low" Click="NoiseLow_Click" />
-                            <Button Content="Medium" Click="NoiseMid_Click" />
-                            <Button Content="High" Click="NoiseHigh_Click" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <!-- Hi-res microphone -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Hi-res Microphone" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                        <TextBlock x:Name="MicStatusText"
-                                   Text="Microphone: idle"
+        <!-- Standard Fluent shell: left navigation pane + content area. -->
+        <NavigationView x:Name="NavView"
+                        PaneDisplayMode="Left"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="True"
+                        OpenPaneLength="260"
+                        SelectionChanged="Nav_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItemHeader Content="Devices" />
+                <!-- The daemon is single-device: one item, populated from the
+                     snapshot's dev_name. Structured so more could be added later. -->
+                <NavigationViewItem x:Name="DeviceNavItem" Tag="device">
+                    <NavigationViewItem.Icon>
+                        <ImageIcon Source="ms-appx:///Assets/airpods.png" />
+                    </NavigationViewItem.Icon>
+                    <StackPanel Spacing="2">
+                        <TextBlock x:Name="NavDeviceName"
+                                   Text="LibrePods"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="NavDeviceStatus"
+                                   Text="Connecting…"
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <ToggleSwitch x:Name="MicAutoSwitch"
-                                      Header="Auto-enable on recording"
-                                      Toggled="MicAuto_Toggled" />
-                        <ToggleButton x:Name="MicManualToggle"
-                                      Content="Enable hi-res mic now"
-                                      Click="MicManual_Click" />
                     </StackPanel>
-                </Border>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
-                <!-- Footer -->
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button Content="Refresh" Click="Refresh_Click" />
-                    <Button x:Name="SwitchUiButton"
-                            Content="Switch default UI to iced"
-                            Click="SwitchUi_Click" />
-                </StackPanel>
+            <NavigationView.Content>
+                <Grid>
+                    <!-- ============================ DEVICE PAGE ============================ -->
+                    <ScrollViewer x:Name="DevicePage"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Padding="0,0,0,24">
+                        <Grid x:Name="DeviceRoot"
+                              Padding="24"
+                              RowSpacing="16">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-            </StackPanel>
-        </ScrollViewer>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup>
+                                    <!-- Narrow: right column drops below the left (single column) -->
+                                    <VisualState x:Name="NarrowState">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="0" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="RightColumn.(Grid.Row)" Value="1" />
+                                            <Setter Target="RightColumn.(Grid.Column)" Value="0" />
+                                            <Setter Target="Col1.Width" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <!-- Wide: two side-by-side columns -->
+                                    <VisualState x:Name="WideState">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="720" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="RightColumn.(Grid.Row)" Value="0" />
+                                            <Setter Target="RightColumn.(Grid.Column)" Value="1" />
+                                            <Setter Target="Col1.Width" Value="*" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+
+                            <!-- Header: AirPods image + name/status, full width -->
+                            <Border Grid.Row="0" Style="{StaticResource Card}">
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Image x:Name="DeviceImage"
+                                           Grid.Column="0"
+                                           Width="96" Height="96"
+                                           Stretch="Uniform"
+                                           Source="ms-appx:///Assets/airpods.png"
+                                           VerticalAlignment="Center" />
+
+                                    <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                                        <TextBlock x:Name="DeviceName"
+                                                   Text="LibrePods"
+                                                   Style="{ThemeResource TitleTextBlockStyle}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <Ellipse x:Name="StatusDot" Width="10" Height="10"
+                                                     Fill="{ThemeResource TextFillColorDisabledBrush}"
+                                                     VerticalAlignment="Center" />
+                                            <TextBlock x:Name="StatusText"
+                                                       Text="Connecting…"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <HyperlinkButton x:Name="ConnectButton"
+                                                             Content="Connect"
+                                                             Padding="0"
+                                                             Visibility="Collapsed"
+                                                             Click="Connect_Click" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Transient daemon overlay + nearby-connect prompt -->
+                            <StackPanel Grid.Row="1" Spacing="16">
+                                <InfoBar x:Name="OverlayBar"
+                                         IsOpen="False"
+                                         IsClosable="True" />
+                                <InfoBar x:Name="ConnectPromptBar"
+                                         IsOpen="False"
+                                         IsClosable="True"
+                                         Severity="Informational" />
+                            </StackPanel>
+
+                            <!-- Responsive card grid: 2 columns wide, 1 column narrow -->
+                            <Grid x:Name="CardsGrid"
+                                  Grid.Row="2"
+                                  ColumnSpacing="16"
+                                  RowSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition x:Name="Col0" Width="*" />
+                                    <ColumnDefinition x:Name="Col1" Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- Left column: Battery, Volume, Adaptive Noise -->
+                                <StackPanel x:Name="LeftColumn"
+                                            Grid.Row="0" Grid.Column="0"
+                                            Spacing="16">
+
+                                    <!-- Battery -->
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel Spacing="12">
+                                            <TextBlock Text="Battery" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                            <Grid ColumnSpacing="16">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <StackPanel Grid.Column="0" Spacing="4">
+                                                    <TextBlock Text="Left" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <ProgressBar x:Name="LeftBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
+                                                    <TextBlock x:Name="LeftText" Text="—" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Spacing="4">
+                                                    <TextBlock Text="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <ProgressBar x:Name="RightBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
+                                                    <TextBlock x:Name="RightText" Text="—" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Spacing="4">
+                                                    <TextBlock Text="Case" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <ProgressBar x:Name="CaseBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
+                                                    <TextBlock x:Name="CaseText" Text="—" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Volume -->
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel Spacing="12">
+                                            <TextBlock Text="Volume" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                            <Grid ColumnSpacing="12" VerticalAlignment="Center">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Slider x:Name="VolumeSlider"
+                                                        Grid.Column="0"
+                                                        Minimum="0" Maximum="100" StepFrequency="1"
+                                                        VerticalAlignment="Center"
+                                                        ValueChanged="Volume_ValueChanged" />
+                                                <TextBlock x:Name="VolumeText"
+                                                           Grid.Column="1"
+                                                           Text="—"
+                                                           VerticalAlignment="Center"
+                                                           MinWidth="56"
+                                                           Margin="8,0,0,0" />
+                                            </Grid>
+                                            <ToggleButton x:Name="MuteToggle" Content="Mute" Click="Mute_Click" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Adaptive Audio noise strength -->
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="Adaptive Noise" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                            <TextBlock Text="Only affects Adaptive mode."
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       Style="{ThemeResource CaptionTextBlockStyle}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Button Content="Low" Click="NoiseLow_Click" />
+                                                <Button Content="Medium" Click="NoiseMid_Click" />
+                                                <Button Content="High" Click="NoiseHigh_Click" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
+                                <!-- Right column: Noise Control, Features, Hi-res Microphone -->
+                                <StackPanel x:Name="RightColumn"
+                                            Grid.Row="0" Grid.Column="1"
+                                            Spacing="16">
+
+                                    <!-- Noise control -->
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="Noise Control" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                            <RadioButtons x:Name="AncButtons"
+                                                          MaxColumns="1"
+                                                          SelectionChanged="Anc_SelectionChanged">
+                                                <RadioButton x:Name="AncOff" Content="Off" />
+                                                <RadioButton Content="Noise Cancellation" />
+                                                <RadioButton Content="Transparency" />
+                                                <RadioButton Content="Adaptive" />
+                                            </RadioButtons>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Feature toggles -->
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="Features" Style="{ThemeResource BodyStrongTextBlockStyle}" Margin="0,0,0,8" />
+                                            <ToggleSwitch x:Name="ConvAwarenessSwitch"
+                                                          Header="Conversational Awareness"
+                                                          Toggled="ConvAwareness_Toggled" />
+                                            <ToggleSwitch x:Name="AdaptiveVolumeSwitch"
+                                                          Header="Adaptive Volume"
+                                                          Toggled="AdaptiveVolume_Toggled" />
+                                            <ToggleSwitch x:Name="AllowOffSwitch"
+                                                          Header="Allow &quot;Off&quot; mode"
+                                                          Toggled="AllowOff_Toggled" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Hi-res microphone -->
+                                    <Border Style="{StaticResource Card}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="Hi-res Microphone" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                            <TextBlock x:Name="MicStatusText"
+                                                       Text="Microphone: idle"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <ToggleSwitch x:Name="MicAutoSwitch"
+                                                          Header="Auto-enable on recording"
+                                                          Toggled="MicAuto_Toggled" />
+                                            <ToggleButton x:Name="MicManualToggle"
+                                                          Content="Enable hi-res mic now"
+                                                          Click="MicManual_Click" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- ============================ SETTINGS PAGE ============================ -->
+                    <ScrollViewer x:Name="SettingsPage"
+                                  Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Padding="0,0,0,24">
+                        <StackPanel Spacing="16"
+                                    Padding="24"
+                                    MaxWidth="640"
+                                    HorizontalAlignment="Left">
+
+                            <TextBlock Text="Settings" Style="{ThemeResource TitleTextBlockStyle}" />
+
+                            <InfoBar x:Name="SettingsInfoBar"
+                                     IsOpen="False"
+                                     IsClosable="True" />
+
+                            <!-- Appearance -->
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Appearance" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Theme"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <RadioButtons x:Name="ThemeButtons"
+                                                  MaxColumns="3"
+                                                  SelectedIndex="0"
+                                                  SelectionChanged="Theme_SelectionChanged">
+                                        <RadioButton Content="System" />
+                                        <RadioButton Content="Light" />
+                                        <RadioButton Content="Dark" />
+                                    </RadioButtons>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Front-end preference -->
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Default front-end" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="Choose which UI the tray's &quot;Open App&quot; launches next time."
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               Style="{ThemeResource CaptionTextBlockStyle}"
+                                               TextWrapping="Wrap" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Content="Refresh state" Click="Refresh_Click" />
+                                        <Button x:Name="SwitchUiButton"
+                                                Content="Switch default UI to iced"
+                                                Click="SwitchUi_Click" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- About -->
+                            <Border Style="{StaticResource Card}">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="About" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="LibrePods"
+                                               Style="{ThemeResource SubtitleTextBlockStyle}" />
+                                    <TextBlock Text="LibrePods — native Windows client of librepodsd"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </NavigationView.Content>
+        </NavigationView>
     </Grid>
 </Window>

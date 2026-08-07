@@ -98,6 +98,12 @@ public sealed class StepVolumeCmd
     [JsonPropertyName("delta")] public int Delta { get; init; }
 }
 
+public sealed class SetVolumeCmd
+{
+    [JsonPropertyName("cmd")] public string Cmd => "set_volume";
+    [JsonPropertyName("percent")] public byte Percent { get; init; }
+}
+
 public sealed class ToggleMuteCmd
 {
     [JsonPropertyName("cmd")] public string Cmd => "toggle_mute";

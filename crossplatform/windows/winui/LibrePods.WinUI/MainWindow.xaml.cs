@@ -4,6 +4,7 @@ using LibrePods.WinUI.Services;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 
@@ -21,6 +22,11 @@ public sealed partial class MainWindow : Window
     // (setting IsOn / SelectedIndex raises Toggled / SelectionChanged synchronously).
     private bool _applyingSnapshot;
 
+    // Extra guard specifically for the volume Slider: assigning Slider.Value fires
+    // ValueChanged synchronously, and we must never echo an incoming snapshot back
+    // to the daemon as a SetVolume (feedback loop).
+    private bool _suppressVolume;
+
     // The most recent snapshot, so handlers can read sibling state (e.g. mic auto
     // needs the current mic_recording, ANC "Off" gating needs allow_off).
     private Snapshot _snapshot = new();
@@ -33,8 +39,12 @@ public sealed partial class MainWindow : Window
         // Native Fluent look: Mica backdrop, theme-aware via system resources.
         SystemBackdrop = new MicaBackdrop();
 
-        AppWindow.Resize(new SizeInt32(620, 940));
+        // Wider default so the responsive 2-column device layout shows at launch.
+        AppWindow.Resize(new SizeInt32(1000, 800));
         TrySetWindowIcon();
+
+        // Start on the device page.
+        NavView.SelectedItem = DeviceNavItem;
 
         // Close hides to tray (the app keeps running as an IPC client).
         AppWindow.Closing += OnClosing;
@@ -67,6 +77,15 @@ public sealed partial class MainWindow : Window
     {
         args.Cancel = true;   // don't destroy the window…
         AppWindow.Hide();     // …just hide it back to the tray.
+    }
+
+    // ---- Navigation --------------------------------------------------------
+
+    private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    {
+        var settings = args.IsSettingsSelected;
+        DevicePage.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
+        SettingsPage.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
     }
 
     // ---- Daemon events (marshalled to the UI thread) -----------------------
@@ -102,7 +121,10 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             if (!connected)
+            {
                 StatusText.Text = "Waiting for daemon…";
+                NavDeviceStatus.Text = "Waiting for daemon…";
+            }
         });
 
     // ---- Render a snapshot into the controls -------------------------------
@@ -113,11 +135,18 @@ public sealed partial class MainWindow : Window
         _applyingSnapshot = true;
         try
         {
-            DeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? "LibrePods" : s.DevName;
-            StatusText.Text = s.Connected ? "Connected" : "Disconnected";
+            var name = string.IsNullOrWhiteSpace(s.DevName) ? "LibrePods" : s.DevName;
+            var status = s.Connected ? "Connected" : "Disconnected";
+
+            DeviceName.Text = name;
+            StatusText.Text = status;
             StatusDot.Fill = new SolidColorBrush(
                 s.Connected ? Microsoft.UI.Colors.LimeGreen : Microsoft.UI.Colors.Gray);
             ConnectButton.Visibility = s.Connected ? Visibility.Collapsed : Visibility.Visible;
+
+            // The device NavigationViewItem mirrors the header.
+            NavDeviceName.Text = name;
+            NavDeviceStatus.Text = status;
 
             SetBattery(LeftBar, LeftText, s.Battery.Left);
             SetBattery(RightBar, RightText, s.Battery.Right);
@@ -127,7 +156,10 @@ public sealed partial class MainWindow : Window
             AncOff.IsEnabled = s.AllowOff;
             AncButtons.SelectedIndex = s.Anc is >= 1 and <= 4 ? s.Anc - 1 : -1;
 
-            VolumeBar.Value = s.Volume;
+            // Assigning Slider.Value fires ValueChanged synchronously — guard it.
+            _suppressVolume = true;
+            VolumeSlider.Value = s.Volume;
+            _suppressVolume = false;
             VolumeText.Text = s.Muted ? "muted" : $"{s.Volume}%";
             MuteToggle.IsChecked = s.Muted;
 
@@ -147,7 +179,8 @@ public sealed partial class MainWindow : Window
 
     private static void SetBattery(ProgressBar bar, TextBlock text, byte? value)
     {
-        if (value is byte v)
+        // Treat >100 (e.g. the 0xFF "absent" sentinel) as no reading.
+        if (value is byte v and <= 100)
         {
             bar.Value = v;
             bar.IsIndeterminate = false;
@@ -174,8 +207,12 @@ public sealed partial class MainWindow : Window
         _client.SetAnc((byte)(index + 1)); // 1..4
     }
 
-    private void VolUp_Click(object sender, RoutedEventArgs e) => _client.StepVolume(5);
-    private void VolDown_Click(object sender, RoutedEventArgs e) => _client.StepVolume(-5);
+    private void Volume_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_applyingSnapshot || _suppressVolume) return;
+        _client.SetVolume((byte)e.NewValue);
+    }
+
     private void Mute_Click(object sender, RoutedEventArgs e) => _client.ToggleMute();
 
     private void ConvAwareness_Toggled(object sender, RoutedEventArgs e)
@@ -214,12 +251,26 @@ public sealed partial class MainWindow : Window
         // Manual toggle: turn the hi-res stream on/off, auto off.
         _client.SetMicMode(auto: false, manual: !_snapshot.MicRecording);
 
+    // ---- Settings ----------------------------------------------------------
+
+    private void Theme_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // RootGrid may not exist yet while XAML is still initializing.
+        if (RootGrid is null) return;
+        RootGrid.RequestedTheme = ThemeButtons.SelectedIndex switch
+        {
+            1 => ElementTheme.Light,
+            2 => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
+    }
+
     private void SwitchUi_Click(object sender, RoutedEventArgs e)
     {
         UiPreference.Set(UiPreference.Iced);
-        OverlayBar.Title = "Default UI changed";
-        OverlayBar.Message = "The iced app will be the default front-end next time you open LibrePods.";
-        OverlayBar.Severity = InfoBarSeverity.Success;
-        OverlayBar.IsOpen = true;
+        SettingsInfoBar.Title = "Default UI changed";
+        SettingsInfoBar.Message = "The iced app will be the default front-end next time you open LibrePods.";
+        SettingsInfoBar.Severity = InfoBarSeverity.Success;
+        SettingsInfoBar.IsOpen = true;
     }
 }

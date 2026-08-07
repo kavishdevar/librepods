@@ -26,12 +26,18 @@ public partial class App : Application
 
         _tray = new TrayIcon(
             onOpen: () => _window.ShowFromTray(),
-            onQuit: ExitApp);
+            onQuit: ExitApp,
+            client: Daemon);
         _tray.Show();
 
         // Surface daemon overlays as a tray balloon as well as the in-app InfoBar.
         Daemon.OverlayReceived += (title, body) =>
             _window.DispatcherQueue.TryEnqueue(() => _tray?.ShowBalloon(title, body));
+
+        // Drive the tray's tooltip / menu / icon badge from daemon state. Snapshots
+        // arrive on a background thread; marshal to the UI thread (same as the window).
+        Daemon.SnapshotReceived += s =>
+            _window.DispatcherQueue.TryEnqueue(() => _tray?.UpdateSnapshot(s));
 
         // Begin talking to the daemon (background reader + writer loops).
         Daemon.Start();

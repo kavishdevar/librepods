@@ -65,6 +65,7 @@ public sealed class DaemonClient : IDisposable
     public void SetFeature(byte feature, bool on) => Send(new SetFeatureCmd { Feature = feature, On = on });
     public void SetControl(byte id, byte value) => Send(new SetControlCmd { Id = id, Value = value });
     public void StepVolume(int delta) => Send(new StepVolumeCmd { Delta = delta });
+    public void SetVolume(byte percent) => Send(new SetVolumeCmd { Percent = percent });
     public void ToggleMute() => Send(new ToggleMuteCmd());
     public void Connect() => Send(new ConnectCmd());
     public void Shutdown() => Send(new ShutdownCmd());

@@ -32,6 +32,8 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4188" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
+    <!-- GDI (System.Drawing.Icon/Bitmap/Graphics) for the tray's number-badge icon. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
   </ItemGroup>
 
   <ItemGroup>
