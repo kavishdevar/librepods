@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="LibrePods.WinUI.Controls.NoiseControlCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!-- Noise control -->
+    <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="8">
+            <TextBlock Text="Noise Control" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <RadioButtons x:Name="AncButtons"
+                          MaxColumns="1"
+                          SelectionChanged="Anc_SelectionChanged">
+                <RadioButton x:Name="AncOff" Content="Off" />
+                <RadioButton Content="Noise Cancellation" />
+                <RadioButton Content="Transparency" />
+                <RadioButton Content="Adaptive" />
+            </RadioButtons>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -98,11 +98,18 @@ public partial class App : Application
         }
     }
 
-    /// The tray "Quit": tear down the tray and exit. We do NOT send `shutdown`
-    /// here — closing this front-end should leave the daemon (and any other UI)
-    /// running. The tray's own Quit is what stops the daemon.
+    /// The tray "Quit": stop the daemon too and exit. On Windows one front-end
+    /// runs at a time, and this app spawned the daemon, so quitting it should not
+    /// leave a headless librepodsd lingering. (Closing the *window* only hides to
+    /// the tray — the daemon stays; Quit is the full teardown.)
     public void ExitApp()
     {
+        try
+        {
+            Daemon.Shutdown();                       // tell librepodsd to exit
+            System.Threading.Thread.Sleep(150);      // let the writer flush it
+        }
+        catch { }
         Notifier.Unregister();
         _tray?.Dispose();
         Daemon.Dispose();

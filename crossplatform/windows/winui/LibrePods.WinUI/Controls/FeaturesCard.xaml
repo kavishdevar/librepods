@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="LibrePods.WinUI.Controls.FeaturesCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!-- Feature toggles -->
+    <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="4">
+            <TextBlock Text="Features" Style="{ThemeResource BodyStrongTextBlockStyle}" Margin="0,0,0,8" />
+            <ToggleSwitch x:Name="ConvAwarenessSwitch"
+                          Header="Conversational Awareness"
+                          Toggled="ConvAwareness_Toggled" />
+            <ToggleSwitch x:Name="AdaptiveVolumeSwitch"
+                          Header="Adaptive Volume"
+                          Toggled="AdaptiveVolume_Toggled" />
+            <ToggleSwitch x:Name="AllowOffSwitch"
+                          Header="Allow &quot;Off&quot; mode"
+                          Toggled="AllowOff_Toggled" />
+        </StackPanel>
+    </Border>
+</UserControl>

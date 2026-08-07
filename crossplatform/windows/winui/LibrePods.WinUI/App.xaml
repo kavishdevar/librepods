@@ -32,6 +32,17 @@
                     <SolidColorBrush x:Key="LibrePodsAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+
+            <!-- Shared card look used by every device/settings section. Lifted to
+                 app scope so each UserControl (Controls/*, Pages/*) can reference
+                 {StaticResource Card} without redefining it. -->
+            <Style x:Key="Card" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="16" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

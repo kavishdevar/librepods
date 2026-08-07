@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="LibrePods.WinUI.Controls.MicCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!-- Hi-res microphone -->
+    <Border Style="{StaticResource Card}">
+        <StackPanel Spacing="8">
+            <TextBlock Text="Hi-res Microphone" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Name="MicStatusText"
+                       Text="Microphone: idle"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <ToggleSwitch x:Name="MicAutoSwitch"
+                          Header="Auto-enable on recording"
+                          Toggled="MicAuto_Toggled" />
+            <ToggleButton x:Name="MicManualToggle"
+                          Content="Enable hi-res mic now"
+                          Click="MicManual_Click" />
+        </StackPanel>
+    </Border>
+</UserControl>

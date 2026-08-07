@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="LibrePods.WinUI.Controls.DeviceHeader"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <!-- Header: AirPods image + name/status, full width -->
+    <Border Style="{StaticResource Card}">
+        <Grid ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Image x:Name="DeviceImage"
+                   Grid.Column="0"
+                   Width="96" Height="96"
+                   Stretch="Uniform"
+                   Source="ms-appx:///Assets/airpods.png"
+                   VerticalAlignment="Center" />
+
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                <TextBlock x:Name="DeviceName"
+                           Text="LibrePods"
+                           Style="{ThemeResource TitleTextBlockStyle}"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="10" Height="10"
+                             Fill="{ThemeResource TextFillColorDisabledBrush}"
+                             VerticalAlignment="Center" />
+                    <TextBlock x:Name="StatusText"
+                               Text="Connecting…"
+                               VerticalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <HyperlinkButton x:Name="ConnectButton"
+                                     Content="Connect"
+                                     Padding="0"
+                                     Visibility="Collapsed"
+                                     Click="Connect_Click" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>
