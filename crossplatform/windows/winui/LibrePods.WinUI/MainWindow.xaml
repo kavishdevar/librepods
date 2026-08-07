@@ -35,8 +35,11 @@
                      device page header, so the nav item stays a normal height
                      (a 2-line item became a tall block in icon-only compact mode). -->
                 <NavigationViewItem x:Name="DeviceNavItem" Tag="device">
+                    <!-- A monochrome Fluent glyph reads cleaner in the small nav
+                         slot than a product photo (which looked boxy under the
+                         selection highlight). The AirPods photo stays in the card. -->
                     <NavigationViewItem.Icon>
-                        <ImageIcon Source="ms-appx:///Assets/airpods.png" />
+                        <FontIcon Glyph="&#xE7F6;" />
                     </NavigationViewItem.Icon>
                     <TextBlock x:Name="NavDeviceName"
                                Text="LibrePods"
