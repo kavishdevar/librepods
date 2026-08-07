@@ -1,7 +1,9 @@
 //! librepodsd — the LibrePods Windows daemon. Owns the exclusive AAP driver
 //! handle, the AAP session, and the hi-res mic pipeline, and serves the tray /
 //! full app over a named-pipe IPC (NDJSON). See ../../daemon-ipc/PLAN.md.
+//! Runs headless — no console window (it's spawned by the tray/app).
 
+#![windows_subsystem = "windows"]
 #![allow(dead_code)]
 
 mod a2dp;
