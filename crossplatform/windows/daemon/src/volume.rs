@@ -74,17 +74,12 @@ pub struct ConvDuck {
     started: bool,
 }
 
-/// Duck to `pct` percent *of the original* volume (relative, so it never kills
-/// the audio the way an absolute 15% floor did — it scales with what the user set).
-fn duck(original: u8, pct: u16) -> u8 {
-    (original as u16 * pct / 100).min(100) as u8
-}
-
 impl ConvDuck {
-    /// Apply a Conversational Awareness status, ducking *relative* to the volume
-    /// the user had. Gentle by design (at most ~-40%) so the music stays audible:
-    /// 1 = start (→70%), 2 = reduce (→60%), 3 = partial (→85%), 4/6/7 = end
-    /// (→restore original).
+    /// Apply a Conversational Awareness status, Apple-style (aggressive): the
+    /// media drops to a low background level so you focus on the conversation
+    /// (the AirPods add the transparency/voice boost themselves). Mirrors iOS /
+    /// LibrePods PR #655: 1 = start (→25%), 2 = reduce (→15%), 3 = partial
+    /// (→min(original,25)), 4/6/7 = end (→restore original).
     pub fn on_status(&mut self, status: u8) {
         match status {
             1 => {
@@ -93,18 +88,21 @@ impl ConvDuck {
                     self.original = Some(cur);
                     self.started = true;
                 }
-                let orig = self.original.unwrap_or(cur);
-                set(duck(orig, 70));
+                if self.original.unwrap_or(cur) > 25 {
+                    set(25);
+                }
             }
             2 => {
                 if let Some(orig) = self.original {
-                    set(duck(orig, 60));
+                    if orig > 15 {
+                        set(15);
+                    }
                 }
             }
             3 => {
                 if self.started {
                     if let Some(orig) = self.original {
-                        set(duck(orig, 85));
+                        set(orig.min(25));
                     }
                 }
             }
