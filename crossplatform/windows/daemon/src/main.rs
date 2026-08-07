@@ -646,7 +646,14 @@ fn run_receiver(ctx: Ctx) {
                         }
                         let charging = left_chg || right_chg;
                         if charging && !prev_charging {
-                            ctx.overlay("Charging");
+                            // Name the bud(s) that just started charging.
+                            let which = match (left_chg, right_chg) {
+                                (true, true) => "Both charging",
+                                (true, false) => "Left charging",
+                                (false, true) => "Right charging",
+                                _ => "Charging",
+                            };
+                            ctx.overlay(&format!("{which}  ·  {batt_text}"));
                         }
                         prev_charging = charging;
                         let (ll, rl) = {
