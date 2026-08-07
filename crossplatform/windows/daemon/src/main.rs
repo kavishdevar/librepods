@@ -495,6 +495,7 @@ fn run_receiver(ctx: Ctx) {
         let mut we_paused = false;
         let mut prev_ear = [false; 2]; // last [primary, secondary] in-ear state
         let mut last_status = Instant::now();
+        let mut last_audio = Instant::now(); // hi-res mic watchdog (PR #655)
         let mut status_fails = 0u32;
         loop {
             let mut got_data = false;
@@ -508,6 +509,7 @@ fn run_receiver(ctx: Ctx) {
                     // Hi-res mic: decode the 0x58 uplink AUs → feed the virtual mic.
                     if ctx.mic_on.load(Ordering::Relaxed) {
                         if aap::is_audio_packet(data) {
+                            last_audio = Instant::now(); // watchdog: stream alive
                             if decoder.is_none() {
                                 decoder = eld::Decoder::new();
                                 if let Some(pp) = ctx.pipe.as_ref() {
@@ -589,6 +591,24 @@ fn run_receiver(ctx: Ctx) {
                 // Tight while streaming (no ring underrun), throttle hard on idle.
                 let nap = if ctx.mic_on.load(Ordering::Relaxed) { 4 } else { 150 };
                 thread::sleep(Duration::from_millis(nap));
+            }
+            // Hi-res mic watchdog (aligns with Linux PR #655): while capturing, the
+            // AirPods should stream 0x58 uplink SDUs continuously. If they stall for
+            // >2 s the mic pipe underruns into static/dropouts — re-arm the uplink
+            // (STOP→START) and drop the decoder so the next packet lays a fresh
+            // silence cushion. While the mic is off, keep the clock reset so it
+            // never fires.
+            if ctx.mic_on.load(Ordering::Relaxed) {
+                if last_audio.elapsed() >= Duration::from_millis(2000) {
+                    log("watchdog: mic SDUs stalled >2s — restarting uplink");
+                    let _ = driver.send(&aap::STOP_AUDIO);
+                    thread::sleep(Duration::from_millis(120));
+                    let _ = driver.send(&aap::START_AUDIO);
+                    decoder = None;
+                    last_audio = Instant::now();
+                }
+            } else {
+                last_audio = Instant::now();
             }
             if last_status.elapsed() >= Duration::from_secs(1) {
                 last_status = Instant::now();
