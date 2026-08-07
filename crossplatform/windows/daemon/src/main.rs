@@ -109,6 +109,9 @@ struct Ctx {
     /// The user accepted the "connect?" prompt — the session may start.
     connect_requested: Arc<AtomicBool>,
     pipe: Option<Arc<micpipe::MicPipe>>,
+    /// Conversational Awareness volume duck — shared so `apply_command` can
+    /// restore the volume if the user turns CA off mid-duck (no end event comes).
+    conv_duck: Arc<Mutex<volume::ConvDuck>>,
     dev_name: String,
     mac: u64,
 }
@@ -438,6 +441,11 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
                 let _ = drv.send(&aap::feature_command(feature, on));
             }
+            // Turning CA off mid-duck: no end event will arrive, so restore the
+            // pre-duck volume now instead of leaving it stuck low.
+            if feature == ipc::feature::CONVERSATIONAL_AWARENESS && !on {
+                ctx.conv_duck.lock().unwrap().restore();
+            }
             // Optimistic: reflect the toggle immediately; the AirPods echo a
             // status which run_receiver uses to correct it if it differs.
             {
@@ -474,7 +482,6 @@ fn run_receiver(ctx: Ctx) {
     log("run_receiver: entered");
     let mut buf = [0u8; 8192];
     let mut decoder: Option<eld::Decoder> = None;
-    let mut conv_duck = volume::ConvDuck::default(); // Conversational Awareness ducking
     media::init(); // COM (MTA) for the SMTC ear-detection auto-pause
     volume::init(); // COM for the CA volume duck (same MTA)
     log("run_receiver: media init done");
@@ -544,6 +551,7 @@ fn run_receiver(ctx: Ctx) {
         let mut last_status = Instant::now();
         let mut last_audio = Instant::now(); // hi-res mic watchdog (PR #655)
         let mut status_fails = 0u32;
+        let mut low_warned = false; // low-battery overlay fired (hysteresis)
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -602,6 +610,21 @@ fn run_receiver(ctx: Ctx) {
                             ctx.overlay(&format!("{ev}  ·  {batt_text}"));
                         }
                         last_case_present = Some(present);
+                        // Low-battery notification: warn once when either bud
+                        // falls to <=20%, re-arm only after it recovers above 25%
+                        // (hysteresis so it doesn't spam around the threshold).
+                        let low = {
+                            let s = ctx.state.lock().unwrap();
+                            [s.battery.left, s.battery.right].into_iter().flatten().min()
+                        };
+                        if let Some(min) = low {
+                            if min <= 20 && !low_warned {
+                                ctx.overlay(&format!("Battery low — {min}%"));
+                                low_warned = true;
+                            } else if min > 25 {
+                                low_warned = false;
+                            }
+                        }
                     }
                     if let Some(m) = aap::parse_anc_mode(data) {
                         ctx.cache_replay(1, data); // replay to a newly-attached app
@@ -644,7 +667,7 @@ fn run_receiver(ctx: Ctx) {
                     // Conversational Awareness: the AirPods signal speech start/stop;
                     // we (the host, single volume owner) duck/restore the volume.
                     if let Some(status) = aap::parse_conversational_awareness(data) {
-                        conv_duck.on_status(status);
+                        ctx.conv_duck.lock().unwrap().on_status(status);
                     }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
                         let new_ear = [primary.in_ear(), secondary.in_ear()];
@@ -809,6 +832,7 @@ fn main() {
         auto_mode: Arc::new(AtomicBool::new(true)),
         connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
+        conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
         dev_name: dev_name.clone(),
         mac,
     };

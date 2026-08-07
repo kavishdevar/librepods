@@ -30,6 +30,8 @@ const HEIGHT: i32 = 96;
 const TOP_MARGIN: i32 = 48;
 const HIDE_TIMER_ID: usize = 1;
 const HIDE_MS: u32 = 4500;
+/// The clickable "connect?" prompt lingers longer so there's time to click it.
+const PROMPT_HIDE_MS: u32 = 7500;
 const WM_SHOW_OVERLAY: u32 = WM_APP + 1;
 
 const HWND_TOPMOST: HWND = -1isize as HWND;
@@ -156,7 +158,8 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM)
             ShowWindow(hwnd, SW_SHOWNA);
             InvalidateRect(hwnd, std::ptr::null(), 1);
             KillTimer(hwnd, HIDE_TIMER_ID);
-            SetTimer(hwnd, HIDE_TIMER_ID, HIDE_MS, None);
+            let ms = if PROMPT_MODE.load(Ordering::Relaxed) { PROMPT_HIDE_MS } else { HIDE_MS };
+            SetTimer(hwnd, HIDE_TIMER_ID, ms, None);
             0
         }
         WM_TIMER if wp == HIDE_TIMER_ID => {

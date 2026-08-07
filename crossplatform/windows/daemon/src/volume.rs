@@ -106,16 +106,20 @@ impl ConvDuck {
                     }
                 }
             }
-            4 | 6 | 7 => {
-                if self.started {
-                    if let Some(orig) = self.original {
-                        set(orig);
-                    }
-                    self.started = false;
-                    self.original = None;
-                }
-            }
+            4 | 6 | 7 => self.restore(),
             _ => {}
+        }
+    }
+
+    /// Restore the pre-duck volume immediately (e.g. the user turned CA off while
+    /// it was mid-duck — no end event will come, so we'd be stuck low otherwise).
+    pub fn restore(&mut self) {
+        if self.started {
+            if let Some(orig) = self.original {
+                set(orig);
+            }
+            self.started = false;
+            self.original = None;
         }
     }
 }
