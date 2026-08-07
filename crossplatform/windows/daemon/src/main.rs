@@ -391,9 +391,14 @@ fn l2cap_reader(pipe: Arc<Pipe>, ctx: Ctx) {
             let packet = acc[2..2 + len].to_vec();
             acc.drain(..2 + len);
             if !is_setup(&packet) {
+                if packet.len() >= 5 {
+                    log(&format!("app→drv opcode={:#04x} len={}", packet[4], packet.len()));
+                }
                 if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
                     let _ = drv.send(&packet);
                 }
+            } else {
+                log("app→drv DROPPED (setup packet)");
             }
         }
     }
@@ -593,6 +598,11 @@ fn run_receiver(ctx: Ctx) {
                         decoder = None;
                     }
                     if let Some(b) = aap::parse_battery(data) {
+                        log(&format!(
+                            "batt: L={:?}/{:?} R={:?}/{:?} C={:?}/{:?} H={:?}",
+                            b.left, b.left_charging, b.right, b.right_charging,
+                            b.case, b.case_charging, b.headphone
+                        ));
                         ctx.cache_replay(0, data); // replay to a newly-attached app
                         let (batt_text, present) = {
                             let mut s = ctx.state.lock().unwrap();
@@ -655,6 +665,7 @@ fn run_receiver(ctx: Ctx) {
                             right_chg = c;
                         }
                         let charging = left_chg || right_chg;
+                        log(&format!("charging: lchg={left_chg} rchg={right_chg} prev={prev_charging}"));
                         if charging && !prev_charging {
                             // Name the bud(s) that just started charging.
                             let which = match (left_chg, right_chg) {
