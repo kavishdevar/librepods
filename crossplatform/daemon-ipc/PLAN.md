@@ -80,6 +80,34 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
 4. **Polish.** Daemon single-instance + autostart-on-demand + reconnect; installer
    ships `librepodsd.exe` and drops the exclusive-handoff shortcut logic.
 
+## Status — Phases 1–2 DONE ✅ (validated on hardware)
+
+- **`librepodsd`** owns the driver + AAP session + hi-res mic; the **tray is a
+  thin IPC client** and they coexist. Confirmed on hardware: battery / ANC /
+  volume / mic all shown + controlled over IPC, auto-reconnect, overlay cards.
+- **IPC = two one-directional named pipes** (`PIPE_EVENTS` daemon→client,
+  `PIPE_CMDS` client→daemon), NDJSON, **async** (per-connection queue + writer
+  thread each side). This was forced by two bugs hit on the way:
+  1. **Sync-handle serialization / deadlock** — a single *duplex* pipe deadlocked:
+     a Windows synchronous handle serializes I/O, so the daemon's blocking
+     ReadFile (commands) stalled its WriteFile (events) on the same handle (it
+     wrote 2 messages then hung). Split into two one-directional pipes.
+  2. **UI freeze** — a synchronous blocking WriteFile on the tray's UI thread
+     froze the menu. Both sides now decouple I/O onto their own threads.
+  - Also: the named-pipe DACL must grant the same-user client (`D:(A;;GA;;;AU)…`);
+    the default null descriptor denied it.
+- **BLE 'connect?' prompt** (beyond the plan): `le.rs` watches (passive, and only
+  while disconnected) for the AirPods proximity advertisement and sends
+  `Event::ConnectPrompt`; the tray shows a clickable, accent-themed overlay card;
+  a click → `Command::Connect`.
+- **Never-steal policy**: the daemon never auto-connects — it waits for the
+  prompt/Connect, and **releases on any drop** (never reconnects on its own,
+  which would steal the AirPods back from the iPhone). Connect retries ~18 s for
+  resilience.
+- **Phase 3 (full app as a client)** — NOT done; the app still uses the
+  Open-App handoff. The daemon's own session vs the app's session over one L2CAP
+  channel is the open design question (state-client vs raw-L2CAP-proxy).
+
 ## Risks / notes
 
 - **Multi-client pipe:** the daemon must serve several pipe instances at once
