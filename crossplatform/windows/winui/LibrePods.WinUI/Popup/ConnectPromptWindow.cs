@@ -180,9 +180,14 @@ public sealed class ConnectPromptWindow : Window
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         int pref = DWMWCP_ROUND;
         DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
+        // Windows 11 paints a border colour around every window — that's the white
+        // edge around the card. DWMWA_COLOR_NONE removes it.
+        int none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref none, sizeof(int));
     }
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWA_BORDER_COLOR = 34;
     private const int DWMWCP_ROUND = 2;
 
     [DllImport("dwmapi.dll", SetLastError = true)]
