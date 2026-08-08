@@ -107,8 +107,10 @@ public sealed class TrayIcon : IDisposable
             // WinUI 3 apps (the classic PopupMenu path needs a visible window).
             ContextMenuMode = ContextMenuMode.SecondWindow,
             IconSource = new BitmapImage(new Uri("ms-appx:///Assets/tray.ico")),
-            LeftClickCommand = new RelayCommand(onOpen),
-            NoLeftClickDelay = true,
+            // Double-click opens the app; a single click shows the context menu
+            // (right-click also does). NoLeftClickDelay must stay off so a single
+            // click isn't consumed before a potential double-click is seen.
+            DoubleClickCommand = new RelayCommand(onOpen),
         };
 
         // Load the plain icon from disk for the "no number" fallback.
