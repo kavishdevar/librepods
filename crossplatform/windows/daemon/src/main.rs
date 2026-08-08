@@ -134,6 +134,10 @@ struct Ctx {
     /// once it settles (the app may send several as you type), so there's a
     /// visible "Renamed to X" confirmation.
     pending_rename: Arc<Mutex<Option<(String, Instant)>>>,
+    /// The ANC mode last commanded by the user + when. Used to ignore the
+    /// transitional ANC echoes the AirPods emit while switching modes quickly
+    /// (they briefly report Off), so the UI/toasts don't flicker through Off.
+    anc_cmd: Arc<Mutex<Option<(u8, Instant)>>>,
     dev_name: String,
     mac: u64,
 }
@@ -639,6 +643,12 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
         Command::Hello { .. } | Command::GetState => ctx.push_state(),
         Command::SetAnc { mode } => {
             if (1..=4).contains(&mode) {
+                // Remember the target so run_receiver can ignore transitional
+                // echoes (the buds briefly report Off when switching quickly), and
+                // reflect the click immediately so the UI feels instant.
+                *ctx.anc_cmd.lock().unwrap() = Some((mode, Instant::now()));
+                ctx.state.lock().unwrap().anc = mode;
+                ctx.push_state();
                 if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
                     let _ = drv.send(&aap::anc_command(mode));
                 }
@@ -954,12 +964,24 @@ fn run_receiver(ctx: Ctx) {
                     }
                     if let Some(m) = aap::parse_anc_mode(data) {
                         ctx.cache_replay(1, data); // replay to a newly-attached app
-                        ctx.state.lock().unwrap().anc = m;
-                        ctx.push_state();
-                        if last_anc != 0 && m != last_anc {
-                            ctx.overlay(aap::anc_name(m));
+                        // Ignore transitional echoes that don't match a recent user
+                        // command (the buds briefly report Off when switching modes
+                        // quickly). Accept once it matches, or when nothing is
+                        // pending / the window passed (an external change).
+                        let accept = match *ctx.anc_cmd.lock().unwrap() {
+                            Some((target, t)) if t.elapsed() < Duration::from_millis(1500) => {
+                                m == target
+                            }
+                            _ => true,
+                        };
+                        if accept {
+                            ctx.state.lock().unwrap().anc = m;
+                            ctx.push_state();
+                            if last_anc != 0 && m != last_anc {
+                                ctx.overlay(aap::anc_name(m));
+                            }
+                            last_anc = m;
                         }
-                        last_anc = m;
                     }
                     // Sync the feature toggles from the AirPods' own status echoes
                     // (0x01 = on, 0x02 = off), so the tray checkmarks reflect the
@@ -1224,6 +1246,7 @@ fn main() {
         pipe,
         conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
         pending_rename: Arc::new(Mutex::new(None)),
+        anc_cmd: Arc::new(Mutex::new(None)),
         dev_name: dev_name.clone(),
         mac,
     };
