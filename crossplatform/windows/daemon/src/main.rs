@@ -571,13 +571,9 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             let _ = drv.send(pkt);
             thread::sleep(Duration::from_millis(delay));
         }
-        // Stop head tracking first (period 0), then wait ~220 ms, then start HR.
-        // Head tracking shares the 0x17 sensor service with heart rate; the Android
-        // client clears it before HR, and a running head-tracking stream is a
-        // candidate for why the *computed* HR (type 19) never starts on Windows
-        // while raw PPG (type 16) floods fine. See AAP Definitions.md → Head Tracking.
-        let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_HEAD_TRACKING, 0));
-        thread::sleep(Duration::from_millis(220));
+        // (The head-tracking-stop experiment was removed: the diag showed head
+        // tracking was never running — type14=0 — so there was nothing to clear.
+        // The type-14 counter is kept in the diagnostic for the record.)
         // Start the heart-rate stream, then raw PPG ~160 ms later, as iOS does.
         let _ = drv.send(&aap::sensor_stream(
             next_hr_seq(),
