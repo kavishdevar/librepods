@@ -19,7 +19,7 @@ mod rename;
 mod volume;
 
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -138,6 +138,16 @@ struct Ctx {
     /// True while an HR retry thread is live. A one-thread guard so rapid on/off
     /// never stacks two retry campaigns over the one driver.
     hr_retrying: Arc<AtomicBool>,
+    /// Set by the HR retry campaign after it exhausts a batch of enable attempts
+    /// with no sample, asking `run_receiver` to rebuild the AACP L2CAP channel
+    /// (drop + reopen the driver) before retrying — the Android client's
+    /// `requestTransportRecovery`. run_receiver clears it and re-arms HR on the
+    /// fresh channel. A last-resort session reset for the "ACKs but no data" case.
+    hr_wants_rebuild: Arc<AtomicBool>,
+    /// Count of AACP channel rebuilds spent on the current HR session, so we stop
+    /// reconnecting forever once it's clear the unit won't stream (ACKs only). Reset
+    /// when the user (re)enables HR or (re)connects — a fresh chance each time.
+    hr_rebuilds: Arc<AtomicU32>,
     /// The user accepted the "connect?" prompt — the session may start.
     connect_requested: Arc<AtomicBool>,
     pipe: Option<Arc<micpipe::MicPipe>>,
@@ -464,15 +474,11 @@ fn set_mic(ctx: &Ctx, on: bool) {
 }
 
 // ---- HR retry constants (mirror the Android HeartRateMonitor companion) ----
-/// Wait this long for the FIRST decoded sample before re-enabling.
+/// Wait this long for a decoded reading before re-enabling (Android's
+/// FIRST_SAMPLE_TIMEOUT).
 const HR_FIRST_SAMPLE_TIMEOUT_MS: u64 = 8_000;
-/// Total budget across all attempts before we give up (transport stays up).
-const HR_RECONNECT_WINDOW_MS: u64 = 15_000;
-/// Gap before re-sending the stream control frames on a retry.
+/// Gap after HRM_STATE before the stream start (Android's START_COMMAND_DELAY).
 const HR_START_COMMAND_DELAY_MS: u64 = 120;
-/// Gap between the heart-rate and raw-PPG stream frames. iOS sent them 160 ms
-/// apart; whether the order or the gap matters is untested.
-const HR_PPG_COMMAND_DELAY_MS: u64 = 160;
 
 /// Sequence number for sensor stream control frames. iOS increments this per
 /// frame; whether the AirPods validate it is untested, so we count up too. Kept
@@ -486,15 +492,26 @@ fn next_hr_seq() -> u16 {
 }
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
+/// Consecutive enable attempts (each an ~8 s sample wait) with no reading before
+/// we ask run_receiver to rebuild the AACP channel — mirrors the Android client
+/// escalating to `requestTransportRecovery` after the plain re-enable retries.
+const HR_ATTEMPTS_BEFORE_REBUILD: u32 = 4;
+/// Max AACP channel rebuilds per HR session before giving up (the unit only ever
+/// ACKs, never streams). Stops the daemon reconnecting the channel forever; the user
+/// re-toggles HR (or reconnects) to try again. ~3 rebuilds ≈ 3 min of effort.
+const HR_MAX_REBUILDS: u32 = 3;
 
 /// How one retry campaign ended.
 enum HrOutcome {
-    /// The stream came up — a sample was decoded; run_receiver keeps decoding.
+    /// The stream came up — a real sample was decoded; run_receiver keeps decoding.
     Live,
     /// The user turned HR off mid-campaign (`hr_on` went false).
     Stopped,
-    /// The 15 s window (or a lost transport) exhausted with no sample — give up.
+    /// The transport was lost (no driver) — give up; re-arms on the next connect.
     GiveUp,
+    /// Enable retries were exhausted with only ACKs (no reading). We asked
+    /// run_receiver to rebuild the L2CAP channel; it will re-arm HR afterwards.
+    Rebuild,
 }
 
 /// Enable/disable AirPods Pro 3 heart-rate monitoring. On → spawn a retry thread
@@ -510,6 +527,7 @@ fn set_heart_rate(ctx: &Ctx, on: bool) {
         if has_driver { "connected" } else { "NONE(no session yet)" }
     ));
     if on && !was {
+        ctx.hr_rebuilds.store(0, Ordering::Relaxed); // fresh budget for this session
         spawn_hr_retry(ctx);
         ctx.overlay("Heart rate monitoring on");
     } else if !on && was {
@@ -538,7 +556,9 @@ fn spawn_hr_retry(ctx: &Ctx) {
         // campaign that Stopped (user off) re-runs iff hr_on is true again.
         loop {
             match hr_retry_campaign(&ctx) {
-                HrOutcome::Live | HrOutcome::GiveUp => break,
+                // Rebuild: the campaign asked run_receiver to rebuild the L2CAP
+                // channel; exit so it can, then it re-arms HR on the fresh channel.
+                HrOutcome::Live | HrOutcome::GiveUp | HrOutcome::Rebuild => break,
                 HrOutcome::Stopped => {
                     if !ctx.hr_on.load(Ordering::Relaxed) {
                         break;
@@ -550,14 +570,18 @@ fn spawn_hr_retry(ctx: &Ctx) {
     });
 }
 
-/// One 15 s campaign: keep re-sending the enable sequence and waiting for the
-/// first sample, backing off between attempts. Non-disruptive — this only
-/// re-sends the AACP init + STOP frames (a service-level reset), never touching
-/// the L2CAP/driver connection.
+/// Keep re-sending the enable sequence and waiting for a REAL heart-rate reading,
+/// mirroring the Android HeartRateMonitor loop. One attempt = full enable + up to
+/// FIRST_SAMPLE_TIMEOUT waiting for a *decoded reading*. Crucially, mere ACKs / a
+/// live-but-empty stream do NOT end the campaign: the whole failure mode is that the
+/// AirPods ACK service 19 yet never stream data, so we must keep retrying. Plain
+/// re-enable retries repeat over the same channel; after HR_ATTEMPTS_BEFORE_REBUILD
+/// with only ACKs, escalate to a transport rebuild (run_receiver drops + reopens the
+/// L2CAP channel and re-arms HR) — the Android client's `requestTransportRecovery`.
+/// Runs until a reading lands or the user turns HR off.
 fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
-    let deadline = Instant::now() + Duration::from_millis(HR_RECONNECT_WINDOW_MS);
     let mut attempt: u32 = 0;
-    while ctx.hr_on.load(Ordering::Relaxed) && Instant::now() < deadline {
+    while ctx.hr_on.load(Ordering::Relaxed) {
         ctx.hr_got_sample.store(false, Ordering::Relaxed);
         ctx.hr_stream_live.store(false, Ordering::Relaxed);
         let drv = match ctx.driver_cell.lock().unwrap().clone() {
@@ -567,12 +591,13 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
                 return HrOutcome::GiveUp;
             }
         };
-        // AACP 1.3 init (connect0/caps0/connect4/caps4), then the sensor stream
-        // control frames. Ground-truth captures (AAP Definitions.md → "Starting
-        // and Stopping Sensor Streams") show iOS starting heart rate with a
-        // `0x17` … `42 0B` frame carrying stream id 0x53 and a 1 s period, with
-        // raw PPG started alongside it ~160 ms later. The init packets are kept
-        // as unrefuted — every capture began with the session already open.
+        // beforeFirstStart (Android): stop head tracking up front — it shares the
+        // sensor service — and settle 220 ms, BEFORE the session init, matching the
+        // working client's ordering exactly (the PR author confirmed his flow).
+        let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_HEAD_TRACKING, 0));
+        thread::sleep(Duration::from_millis(220));
+        // AACP 1.3 session init (connect0/caps0/connect4/caps4), re-sent every attempt
+        // so each retry re-establishes the session before the enable.
         let init: [(&[u8], u64); 4] = [
             (&aap::HR_CONNECT_SERVICE_0, 180),
             (&aap::HR_CAPABILITIES_SERVICE_0, 220),
@@ -587,76 +612,66 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             thread::sleep(Duration::from_millis(delay));
         }
         // Enable + start, faithfully reproducing the working Android sequence
-        // (upstream PR #702). A btvs/Wireshark capture of our own traffic proved the
-        // AirPods ACK the stream (service 19) but emit no data until the measurement
-        // engine is switched on with HRM_STATE (control 0x30). The earlier
-        // `request_all_descriptors` frames — a guess from the iOS PacketLogger capture
-        // — never helped (type 19 stayed 0) and Android does not send them, so they
-        // are dropped. Stop head tracking first (shares the sensor service), as
-        // Android's beforeFirstStart does.
-        let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_HEAD_TRACKING, 0));
-        thread::sleep(Duration::from_millis(220));
-        // HRM_STATE = on (control 0x30) — the enable step the working Android client
-        // (PR #702) sends, which the daemon had been missing. NOTE: a clean-conditions
-        // Wireshark capture (healthy driver, iPhone off, 0x30 dissector-confirmed on
-        // the wire) still yielded ACKs only — the AirPods ACK service 19 but emit zero
-        // data frames on this A3063 unit. So 0x30 is necessary-to-match-Android but not
-        // sufficient here; the remaining gap is non-protocol (fit / another Apple host
-        // holding the service / firmware). Kept because it mirrors the working client.
+        // (upstream PR #702): switch on the PPG engine with HRM_STATE (control 0x30),
+        // then start the 1 Hz heart-rate stream (service 19). The earlier
+        // `request_all_descriptors` guess is dropped (Android doesn't send it and it
+        // never helped); the 0x10 DEVMOTION6 stream is unrelated to HR and dropped.
         let _ = drv.send(&aap::HR_ENABLE);
-        thread::sleep(Duration::from_millis(120));
-        // Start the 1 Hz heart-rate stream (service 19). The 0x10 stream is DEVMOTION6
-        // (6-axis motion), NOT PPG — dropped (Android doesn't send it; the ~150
-        // frames/window we once saw were the iPhone's motion, never our PPG).
+        thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
         let _ = drv.send(&aap::sensor_stream(
             next_hr_seq(),
             aap::STREAM_HEART_RATE,
             aap::PERIOD_HEART_RATE_US,
         ));
 
-        // Wait up to FIRST_SAMPLE_TIMEOUT for the decoder to yield a sample,
-        // polling so we react promptly to the user turning HR off.
+        // Wait up to FIRST_SAMPLE_TIMEOUT for a REAL decoded reading. ACKs / a
+        // live-but-empty stream are ignored on purpose — they are exactly the state
+        // we are trying to get past.
         let wait_until = Instant::now() + Duration::from_millis(HR_FIRST_SAMPLE_TIMEOUT_MS);
         while Instant::now() < wait_until {
             if !ctx.hr_on.load(Ordering::Relaxed) {
                 return HrOutcome::Stopped;
             }
             if ctx.hr_got_sample.load(Ordering::Relaxed) {
-                log("HR: stream live (first sample decoded) — retries done");
-                return HrOutcome::Live;
-            }
-            // Frames are arriving (HEARTRATE service is streaming) but carry no
-            // reading yet — the enable worked, so stop the STOP/re-init churn and
-            // keep the stream open; run_receiver keeps decoding, so a reading
-            // publishes once the sensor produces one. HRM_STATE (0x30) is now sent, so
-            // the enable matches the working Android client; the first sample can take
-            // ~8 s. On the A3063 test unit no data ever followed the ACK — see the note
-            // above the HR_ENABLE send.
-            if ctx.hr_stream_live.load(Ordering::Relaxed) {
-                log("HR: service streaming (frames arriving, awaiting a reading) — keeping stream open");
+                log("HR: stream live (reading decoded) — retries done");
                 return HrOutcome::Live;
             }
             thread::sleep(Duration::from_millis(200));
         }
 
-        // No sample in 8 s — back off (capped to the remaining window) and retry.
         attempt += 1;
-        log(&format!("HR retry: attempt={attempt} (no sample in 8s)"));
-        let backoff = HR_RETRY_BACKOFF_MS[(attempt as usize - 1).min(HR_RETRY_BACKOFF_MS.len() - 1)];
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
+        let streaming = ctx.hr_stream_live.load(Ordering::Relaxed);
+        log(&format!(
+            "HR retry: attempt={attempt} — no reading in 8s (stream_frames={streaming})"
+        ));
+        // Escalate to a transport rebuild once the plain re-enable retries are spent:
+        // ask run_receiver to drop + reopen the L2CAP channel and re-arm HR on it —
+        // but only up to HR_MAX_REBUILDS, then give up so we don't reconnect forever.
+        if attempt >= HR_ATTEMPTS_BEFORE_REBUILD {
+            let done = ctx.hr_rebuilds.load(Ordering::Relaxed);
+            if done >= HR_MAX_REBUILDS {
+                log(&format!(
+                    "HR: no reading after {done} channel rebuilds (ACKs only) — giving up; \
+                     toggle HR off/on to retry"
+                ));
+                ctx.overlay("Heart rate unavailable");
+                return HrOutcome::GiveUp;
+            }
+            ctx.hr_rebuilds.store(done + 1, Ordering::Relaxed);
+            log(&format!(
+                "HR: enable retries exhausted (ACKs only) — AACP channel rebuild #{}",
+                done + 1
+            ));
+            ctx.hr_wants_rebuild.store(true, Ordering::Relaxed);
+            return HrOutcome::Rebuild;
         }
-        let nap_until = Instant::now() + Duration::from_millis(backoff).min(remaining);
+        let backoff = HR_RETRY_BACKOFF_MS[(attempt as usize - 1).min(HR_RETRY_BACKOFF_MS.len() - 1)];
+        let nap_until = Instant::now() + Duration::from_millis(backoff);
         while Instant::now() < nap_until && ctx.hr_on.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_millis(100));
         }
     }
-    if !ctx.hr_on.load(Ordering::Relaxed) {
-        return HrOutcome::Stopped;
-    }
-    log("HR: could not start after retries");
-    HrOutcome::GiveUp
+    HrOutcome::Stopped
 }
 
 fn apply_command(ctx: &Ctx, cmd: Command) {
@@ -728,6 +743,8 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             // The user accepted the prompt — let the session start, and ask the OS
             // to (re)connect the audio in case the device was BT-disconnected.
             ctx.connect_requested.store(true, Ordering::Relaxed);
+            ctx.hr_rebuilds.store(0, Ordering::Relaxed); // fresh HR budget on a new connect
+            ctx.hr_wants_rebuild.store(false, Ordering::Relaxed);
             let mac = ctx.mac;
             thread::spawn(move || {
                 let ok = bt::set_audio_connected(mac, true);
@@ -874,6 +891,15 @@ fn run_receiver(ctx: Ctx) {
             // The user pressed Disconnect (connect_requested cleared) — release.
             if !ctx.connect_requested.load(Ordering::Relaxed) {
                 log("run_receiver: disconnect requested — releasing");
+                *ctx.driver_cell.lock().unwrap() = None;
+                break;
+            }
+            // The HR campaign asked for a transport rebuild (ACKs but no data): drop
+            // the driver so the outer loop reopens the L2CAP channel fresh, then the
+            // handshake path re-arms HR on it. Keep connect_requested set so we
+            // reconnect rather than release.
+            if ctx.hr_wants_rebuild.swap(false, Ordering::Relaxed) {
+                log("run_receiver: HR transport rebuild — reopening AACP channel");
                 *ctx.driver_cell.lock().unwrap() = None;
                 break;
             }
@@ -1303,6 +1329,8 @@ fn main() {
         hr_got_sample: Arc::new(AtomicBool::new(false)),
         hr_stream_live: Arc::new(AtomicBool::new(false)),
         hr_retrying: Arc::new(AtomicBool::new(false)),
+        hr_wants_rebuild: Arc::new(AtomicBool::new(false)),
+        hr_rebuilds: Arc::new(AtomicU32::new(0)),
         connect_requested: Arc::new(AtomicBool::new(false)),
         pipe,
         conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
