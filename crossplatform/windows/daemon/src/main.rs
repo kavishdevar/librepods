@@ -571,12 +571,14 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             let _ = drv.send(pkt);
             thread::sleep(Duration::from_millis(delay));
         }
-        // Start the heart-rate stream, then raw PPG ~160 ms later, exactly as iOS
-        // does. NOTE: on Windows this streams raw PPG (type 16) but the AirPods do
-        // not emit the computed heart rate (type 19) — replicating iOS's 0x44 /
-        // 0x59 / 0x0B pre-stream context did not change that, so the trigger is
-        // believed to live in the session setup none of the captures recorded.
-        // See crossplatform/docs/aap-packet-discovery.md.
+        // Stop head tracking first (period 0), then wait ~220 ms, then start HR.
+        // Head tracking shares the 0x17 sensor service with heart rate; the Android
+        // client clears it before HR, and a running head-tracking stream is a
+        // candidate for why the *computed* HR (type 19) never starts on Windows
+        // while raw PPG (type 16) floods fine. See AAP Definitions.md → Head Tracking.
+        let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_HEAD_TRACKING, 0));
+        thread::sleep(Duration::from_millis(220));
+        // Start the heart-rate stream, then raw PPG ~160 ms later, as iOS does.
         let _ = drv.send(&aap::sensor_stream(
             next_hr_seq(),
             aap::STREAM_HEART_RATE,
@@ -797,6 +799,7 @@ fn run_receiver(ctx: Ctx) {
         // Frames carrying the type-19 heart-rate signature `08 13 1a 12` (vs the
         // 50 Hz type-16 raw-PPG flood, which shares the RTBuddy prefix).
         let mut hr_type19 = 0u32;
+        let mut hr_type14 = 0u32; // head-tracking frames (sensor-service contention)
         // Diagnose stale-"connected": throttled log of the raw driver status when
         // it isn't a clean 2, so we can see what "cased" vs "both-out-resting"
         // actually report (the teardown decision hinges on them differing).
@@ -823,6 +826,12 @@ fn run_receiver(ctx: Ctx) {
                         if hr::contains_frame_prefix(data) {
                             hr_frames += 1;
                             ctx.hr_stream_live.store(true, Ordering::Relaxed);
+                            // Count head-tracking (type 14: `08 0e 1a`) frames too,
+                            // to see whether it's still streaming and stealing the
+                            // sensor service from the computed heart rate.
+                            if data.windows(3).any(|w| w == [0x08, 0x0e, 0x1a]) {
+                                hr_type14 += 1;
+                            }
                             // Only the 1 Hz heart-rate stream carries `08 13 1a 12`
                             // (type 19, 18-byte payload). Dump those; the 50 Hz
                             // type-16 raw-PPG frames share the prefix and would
@@ -857,12 +866,13 @@ fn run_receiver(ctx: Ctx) {
                         }
                         if hr_last_log.elapsed() >= Duration::from_secs(3) {
                             log(&format!(
-                                "HR diag: bytes={hr_bytes} prefix={hr_frames} type19={hr_type19} bpm_samples={hr_samples}"
+                                "HR diag: bytes={hr_bytes} prefix={hr_frames} type14={hr_type14} type19={hr_type19} bpm_samples={hr_samples}"
                             ));
                             hr_last_log = Instant::now();
                             hr_bytes = 0;
                             hr_frames = 0;
                             hr_type19 = 0;
+                            hr_type14 = 0;
                             hr_samples = 0;
                         }
                     } else if ctx.state.lock().unwrap().heart_rate.take().is_some() {

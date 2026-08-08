@@ -93,6 +93,10 @@ pub const HR_ENABLE: [u8; 11] = [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x30, 0x01,
 pub const STREAM_HEART_RATE: u8 = 0x13;
 /// Stream id for raw PPG — data type 16.
 pub const STREAM_PPG: u8 = 0x10;
+/// Stream id for head tracking — data type 14. Head tracking lives on the same
+/// 0x17 sensor service as heart rate, so a running head-tracking stream may be
+/// what blocks the computed HR; stopping it first (period 0) is worth trying.
+pub const STREAM_HEAD_TRACKING: u8 = 0x0E;
 
 /// One-second sampling period, in microseconds — the cadence iOS uses for heart rate.
 pub const PERIOD_HEART_RATE_US: u32 = 1_000_000;
