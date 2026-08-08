@@ -42,7 +42,7 @@
                             Visibility="Collapsed" VerticalAlignment="Center">
                     <TextBox x:Name="NameBox" Width="220" MaxLength="64" KeyDown="NameBox_KeyDown" />
                     <Button x:Name="SubmitBtn" Click="Submit_Click"
-                            Style="{ThemeResource AccentButtonStyle}" Padding="8,4">
+                            Style="{StaticResource AccentButtonStyle}" Padding="8,4">
                         <FontIcon Glyph="&#xE73E;" FontSize="14" />
                     </Button>
                     <Button x:Name="CancelBtn" Click="Cancel_Click" Padding="8,4">
