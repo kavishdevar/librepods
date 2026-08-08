@@ -454,6 +454,10 @@ const HR_RECONNECT_WINDOW_MS: u64 = 15_000;
 const HR_START_COMMAND_DELAY_MS: u64 = 120;
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
+/// Once the service is streaming, how often to gently re-arm the session
+/// (0x44 + START, no STOP/re-init) — matching the ~15–30 s cadence at which iOS
+/// re-sends the SensorDataWX frames to hold a live workout.
+const HR_KEEPALIVE_REARM_MS: u64 = 20_000;
 
 /// How one retry campaign ended.
 enum HrOutcome {
@@ -571,13 +575,33 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
                 log("HR: stream live (first sample decoded) — retries done");
                 return HrOutcome::Live;
             }
-            // Frames are arriving (HEARTRATE service is streaming) but carry no
-            // reading yet — the enable worked, so stop the STOP/re-init churn and
-            // keep the stream open; run_receiver keeps decoding, so a reading
-            // publishes whenever the sensor produces one.
+            // Frames are arriving (service streaming) but no reading yet. Stop the
+            // aggressive STOP/re-init churn and instead mirror what iOS does during
+            // a live workout: keep the session warm with periodic *gentle* re-arms
+            // (0x44 workout-mode + START, no teardown) and keep listening, rather
+            // than giving up. run_receiver flags hr_got_sample when a BPM decodes.
             if ctx.hr_stream_live.load(Ordering::Relaxed) {
-                log("HR: service streaming (frames arriving, awaiting a reading) — retries done, keeping stream");
-                return HrOutcome::Live;
+                log("HR: service streaming — iOS-style keepalive (periodic gentle re-arm)");
+                let mut next_rearm =
+                    Instant::now() + Duration::from_millis(HR_KEEPALIVE_REARM_MS);
+                loop {
+                    if !ctx.hr_on.load(Ordering::Relaxed) {
+                        return HrOutcome::Stopped;
+                    }
+                    if ctx.hr_got_sample.load(Ordering::Relaxed) {
+                        log("HR: reading decoded during keepalive — live");
+                        return HrOutcome::Live;
+                    }
+                    if Instant::now() >= next_rearm {
+                        let _ = drv.send(&aap::HR_WORKOUT_ON);
+                        thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
+                        let _ = drv.send(&aap::HR_START);
+                        log("HR: keepalive re-arm (0x44 + START)");
+                        next_rearm =
+                            Instant::now() + Duration::from_millis(HR_KEEPALIVE_REARM_MS);
+                    }
+                    thread::sleep(Duration::from_millis(200));
+                }
             }
             thread::sleep(Duration::from_millis(200));
         }
