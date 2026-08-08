@@ -34,6 +34,20 @@ public static class OverlayText
             var s = Localize.Get(key);
             if (!string.IsNullOrEmpty(s)) return s;
         }
-        return body;
+
+        // Interpolated bodies (battery %, connect/case events): translate the known
+        // English fragments the daemon emits, leaving the numbers. Order matters —
+        // multi-word phrases before the bare "Case ".
+        var t = body;
+        t = t.Replace("Case battery low —", Localize.Get("Overlay_CaseBatteryLow"));
+        t = t.Replace("Battery low —", Localize.Get("Overlay_BatteryLow"));
+        t = t.Replace("Case opened", Localize.Get("Overlay_CaseOpened"));
+        t = t.Replace("Case closed", Localize.Get("Overlay_CaseClosed"));
+        t = t.Replace("Connected", Localize.Get("Status_Connected"));
+        t = t.Replace("Renamed to", Localize.Get("Overlay_RenamedTo"));
+        t = t.Replace("Left ", Localize.Get("Battery_LeftShort") + " ");
+        t = t.Replace("Right ", Localize.Get("Battery_RightShort") + " ");
+        t = t.Replace("Case ", Localize.Get("Battery_CaseShort") + " ");
+        return t;
     }
 }

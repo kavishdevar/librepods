@@ -131,6 +131,14 @@
   <data name="ConnectPrompt_Nearby" xml:space="preserve"><value>AirPods por perto</value></data>
   <data name="ConnectPrompt_Connect" xml:space="preserve"><value>Ligar</value></data>
   <data name="ConnectPrompt_Dismiss" xml:space="preserve"><value>Agora não</value></data>
+  <data name="Overlay_CaseOpened" xml:space="preserve"><value>Estojo aberto</value></data>
+  <data name="Overlay_CaseClosed" xml:space="preserve"><value>Estojo fechado</value></data>
+  <data name="Overlay_BatteryLow" xml:space="preserve"><value>Bateria fraca —</value></data>
+  <data name="Overlay_CaseBatteryLow" xml:space="preserve"><value>Bateria do estojo fraca —</value></data>
+  <data name="Overlay_RenamedTo" xml:space="preserve"><value>Renomeado para</value></data>
+  <data name="Battery_LeftShort" xml:space="preserve"><value>Esq</value></data>
+  <data name="Battery_RightShort" xml:space="preserve"><value>Dir</value></data>
+  <data name="Battery_CaseShort" xml:space="preserve"><value>Estojo</value></data>
   <data name="Overlay_InCase" xml:space="preserve"><value>AirPod na caixa</value></data>
   <data name="Overlay_HrOn" xml:space="preserve"><value>Monitorização cardíaca ligada</value></data>
   <data name="Overlay_HrOff" xml:space="preserve"><value>Monitorização cardíaca desligada</value></data>

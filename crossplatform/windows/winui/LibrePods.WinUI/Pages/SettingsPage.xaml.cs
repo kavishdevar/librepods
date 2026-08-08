@@ -20,6 +20,14 @@ public sealed partial class SettingsPage : UserControl
     public SettingsPage()
     {
         InitializeComponent();
+
+        // App version in the About card (for bug reports).
+        try
+        {
+            var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            if (v is not null) VersionText.Text = $"v{v.Major}.{v.Minor}.{v.Build}";
+        }
+        catch { }
     }
 
     /// Set the theme radio to the persisted choice on startup, without re-firing

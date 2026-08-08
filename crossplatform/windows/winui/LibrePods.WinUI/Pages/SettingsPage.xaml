@@ -72,46 +72,46 @@
                         </ToggleButton>
                     </Grid>
 
-                    <Grid>
-                        <StackPanel Spacing="6">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="96" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock x:Uid="DeviceInfoModel"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock x:Name="ModelText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
+                    <!-- Model + firmware are not sensitive — always visible. -->
+                    <StackPanel Spacing="6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Uid="DeviceInfoModel"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="ModelText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
+                        </Grid>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Uid="DeviceInfoFirmware"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock x:Name="FirmwareText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
+                        </Grid>
+                        <!-- Serial IS sensitive — only this row sits behind the eye + blur. -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Uid="DeviceInfoSerial"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <Grid Grid.Column="1">
+                                <TextBlock x:Name="SerialText" Text="—" TextWrapping="Wrap" />
+                                <Border x:Name="InfoBlur" CornerRadius="4" Margin="-2,-1">
+                                    <Border.Background>
+                                        <AcrylicBrush TintOpacity="0.55"
+                                                      TintLuminosityOpacity="0.9"
+                                                      FallbackColor="{ThemeResource CardBackgroundFillColorDefault}" />
+                                    </Border.Background>
+                                </Border>
                             </Grid>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="96" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock x:Uid="DeviceInfoFirmware"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock x:Name="FirmwareText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
-                            </Grid>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="96" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock x:Uid="DeviceInfoSerial"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock x:Name="SerialText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
-                            </Grid>
-                        </StackPanel>
-
-                        <!-- Frosted "blur alto" cover; the eye toggles it off to reveal. -->
-                        <Border x:Name="InfoBlur" CornerRadius="6" Margin="-6">
-                            <Border.Background>
-                                <AcrylicBrush TintOpacity="0.55"
-                                              TintLuminosityOpacity="0.9"
-                                              FallbackColor="{ThemeResource CardBackgroundFillColorDefault}" />
-                            </Border.Background>
-                        </Border>
-                    </Grid>
+                        </Grid>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
@@ -124,6 +124,10 @@
                     <TextBlock x:Uid="SettingsAppDesc"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap" />
+                    <TextBlock x:Name="VersionText"
+                               Margin="0,4,0,0"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Style="{ThemeResource CaptionTextBlockStyle}" />
                 </StackPanel>
             </Border>
 

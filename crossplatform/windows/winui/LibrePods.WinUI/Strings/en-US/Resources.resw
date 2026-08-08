@@ -140,6 +140,14 @@
   <data name="ConnectPrompt_Nearby" xml:space="preserve"><value>AirPods nearby</value></data>
   <data name="ConnectPrompt_Connect" xml:space="preserve"><value>Connect</value></data>
   <data name="ConnectPrompt_Dismiss" xml:space="preserve"><value>Not now</value></data>
+  <data name="Overlay_CaseOpened" xml:space="preserve"><value>Case opened</value></data>
+  <data name="Overlay_CaseClosed" xml:space="preserve"><value>Case closed</value></data>
+  <data name="Overlay_BatteryLow" xml:space="preserve"><value>Battery low —</value></data>
+  <data name="Overlay_CaseBatteryLow" xml:space="preserve"><value>Case battery low —</value></data>
+  <data name="Overlay_RenamedTo" xml:space="preserve"><value>Renamed to</value></data>
+  <data name="Battery_LeftShort" xml:space="preserve"><value>Left</value></data>
+  <data name="Battery_RightShort" xml:space="preserve"><value>Right</value></data>
+  <data name="Battery_CaseShort" xml:space="preserve"><value>Case</value></data>
   <data name="Overlay_InCase" xml:space="preserve"><value>AirPod in case</value></data>
   <data name="Overlay_HrOn" xml:space="preserve"><value>Heart rate monitoring on</value></data>
   <data name="Overlay_HrOff" xml:space="preserve"><value>Heart rate monitoring off</value></data>
