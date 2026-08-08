@@ -156,6 +156,11 @@ pub struct Battery {
     pub left: Option<u8>,
     pub right: Option<u8>,
     pub case: Option<u8>,
+    // Per-component charging flag (status byte 0x01 charging, 0x05 charging in case).
+    pub headphone_charging: bool,
+    pub left_charging: bool,
+    pub right_charging: bool,
+    pub case_charging: bool,
 }
 
 const HEADER: [u8; 4] = [0x04, 0x00, 0x04, 0x00];
@@ -183,11 +188,25 @@ pub fn parse_battery(data: &[u8]) -> Option<Battery> {
         } else {
             Some(raw)
         };
+        // 0x01 = charging, 0x05 = charging while in the case; both mean "charging".
+        let charging = status == 0x01 || status == 0x05;
         match payload[base] {
-            0x01 => b.headphone = level,
-            0x02 => b.right = level,
-            0x04 => b.left = level,
-            0x08 => b.case = level,
+            0x01 => {
+                b.headphone = level;
+                b.headphone_charging = charging;
+            }
+            0x02 => {
+                b.right = level;
+                b.right_charging = charging;
+            }
+            0x04 => {
+                b.left = level;
+                b.left_charging = charging;
+            }
+            0x08 => {
+                b.case = level;
+                b.case_charging = charging;
+            }
             _ => {}
         }
     }

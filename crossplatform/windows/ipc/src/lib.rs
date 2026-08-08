@@ -28,6 +28,15 @@ pub struct Battery {
     pub right: Option<u8>,
     pub case: Option<u8>,
     pub headphone: Option<u8>,
+    // Per-component charging flag (default false for backward-compatible parsing).
+    #[serde(default)]
+    pub left_charging: bool,
+    #[serde(default)]
+    pub right_charging: bool,
+    #[serde(default)]
+    pub case_charging: bool,
+    #[serde(default)]
+    pub headphone_charging: bool,
 }
 
 /// The daemon's authoritative state, pushed to clients on connect and on change.

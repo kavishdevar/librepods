@@ -14,6 +14,12 @@ public sealed class Battery
     [JsonPropertyName("right")] public byte? Right { get; set; }
     [JsonPropertyName("case")] public byte? Case { get; set; }
     [JsonPropertyName("headphone")] public byte? Headphone { get; set; }
+
+    // Per-component charging flag (mirrors the daemon's ipc::Battery).
+    [JsonPropertyName("left_charging")] public bool LeftCharging { get; set; }
+    [JsonPropertyName("right_charging")] public bool RightCharging { get; set; }
+    [JsonPropertyName("case_charging")] public bool CaseCharging { get; set; }
+    [JsonPropertyName("headphone_charging")] public bool HeadphoneCharging { get; set; }
 }
 
 /// The daemon's authoritative state, pushed on connect and on every change.

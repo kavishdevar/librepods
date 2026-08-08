@@ -852,15 +852,19 @@ fn run_receiver(ctx: Ctx) {
                             let mut s = ctx.state.lock().unwrap();
                             if b.left.is_some() {
                                 s.battery.left = b.left;
+                                s.battery.left_charging = b.left_charging;
                             }
                             if b.right.is_some() {
                                 s.battery.right = b.right;
+                                s.battery.right_charging = b.right_charging;
                             }
                             if b.case.is_some() {
                                 s.battery.case = b.case;
+                                s.battery.case_charging = b.case_charging;
                             }
                             if b.headphone.is_some() {
                                 s.battery.headphone = b.headphone;
+                                s.battery.headphone_charging = b.headphone_charging;
                             }
                             let present = s.battery.case.is_some();
                             (battery_text(&s.battery, s.connected), present)

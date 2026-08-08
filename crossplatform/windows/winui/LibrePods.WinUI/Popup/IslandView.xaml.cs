@@ -39,20 +39,21 @@ public sealed partial class IslandView : UserControl
             // Leave the XAML default (airpods.png) if the URI fails for any reason.
         }
 
-        SetBattery(LeftItem, LeftBar, LeftText, s.Battery.Left);
-        SetBattery(RightItem, RightBar, RightText, s.Battery.Right);
-        SetBattery(CaseItem, CaseBar, CaseText, s.Battery.Case);
+        SetBattery(LeftItem, LeftBar, LeftText, s.Battery.Left, s.Battery.LeftCharging);
+        SetBattery(RightItem, RightBar, RightText, s.Battery.Right, s.Battery.RightCharging);
+        SetBattery(CaseItem, CaseBar, CaseText, s.Battery.Case, s.Battery.CaseCharging);
     }
 
     /// Show a battery component only when it carries a real reading. Values >100
     /// (e.g. the 0xFF "absent" sentinel) collapse the whole item, matching the
     /// main window's handling but hiding empty bars on the compact island.
-    private static void SetBattery(FrameworkElement item, ProgressBar bar, TextBlock text, byte? value)
+    private static void SetBattery(FrameworkElement item, ProgressBar bar, TextBlock text, byte? value, bool charging)
     {
         if (value is byte v and <= 100)
         {
             bar.Value = v;
-            text.Text = $"{v}%";
+            // Append a bolt when charging (status byte 0x01 / 0x05).
+            text.Text = charging ? $"{v}% ⚡" : $"{v}%";
             item.Visibility = Visibility.Visible;
         }
         else
