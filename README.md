@@ -82,6 +82,30 @@ MagicPods-style popup), with a full window for detailed settings.
 - BLE proximity **"connect?"** prompt — asks before connecting, never steals the
   AirPods from your phone
 
+#### Feature availability
+
+| Feature | Linux | Android | Windows |
+|---|:---:|:---:|:---:|
+| Changing Listening Mode (ANC) | ✅ | ✅ | ✅ |
+| Ear detection (auto-pause) | ✅ | ✅ | ✅ |
+| Battery status (L / R / Case) | ✅ | ✅ | ✅ |
+| Renaming AirPods | ✅ | ✅ | ✅ |
+| Conversational Awareness | ✅ | ✅ | ✅ |
+| Automatically connect to AirPods | ✅ | ✅ | ✅ |
+| Adaptive Audio / noise strength | ✅ | ✅ | ✅ |
+| **Hi-res two-way audio (native mic)** | ❌ | ❌ | ✅ |
+| Localized UI (en / pt / fr / es) | — | — | ✅ |
+| Loud Sound Reduction | ❌ | 🟡 | ❌ |
+| Head Gestures | ❌ | ✅ | ❌ |
+| Hearing Aid | ❌ | 🟡 | ❌ |
+| Transparency Mode customization | ❌ | 🟡 | ❌ |
+| Multi-device connectivity | 🟡 | 🟡 | ❌ |
+| Head-tracked Spatial Audio | ❓ | ❓ | ❌ |
+| Heart Rate Monitoring | ❌ | 🟡 | 🟡¹ |
+| Find My | ❓ | ❓ | ❌ |
+
+<sub>✅ supported · 🟡 partial/experimental · ❌ not available · ❓ unknown. ¹ Windows HR: the enable is implemented but this AirPods Pro 3 unit doesn't emit standalone readings — see the Windows README.</sub>
+
 > [!CAUTION]
 > Windows needs **two open-source kernel drivers** — one to open the AirPods' AAP
 > control channel (classic-Bluetooth L2CAP, PSM `0x1001`), one for the virtual
