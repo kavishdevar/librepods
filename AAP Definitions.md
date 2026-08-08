@@ -417,42 +417,125 @@ Once tracking is active, the AirPods stream sensor packets with the following co
 | Horizontal Acceleration  | 51     | 2              |
 | Vertical Acceleration    | 53     | 2              |
 
-# Sensor Subscription (opcode 0x44)
+# Starting and Stopping Sensor Streams
 
 Captured from **iOS 26.5.2 ↔ AirPods Pro 3 (firmware 8B41)** with `idevicebtlogger`,
-during a Fitness workout. See `crossplatform/docs/aap-packet-discovery.md` for the method.
+across three sessions. See `crossplatform/docs/aap-packet-discovery.md` for the method.
 
-On iOS 26 the sensor streams are **not** started with the `0x17 … 42 0B 08 <type> …`
-frame used by Head Tracking above. Instead the phone sends opcode **`0x44`**, which
-declares the *complete set* of sensors it wants streaming:
+Sensor streams are started and stopped with the **same `0x17` … `42 0B` frame family as Head
+Tracking above** — not with a different mechanism. The frame carries a stream id and a
+sampling period, and **a period of zero is the stop**:
+
+```plaintext
+04 00 04 00 17 00 00 00 10 00 11 00 08 70 10 02 42 0b 08 53 10 02 1a 05 01 40 42 0f 00
+                              ^^^^^    ^^^^^ ^^^^^       ^^^^^          ^^ ^^^^^^^^^^^
+                              len=17   seq   10 02       stream id      md period µs LE
+```
+
+| Field | Meaning |
+|---|---|
+| length | `11 00` = **17**, little-endian |
+| seq | varint, increments per control frame |
+| stream id | `08 <id>` inside the `42 0B` block |
+| mode | `1`, `2` or `4` — meaning unresolved |
+| period | little-endian u32, **microseconds**; `0` = stop the stream |
+
+Observed stream ids, consistent across all three captures:
+
+| Stream id | Period sent | Rate | Carries |
+|---|---|---|---|
+| `0x53` | `1000000` | 1 Hz | **heart rate** (data type 19) |
+| `0x50` | `20000` | 50 Hz | raw PPG (data type 16) |
+| `0x52` | `200` | — | the worn-state sensor (data type 18) |
+| `0x10`, `0x12` | `10` / `0` | — | seen with mode 4 / mode 2 around reconnection |
+
+The id appears to be the data type with bit `0x40` set: type 19 (`0x13`) → id `0x53`, type 16
+(`0x10`) → id `0x50`, type 18 (`0x12`) → id `0x52`. That also matches the Head Tracking stop
+frame documented above (`08 4E`, i.e. type 14 | `0x40`). Note that bare `0x10` and `0x12` also
+occur, so the bit is not simply part of the id.
+
+## Worked example — a full heart-rate session
+
+From the third capture, one clock, showing that the `0x17` frame is what actually drives the
+stream:
+
+```plaintext
+t=126.78  →  44 00 04 00 02 00 03 07            opcode 0x44 (see below)
+t=126.80  →  17 … 08 53 … period 1000000        start heart rate at 1 Hz
+t=126.96  →  17 … 08 50 … period 20000          start raw PPG at 50 Hz
+t=128.68  ←  first heart-rate frame                        (1.88 s after the start frame)
+   …
+t=209.99  →  17 … 08 50 … period 0              stop raw PPG
+t=241.48  →  17 … 08 53 … period 0              stop heart rate
+t=241.65  ←  last heart-rate frame                         (170 ms after the stop frame)
+```
+
+## Corrections to `crossplatform/windows/daemon/src/aap.rs`
+
+`HR_START` and `HR_STOP` are close but not correct. Against the captured frames:
+
+| | `aap.rs` | captured |
+|---|---|---|
+| length field | `10 00` (16) | **`11 00` (17)** |
+| field after seq | *absent* | **`10 02`** |
+| stream id | `08 13` (19) | **`08 53` (83)** |
+| period (start) | `01 40 42 0F 00` | `01 40 42 0F 00` — **correct**, 1 Hz |
+| period (stop) | `01 00 00 00 00` | `01 00 00 00 00` — **correct** |
+
+So the sampling period was right all along; the length, the `10 02` field and the stream id
+are wrong. `HR_STOP` additionally reuses the start id rather than switching to `0x53`.
+
+## Opcode 0x44
+
+Distinct from the above and **not** the mechanism that starts streams. Framing is settled:
 
 ```plaintext
 04 00 04 00 44 00 04 00 02 00 03 07
-            ^^^^^ ^^^^^ ^^^^^ ^^^^^
-            op    subcmd count sensor ids
+            ^^^^^ ^^^^^ ^^^^^^^^^^^
+            op    len   payload
 ```
 
-| Field | Offset | Length | Meaning |
-|---|---|---|---|
-| opcode | 4 | 2 | `44 00` |
-| subcommand | 6 | 2 | `04 00` (observed value) |
-| sensor count | 8 | 2 | little-endian count of ids that follow |
-| sensor ids | 10 | *count* | one byte per sensor |
+The length field is confirmed by a 14-byte variant:
 
-The command is **absolute, not incremental**: sensor `07` was already streaming before
-this packet and kept streaming because it is listed again. Observed response:
+```plaintext
+04 00 04 00 44 00 0e 00 03 00 02 01 00 00 23 0c 77 6a 00 00 00 00
+```
 
-- **+10 ms** — `4a 02 08 13` and `4a 02 08 10` acks (protobuf field 9), announcing the
-  data types the new stream will carry: **19 = HEARTRATE**, 16 = raw PPG.
-- **+46 ms** — sensor 3 begins streaming.
+**Payload semantics remain unresolved.** In the 4-byte form the first three bytes were
+`02 00 03` in every occurrence across all three captures and only the trailing byte varied
+(`01`, `02`, `06`, `07`). It is *not* a sensor id list: `02 00 03 07` occurs without any stream
+starting, and `02 00 03 01` / `02 00 03 06` start nothing at all. It does consistently appear
+tens of milliseconds *before* the `0x17` control frames at a session change — 20 ms before in
+the worked example above — so it reads as session or configuration signalling that brackets a
+stream change rather than causing it.
 
-Observed sensors:
+Observed sensors (`field 2` of the `0x17` protobuf):
 
 | Sensor id | Data type | Rate | Notes |
 |---|---|---|---|
 | 3 | 16 | ~50 Hz | raw PPG samples |
 | 3 | 19 | 1 Hz | **heart rate** (see below) |
-| 7 | 18 | ~5 Hz | already active before capture; purpose unknown |
+| 7 | 18 | ~5 Hz | **tracks the worn state** — see below |
+| 1, 2 | — | bursty | seen only around reconnection and case transitions |
+
+### Sensor 7 follows the worn state, not audio playback
+
+Worth recording as a method note, because the two captures differ in exactly the confounding
+variable and it would otherwise be easy to get this wrong.
+
+| | audio playing | worn | sensor 7 streaming |
+|---|---|---|---|
+| Capture 1 (workout) | no | entire 93 s — zero ear-detection events | **0.0 → 93.0 s**, i.e. throughout |
+| Capture 2 (case) | yes, until ~52 s | until 53.06 s | **0.0 → 52.8 s** |
+
+In capture 2 alone, sensor 7 stopping looks like it tracks playback — the music was stopped
+immediately before the buds were removed, so the two events are 260 ms apart and
+indistinguishable. Capture 1 separates them: **no audio played at any point, yet sensor 7
+streamed for the full 93 s while the buds stayed in the ears.**
+
+So sensor 7 is tied to the buds being worn, not to playback. Its last packet precedes the
+first ear-detection state change by 260 ms, which fits a motion or proximity sensor reacting
+before the in-ear determination is published.
 
 ## Received Heart Rate Data
 
@@ -497,6 +580,180 @@ So the decoder accepted 58/62 and rejected precisely the four settling readings 
 filter and a `state == 2` test agree exactly on this capture. `10 02 81` / `10 82 81` are new
 variants of the known `20 02 80` / `20 82 80` pair; they should **not** be added to the accept
 list, since they mark unlocked readings.
+
+# Case and Charging Transitions
+
+Second capture, same rig (iOS 26.5.2 ↔ AirPods Pro 3, fw 8B41). Flow: **worn with music
+playing** → playback stopped → removed from ears → placed in the open case → case
+interaction → lid closed → lid reopened → idle. 176 s, 810 AAP packets.
+
+The music phase was not part of the intended test, and playback stopping happened to coincide
+with the buds being removed — see the sensor 7 note below for why that nearly produced a wrong
+conclusion.
+
+## Charging status: what selects `0x01` versus `0x05`
+
+`## Battery` above already documents `0x05` as *charging (in case)* and advises treating it
+and `0x01` alike. This capture supports that advice and adds why it is needed: the two are not
+alternative encodings chosen by firmware or model, they are **consecutive states of the same
+charging session**, so an implementation that handles only one of them will work for part of
+the time and then stop working.
+
+| t (s) | observation |
+|---|---|
+| 13.1 | baseline — both buds `not-charging` (`0x02`), case `disconnected` (`0x04`) |
+| 78.1 | first bud enters case → **`0x05` charging-in-case**, immediately |
+| 79.0 | case starts reporting a real level (one transient `0xFF` frame first) |
+| 80.3 | second bud enters case → **`0x05`** |
+| 106.8 | **both buds flip to `0x01` charging**, simultaneously, ~26 s after insertion |
+| 145.9 | both levels have risen by 1 % — charging did occur |
+
+**`0x05` is not a mandatory precursor to `0x01`.** A controlled follow-up refuted the obvious
+reading of the table above. One bud was seated in the case with the lid open while the other
+stayed in an ear as a control, and nothing was touched for 240 s:
+
+| t (s) | observation |
+|---|---|
+| 94.2 | bud seated → **`0x01` charging immediately**, no `0x05` at any point; case reporting 60 % |
+| 255.6 | cased bud 80 % → 81 %, still `0x01` |
+| 305.5 | 81 % → 82 %, still `0x01` |
+| 334.5 | worn control bud 79 % → 78 %, `not-charging` throughout, as expected |
+
+So the transition is **not driven by elapsed time** — 240 s hands-off produced no state change
+at all — and a bud can report `0x01` from the instant it is seated. Charging genuinely
+occurred throughout while `0x01` was reported.
+
+A second controlled run — **both** buds seated, lid open, untouched for 162 s — also produced
+`0x01` from the instant each bud was seated and **never once reported `0x05`**. That kills the
+number-of-buds explanation.
+
+Across four captures:
+
+| Capture | Battery packets | Components reporting `0x05` |
+|---|---|---|
+| Workout | 1 | 0 |
+| Case — buds seated, **case and lid handled** | 15 | **12** |
+| Battery — one bud, hands-off 240 s | 7 | 0 |
+| Battery — both buds, hands-off 162 s | 10 | 0 |
+
+**Seating buds in the case does not by itself produce `0x05`.** Three hypotheses are now
+refuted: it is not elapsed time (240 s of observation, no change), not the number of buds in
+the case, and not whether the case is detected — a bud reported `0x01` while the case was
+still sending `255 %` / `disconnected`. The only capture that produced `0x05` is also the only
+one in which the case and its lid were physically interacted with, which makes that the
+remaining candidate, untested.
+
+The practical consequence is unchanged and is what `## Battery` already advises — **treat
+`0x01` and `0x05` both as charging.** The value that appears is not predictable from elapsed
+time or from the case's own reported state.
+
+## Ear detection: two values beyond the documented three
+
+`## Ear Detection` above lists `00` in-ear, `01` out-of-ear and `02` in-case. Removing the buds
+and casing them produced this sequence of `(primary, secondary)` pairs:
+
+```plaintext
+00 01  →  01 01  →  01 04  →  04 04  →  04 01  →  01 01  →  02 01  →  01 02  →  02 02
+```
+
+and later, with one bud powered down in the closed case, `02 03`.
+
+So **`03` and `04` are the two values not in that table**. `04` appears only while a bud is in
+motion between resting states and never at rest, so it reads as a transitional value alongside
+the documented `01`. `03` was seen at rest, on the bud that had dropped off the link — it
+behaves as *disconnected* rather than as a position.
+
+# Undocumented Opcodes Observed
+
+Everything below appeared in the captures and is **not** described elsewhere in this document.
+Listed so the next person does not have to rediscover that they exist; payload semantics are
+mostly unresolved.
+
+| Opcode | Count | What can be said |
+|---|---|---|
+| `0x4F` | 186 | Accessory asset/firmware protocol — request/response pairs carrying `HSML`, `VERS`, `FTAB` tags, version tables and per-language asset manifests |
+| `0x44` | 20 | Brackets stream changes — see above |
+| `0x2E` | 14 | Carries Bluetooth addresses of the linked devices; emitted around reconnection |
+| `0x0C` | 14 | Carries a Bluetooth address plus two status bytes |
+| `0x0E` | 11 | Carries a Bluetooth address plus one status byte |
+| `0x4C` | 8 | Short status records, emitted in pairs on reconnect |
+| `0x08` | 8 | 4-byte payload, emitted alongside battery updates |
+| `0x55` | 5 | 4-byte payload, constant across captures |
+| `0x59` | 4 | Two 8-byte little-endian values; seen immediately before `0x44` |
+| `0x01` `0x02` `0x0D` `0x1B` `0x22` `0x23` `0x24` `0x29` `0x2B` `0x2D` `0x4E` `0x54` | 3 each | Emitted together as one burst during the reconnection handshake |
+| `0x1F` `0x52` | 1 each | Single occurrence during reconnection |
+
+Two opcodes that showed up in the captures are **already documented above** and are noted here
+only because the observations corroborate the existing entries:
+
+- **`0x1D`** — `## Metadata`. Field order matched the documented list exactly across six
+  occurrences. A second variant carries `com.apple.accessory.updater.app.multiasset.71` as the
+  app identifier where the documented example has `…updater.app.71`.
+- **`0x53`** — `## Headphone Accomodation`. The payload is the documented
+  `84 00 02 02 [Phone][Media]` followed by eight EQ float32 values, repeated three times, which
+  matches the "duplicated thrice for some reason" note.
+
+> **Note for anyone sharing captures:** `0x1D` transmits the device serial number and the
+> user-assigned device name in plaintext, and `0x2E` / `0x0C` / `0x0E` carry Bluetooth
+> addresses. A raw `.pklg` is personally identifying even with MAC addresses stripped from
+> the HCI layer. Publish derived protocol facts, not capture files.
+
+## Payload layouts (identifying fields redacted)
+
+**`0x1D` — device identity.** A 7-byte header followed by a run of NUL-terminated strings.
+Field order was stable across all six occurrences:
+
+```plaintext
+1d 00 02 fc 00 08 00
+  "AirPods Pro ****"        user-assigned device name          [REDACTED]
+  "A3064"                   model number
+  "Apple Inc."              manufacturer
+  "**********"              device serial                      [REDACTED]
+  "81.26750000750000….6877" firmware version string
+  "81.26750000750000….6877" firmware version string (repeated)
+  "1.0.0"
+  "com.apple.accessory.updater.app.multiasset.71"   asset bundle id
+  "******************"      per-unit module id                 [REDACTED]
+  "******************"      per-unit module id                 [REDACTED]
+  "*******"                 part/build number                  [REDACTED]
+  <32 bytes binary>         opaque, likely a key or digest     [REDACTED]
+  "1770731447"              unix timestamp
+  "1770731447"              unix timestamp (repeated)
+```
+
+A second variant carries `02 f1 00 04 00` in the header and the bundle id
+`com.apple.accessory.updater.app.71`; all other fields match.
+
+**`0x2E` — linked-device addresses.** Two 6-byte Bluetooth addresses:
+
+```plaintext
+2e 00 01 00 02 XX XX XX XX XX XX 02 07 YY YY YY YY YY YY 00 01
+              ^^^^^^^^^^^^^^^^^^       ^^^^^^^^^^^^^^^^^^
+              addr A [REDACTED]        addr B [REDACTED]
+```
+
+**`0x0C` / `0x0E` — per-device status.** One Bluetooth address plus trailing status bytes:
+
+```plaintext
+0c 00 XX XX XX XX XX XX 00 02      0e 00 XX XX XX XX XX XX 00
+      ^^^^^^^^^^^^^^^^^^                 ^^^^^^^^^^^^^^^^^^
+      [REDACTED]                         [REDACTED]
+```
+
+**`0x59` — two 64-bit values.** No identifying content; seen immediately before `0x44`:
+
+```plaintext
+59 00 11 00 01 6f 0c 77 6a 00 00 00 00 50 09 78 6a 00 00 00 00
+```
+
+## Undocumented control command ids (opcode `0x09`)
+
+| Id | Direction | Value(s) seen | Notes |
+|---|---|---|---|
+| `0x0B` | phone → buds | `0x3C`, `0x96` (60, 150) | sent while worn, before any workout or case interaction |
+| `0x38` | buds → phone | `0x52` | emitted twice, once while worn and once after entering the case |
+| `0x3B` | phone → buds | `0x01` | 260 ms before the `0x05` → `0x01` charging flip |
+| `0x1A` `0x32` `0x3D` | phone → buds | `0x0E`, `0x01`, `0x01` | always sent as a trio during the reconnection handshake |
 
 # LICENSE
 

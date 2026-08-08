@@ -25,13 +25,15 @@ pub const STOP_AUDIO: [u8; 12] = [
 // ---- AirPods Pro 3 RTBuddy heart-rate (PR #702) ----
 //
 // Enable = the AACP 1.3 init handshake (the four CONNECT/CAPABILITIES packets,
-// sent RAW via the driver like `sendPacket` on Android) then the HRM_STATE
-// control command (0x30 on) and finally the START frame. The four init packets
-// and START/STOP already carry the `04 00 04 00` header inline (on Android the
-// init packets go through `sendPacket` as-is; START/STOP go through
-// `sendDataPacket` which *prepends* the header — we bake it in here so every
-// constant is a ready-to-send driver packet). Order + delays mirror
-// `HeartRateMonitor.initializeAacpSession()` / `startStreamAttempt()`.
+// sent RAW via the driver like `sendPacket` on Android) then a `sensor_stream`
+// frame for the heart-rate stream. The init packets carry the `04 00 04 00`
+// header inline; `sensor_stream` bakes it in too, so every constant here is a
+// ready-to-send driver packet.
+//
+// The init packets are **unrefuted rather than confirmed**: every iOS capture
+// so far began with the AACP session already established, so they were never
+// seen on the wire. They are kept because the Android implementation sends them
+// and nothing contradicts that.
 
 /// AACP 1.3 init, service 0 — CONNECT (raw `sendPacket`).
 pub const HR_CONNECT_SERVICE_0: [u8; 16] = [
@@ -46,42 +48,61 @@ pub const HR_CONNECT_SERVICE_4: [u8; 16] = [
 /// AACP 1.3 init, service 4 — CAPABILITIES (raw `sendPacket`).
 pub const HR_CAPABILITIES_SERVICE_4: [u8; 7] = [0x04, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00];
 
-/// HRM_STATE control command (id 0x30), value 0x01 = on. This is exactly
-/// `control_command(0x30, 0x01)`; the AirPods echo it back as a status.
+/// HRM_STATE control command (id 0x30), value 0x01 = on.
+///
+/// **Not observed on iOS.** Control id 0x30 appears zero times across four
+/// captures of iOS 26.5.2 ↔ AirPods Pro 3, including two full workout sessions.
+/// Kept only in case older firmware needs it; `sensor_stream` below is what
+/// actually drives the stream.
 pub const HR_ENABLE: [u8; 11] = [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x30, 0x01, 0x00, 0x00, 0x00];
 
-/// RTBuddy SensorDataWX HEARTRATE(19) START frame (1s cadence). Includes the
-/// `04 00 04 00` header (Android's `sendDataPacket` prepends it).
-pub const HR_START: [u8; 28] = [
-    0x04, 0x00, 0x04, 0x00, // header
-    0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x08, 0xE3, 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
-    0x02, 0x1A, 0x05, 0x01, 0x40, 0x42, 0x0F, 0x00,
-];
-/// RTBuddy SensorDataWX HEARTRATE(19) STOP frame. Includes the header.
-pub const HR_STOP: [u8; 28] = [
-    0x04, 0x00, 0x04, 0x00, // header
-    0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00, 0x08, 0xED, 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
-    0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00,
-];
-
-// ---- iOS 26 sensor subscription (opcode 0x44) — the REAL heart-rate enable ----
+// ---- Sensor stream control ----
 //
-// Ground-truth capture (iOS 26.5.2 <-> AirPods Pro 3, fw 8B41; see
-// `AAP Definitions.md` → "Sensor Subscription") showed the phone does NOT use the
-// 0x30 control id nor the 0x17 START frame above to start heart rate. It sends
-// opcode 0x44 declaring the COMPLETE set of sensors it wants: `subcmd | count |
-// sensor-ids`. Sensor 0x03 carries HEARTRATE (inner type 19) + raw PPG. The
-// command is absolute, so re-declaring the set (re)subscribes.
+// Streams are started and stopped with the `0x17` … `42 0B` frame family that
+// `AAP Definitions.md` already documents for Head Tracking. The frame carries a
+// stream id and a sampling period in microseconds; **a period of zero stops the
+// stream**. Verified against three captures — see `AAP Definitions.md` →
+// "Starting and Stopping Sensor Streams" for the alignment.
+//
+// The earlier constants here were structurally wrong in three ways: the length
+// field said 16 where the wire carries 17, the `10 02` field after the sequence
+// varint was missing, and the stream id was the raw data type (0x13) instead of
+// the control id (0x53). The sampling period was correct.
 
-/// Subscribe the heart-rate sensor set. subcmd=0x0004, count=2, ids 0x03 (heart
-/// rate / PPG) + 0x07 (co-active alongside HR in the iOS capture; mirrored here
-/// so the first attempt replicates the known-working command exactly).
-pub const HR_SUBSCRIBE: [u8; 12] = [
-    0x04, 0x00, 0x04, 0x00, 0x44, 0x00, 0x04, 0x00, 0x02, 0x00, 0x03, 0x07,
-];
-/// Unsubscribe: the same 0x44 command declaring an empty set (count 0).
-pub const HR_UNSUBSCRIBE: [u8; 10] =
-    [0x04, 0x00, 0x04, 0x00, 0x44, 0x00, 0x04, 0x00, 0x00, 0x00];
+/// Stream id for heart rate — data type 19 (`0x13`) with bit `0x40` set.
+pub const STREAM_HEART_RATE: u8 = 0x53;
+/// Stream id for raw PPG — data type 16 (`0x10`) with bit `0x40` set.
+pub const STREAM_PPG: u8 = 0x50;
+
+/// One-second sampling period, in microseconds — the cadence iOS uses for heart rate.
+pub const PERIOD_HEART_RATE_US: u32 = 1_000_000;
+/// 50 Hz sampling period, in microseconds — the cadence iOS uses for raw PPG.
+pub const PERIOD_PPG_US: u32 = 20_000;
+
+/// Build a sensor stream control frame, ready to send via the driver.
+///
+/// `seq` is the sequence byte the phone increments per control frame; whether
+/// the AirPods care about its value is untested, so callers should still count
+/// up rather than reuse one value. Pass `period_us = 0` to stop the stream.
+///
+/// Captured start frame this reproduces byte-for-byte (with `seq = 0x70`):
+/// `04 00 04 00 17 00 00 00 10 00 11 00 08 70 10 02 42 0b 08 53 10 02 1a 05 01 40 42 0f 00`
+pub fn sensor_stream(seq: u8, stream_id: u8, period_us: u32) -> [u8; 29] {
+    let p = period_us.to_le_bytes();
+    [
+        0x04, 0x00, 0x04, 0x00, // header
+        0x17, 0x00, 0x00, 0x00, // opcode
+        0x10, 0x00, // service
+        0x11, 0x00, // payload length = 17
+        0x08, seq, // sequence varint
+        0x10, 0x02, // field 2 = 2
+        0x42, 0x0B, // field 8, 11 bytes
+        0x08, stream_id, //   stream id
+        0x10, 0x02, //   field 2 = 2
+        0x1A, 0x05, //   field 3, 5 bytes
+        0x01, p[0], p[1], p[2], p[3], // mode 1 + period µs, little-endian
+    ]
+}
 
 /// True if `data` is a 0x58 uplink audio packet (carries AAC-ELD frames).
 pub fn is_audio_packet(data: &[u8]) -> bool {

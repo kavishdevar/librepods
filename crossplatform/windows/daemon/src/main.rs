@@ -19,7 +19,7 @@ mod rename;
 mod volume;
 
 use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -450,8 +450,19 @@ fn set_mic(ctx: &Ctx, on: bool) {
 const HR_FIRST_SAMPLE_TIMEOUT_MS: u64 = 8_000;
 /// Total budget across all attempts before we give up (transport stays up).
 const HR_RECONNECT_WINDOW_MS: u64 = 15_000;
-/// Gap between HR_ENABLE and HR_START.
+/// Gap before re-sending the stream control frames on a retry.
 const HR_START_COMMAND_DELAY_MS: u64 = 120;
+/// Gap between the heart-rate and raw-PPG stream frames. iOS sent them 160 ms
+/// apart; whether the order or the gap matters is untested.
+const HR_PPG_COMMAND_DELAY_MS: u64 = 160;
+
+/// Sequence byte for sensor stream control frames. iOS increments this per
+/// frame; whether the AirPods validate it is untested, so we count up too.
+static HR_SEQ: AtomicU8 = AtomicU8::new(0x70);
+
+fn next_hr_seq() -> u8 {
+    HR_SEQ.fetch_add(1, Ordering::Relaxed)
+}
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
 
@@ -482,7 +493,11 @@ fn set_heart_rate(ctx: &Ctx, on: bool) {
         ctx.overlay("Heart rate monitoring on");
     } else if !on && was {
         if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
-            let _ = drv.send(&aap::HR_UNSUBSCRIBE);
+            // Stop is the same control frame with the sampling period zeroed.
+            // iOS stops raw PPG first, then heart rate; the stream went quiet
+            // 170 ms after the heart-rate stop frame.
+            let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_PPG, 0));
+            let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_HEART_RATE, 0));
         }
         ctx.state.lock().unwrap().heart_rate = None;
         ctx.overlay("Heart rate monitoring off");
@@ -534,12 +549,12 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
                 return HrOutcome::GiveUp;
             }
         };
-        // AACP 1.3 init (connect0/caps0/connect4/caps4) then the iOS-26 sensor
-        // subscription (opcode 0x44). Ground-truth capture (AAP Definitions.md →
-        // "Sensor Subscription") showed iOS starts heart rate with 0x44, NOT the
-        // 0x30 control id + 0x17 START frame the old path used — that is why the
-        // stream never armed. The init packets are kept (unrefuted: the capture
-        // began with the session already open); 0x44 replaces enable+start.
+        // AACP 1.3 init (connect0/caps0/connect4/caps4), then the sensor stream
+        // control frames. Ground-truth captures (AAP Definitions.md → "Starting
+        // and Stopping Sensor Streams") show iOS starting heart rate with a
+        // `0x17` … `42 0B` frame carrying stream id 0x53 and a 1 s period, with
+        // raw PPG started alongside it ~160 ms later. The init packets are kept
+        // as unrefuted — every capture began with the session already open.
         let init: [(&[u8], u64); 4] = [
             (&aap::HR_CONNECT_SERVICE_0, 180),
             (&aap::HR_CAPABILITIES_SERVICE_0, 220),
@@ -553,7 +568,17 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             let _ = drv.send(pkt);
             thread::sleep(Duration::from_millis(delay));
         }
-        let _ = drv.send(&aap::HR_SUBSCRIBE);
+        let _ = drv.send(&aap::sensor_stream(
+            next_hr_seq(),
+            aap::STREAM_HEART_RATE,
+            aap::PERIOD_HEART_RATE_US,
+        ));
+        thread::sleep(Duration::from_millis(HR_PPG_COMMAND_DELAY_MS));
+        let _ = drv.send(&aap::sensor_stream(
+            next_hr_seq(),
+            aap::STREAM_PPG,
+            aap::PERIOD_PPG_US,
+        ));
 
         // Wait up to FIRST_SAMPLE_TIMEOUT for the decoder to yield a sample,
         // polling so we react promptly to the user turning HR off.
