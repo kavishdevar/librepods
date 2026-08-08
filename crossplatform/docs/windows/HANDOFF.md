@@ -190,4 +190,24 @@ isn't producing samples. Since identical bytes work elsewhere, the block is
 
 Daemon flow now matches v39 exactly: init svc0/4 → `0x30` → single START → hold the
 stream open passively (no 0x44, no keepalive re-pulsing). Do NOT re-add those —
-they were tested and don't help. Next step is the iPhone-off retest, not code.
+they were tested and don't help. **Update:** retested with the iPhone in Airplane
+mode AND powered off — still only status heartbeats, no readings. So the nearby
+iPhone is NOT the cause either; the remaining variable is hardware-side (optical
+sensor fit/contact — leading suspect — or firmware version). Not code. Revisit by
+just enabling HR (no redeploy); do not re-open the protocol.
+
+## 🐞 Known open issues (WinUI client)
+
+1. **Tray context-menu clipping.** The H.NotifyIcon.WinUI tray menu clips its items
+   horizontally (background + text cut at a narrow fixed width). Confirmed NOT
+   fixed by `MenuFlyoutPresenterStyle MinWidth=240` +
+   `menu.ShouldConstrainToRootBounds = false` + `ContextMenuMode.SecondWindow`
+   (all in `Tray/TrayIcon.cs`, verified in the deployed build). The SecondWindow
+   host window is too narrow and clips the flyout. Next approach: replace the XAML
+   flyout with a **native Win32 popup menu** (CreatePopupMenu/TrackPopupMenu on
+   right-click). Localization is fine (menu shows pt-PT strings).
+2. **Notification spam.** Daemon overlay/toast notifications (low battery,
+   charging, connect/disconnect, "in case") fire repeatedly rather than once per
+   state transition. Add a one-shot-per-transition guard on the notification path
+   (mirror the existing battery `low_warned`/`case_low_warned` hysteresis in
+   `run_receiver`).
