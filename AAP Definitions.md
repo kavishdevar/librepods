@@ -671,88 +671,75 @@ motion between resting states and never at rest, so it reads as a transitional v
 the documented `01`. `03` was seen at rest, on the bud that had dropped off the link — it
 behaves as *disconnected* rather than as a position.
 
-# Undocumented Opcodes Observed
+# Opcode Names (from the apple-wireshark dissector)
 
-Everything below appeared in the captures and is **not** described elsewhere in this document.
-Listed so the next person does not have to rediscover that they exist; payload semantics are
-mostly unresolved.
+The Lua dissectors at [github.com/pabloaul/apple-wireshark](https://github.com/pabloaul/apple-wireshark)
+name most of the AACP message types. Installing them (`plugins/` into the Wireshark plugin
+directory) makes Wireshark label these automatically, and its `rtbuddy.proto` gives the
+SensorDataWX protobuf schema — see the sensor-stream section above.
 
-| Opcode | Count | What can be said |
+Validated against three captures here: the RTBuddy length field matched the real payload on
+100% of 4073 frames.
+
+| Opcode | Name | Covered elsewhere in this document |
 |---|---|---|
-| `0x4F` | 186 | Accessory asset/firmware protocol — request/response pairs carrying `HSML`, `VERS`, `FTAB` tags, version tables and per-language asset manifests |
-| `0x44` | 20 | Brackets stream changes — see above |
-| `0x2E` | 14 | Carries Bluetooth addresses of the linked devices; emitted around reconnection |
-| `0x0C` | 14 | Carries a Bluetooth address plus two status bytes |
-| `0x0E` | 11 | Carries a Bluetooth address plus one status byte |
-| `0x4C` | 8 | Short status records, emitted in pairs on reconnect |
-| `0x08` | 8 | 4-byte payload, emitted alongside battery updates |
-| `0x55` | 5 | 4-byte payload, constant across captures |
-| `0x59` | 4 | Two 8-byte little-endian values; seen immediately before `0x44` |
-| `0x01` `0x02` `0x0D` `0x1B` `0x22` `0x23` `0x24` `0x29` `0x2B` `0x2D` `0x4E` `0x54` | 3 each | Emitted together as one burst during the reconnection handshake |
-| `0x1F` `0x52` | 1 each | Single occurrence during reconnection |
+| `0x01` | Capabilities Request | |
+| `0x02` | Capabilities | |
+| `0x04` | Battery Info | `## Battery` |
+| `0x06` | Ear Detection | `## Ear Detection` |
+| `0x08` | Bud Role | |
+| `0x09` | Control / Listen Mode | `## Noise Control` |
+| `0x0C` | MAC Address | |
+| `0x0D` | Audio Source Request | |
+| `0x0E` | Audio Source | |
+| `0x0F` | Set Notification Filter | `# Requesting notifications` |
+| `0x17` | BuddyCommand | sensor streams, above |
+| `0x1A` | Rename | `## Renaming AirPods` |
+| `0x1B` | Timestamp | carries an ISO 8601 local date-time string |
+| `0x1D` | Information | `## Metadata` |
+| `0x1F` | Notify Session State? | |
+| `0x22` | **Case Info Request** | |
+| `0x23` | **Case Info** | |
+| `0x24` | Send Device Info? | |
+| `0x29` | Set Country Code | |
+| `0x2B` | Stream State Info | |
+| `0x2D` | Connected Devices Request | |
+| `0x2E` | Connected Devices | carries Bluetooth addresses |
+| `0x44` | **Send Smart Routing 2.0 Info** | see correction below |
+| `0x4B` | Conversational Awareness | `## Conversational Awareness` |
+| `0x4C` | Adaptive Volume Message | |
+| `0x4D` | Set Features | `# Setting specific features` |
+| `0x4E` | Feature ProxCard Status Update | |
+| `0x4F` | Unified Accessory Restore Protocol | firmware/asset transfer; the dissector has a separate `uarp` plugin |
+| `0x52` | Source Context | |
+| `0x53` | Personal Medical Equipment Config | `## Headphone Accomodation` |
+| `0x54` | Set Band Edges | |
+| `0x55` | Unknown | |
+| `0x58` | Hi-res audio | |
+| `0x59` | **Dynamic End Of Charge** | |
 
-Two opcodes that showed up in the captures are **already documented above** and are noted here
-only because the observations corroborate the existing entries:
+## Correction: `0x44` is not sensor-related
 
-- **`0x1D`** — `## Metadata`. Field order matched the documented list exactly across six
-  occurrences. A second variant carries `com.apple.accessory.updater.app.multiasset.71` as the
-  app identifier where the documented example has `…updater.app.71`.
-- **`0x53`** — `## Headphone Accomodation`. The payload is the documented
-  `84 00 02 02 [Phone][Media]` followed by eight EQ float32 values, repeated three times, which
-  matches the "duplicated thrice for some reason" note.
+An earlier revision of this document described `0x44` as sensor subscription, on the strength
+of it appearing shortly before stream changes. The dissector names it **Send Smart Routing 2.0
+Info** — audio routing. That fits the observations better than the sensor reading ever did: it
+appears at session changes and around audio state changes, and its payload never correlated
+with any stream starting.
+
+## Leads for the open case/charging question
+
+Two names are worth following up on the unresolved `0x01` vs `0x05` charging question above:
+
+- **`0x22` / `0x23` — Case Info Request / Case Info.** Direct case state, not inferred from
+  the battery packet.
+- **`0x59` — Dynamic End Of Charge.** Present in the capture where `0x05` appeared and absent
+  from the hands-off captures where it did not. That is a correlation worth testing, not a
+  conclusion.
 
 > **Note for anyone sharing captures:** `0x1D` transmits the device serial number and the
 > user-assigned device name in plaintext, and `0x2E` / `0x0C` / `0x0E` carry Bluetooth
 > addresses. A raw `.pklg` is personally identifying even with MAC addresses stripped from
 > the HCI layer. Publish derived protocol facts, not capture files.
-
-## Payload layouts (identifying fields redacted)
-
-**`0x1D` — device identity.** A 7-byte header followed by a run of NUL-terminated strings.
-Field order was stable across all six occurrences:
-
-```plaintext
-1d 00 02 fc 00 08 00
-  "AirPods Pro ****"        user-assigned device name          [REDACTED]
-  "A3064"                   model number
-  "Apple Inc."              manufacturer
-  "**********"              device serial                      [REDACTED]
-  "81.26750000750000….6877" firmware version string
-  "81.26750000750000….6877" firmware version string (repeated)
-  "1.0.0"
-  "com.apple.accessory.updater.app.multiasset.71"   asset bundle id
-  "******************"      per-unit module id                 [REDACTED]
-  "******************"      per-unit module id                 [REDACTED]
-  "*******"                 part/build number                  [REDACTED]
-  <32 bytes binary>         opaque, likely a key or digest     [REDACTED]
-  "1770731447"              unix timestamp
-  "1770731447"              unix timestamp (repeated)
-```
-
-A second variant carries `02 f1 00 04 00` in the header and the bundle id
-`com.apple.accessory.updater.app.71`; all other fields match.
-
-**`0x2E` — linked-device addresses.** Two 6-byte Bluetooth addresses:
-
-```plaintext
-2e 00 01 00 02 XX XX XX XX XX XX 02 07 YY YY YY YY YY YY 00 01
-              ^^^^^^^^^^^^^^^^^^       ^^^^^^^^^^^^^^^^^^
-              addr A [REDACTED]        addr B [REDACTED]
-```
-
-**`0x0C` / `0x0E` — per-device status.** One Bluetooth address plus trailing status bytes:
-
-```plaintext
-0c 00 XX XX XX XX XX XX 00 02      0e 00 XX XX XX XX XX XX 00
-      ^^^^^^^^^^^^^^^^^^                 ^^^^^^^^^^^^^^^^^^
-      [REDACTED]                         [REDACTED]
-```
-
-**`0x59` — two 64-bit values.** No identifying content; seen immediately before `0x44`:
-
-```plaintext
-59 00 11 00 01 6f 0c 77 6a 00 00 00 00 50 09 78 6a 00 00 00 00
-```
 
 ## Undocumented control command ids (opcode `0x09`)
 
