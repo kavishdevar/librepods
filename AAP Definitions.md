@@ -417,6 +417,87 @@ Once tracking is active, the AirPods stream sensor packets with the following co
 | Horizontal Acceleration  | 51     | 2              |
 | Vertical Acceleration    | 53     | 2              |
 
+# Sensor Subscription (opcode 0x44)
+
+Captured from **iOS 26.5.2 ↔ AirPods Pro 3 (firmware 8B41)** with `idevicebtlogger`,
+during a Fitness workout. See `crossplatform/docs/aap-packet-discovery.md` for the method.
+
+On iOS 26 the sensor streams are **not** started with the `0x17 … 42 0B 08 <type> …`
+frame used by Head Tracking above. Instead the phone sends opcode **`0x44`**, which
+declares the *complete set* of sensors it wants streaming:
+
+```plaintext
+04 00 04 00 44 00 04 00 02 00 03 07
+            ^^^^^ ^^^^^ ^^^^^ ^^^^^
+            op    subcmd count sensor ids
+```
+
+| Field | Offset | Length | Meaning |
+|---|---|---|---|
+| opcode | 4 | 2 | `44 00` |
+| subcommand | 6 | 2 | `04 00` (observed value) |
+| sensor count | 8 | 2 | little-endian count of ids that follow |
+| sensor ids | 10 | *count* | one byte per sensor |
+
+The command is **absolute, not incremental**: sensor `07` was already streaming before
+this packet and kept streaming because it is listed again. Observed response:
+
+- **+10 ms** — `4a 02 08 13` and `4a 02 08 10` acks (protobuf field 9), announcing the
+  data types the new stream will carry: **19 = HEARTRATE**, 16 = raw PPG.
+- **+46 ms** — sensor 3 begins streaming.
+
+Observed sensors:
+
+| Sensor id | Data type | Rate | Notes |
+|---|---|---|---|
+| 3 | 16 | ~50 Hz | raw PPG samples |
+| 3 | 19 | 1 Hz | **heart rate** (see below) |
+| 7 | 18 | ~5 Hz | already active before capture; purpose unknown |
+
+## Received Heart Rate Data
+
+Sensor 3, protobuf field `0x3a`, inner type `19` (`0x13`), one packet per second:
+
+```plaintext
+04 00 04 00 17 00 00 00 10 00 <len> 00 08 <seq> 10 03 3a <n> 08 13 1a 12 01 5D E1 07 00 02 …
+                                                            ^^^^^          ^^ ^^ ^^    ^^
+                                                            type 19       bpm cf sq  state
+                                                                          93 225  7  locked
+```
+
+`1a 12` introduces an **18-byte payload**. Offsets below are relative to that payload,
+matching `HEART_RATE_BPM_OFFSET` / `HEART_RATE_STATUS_TAIL_OFFSET` in
+`crossplatform/windows/daemon/src/hr.rs`:
+
+| Field | Offset | Length | Meaning |
+|---|---|---|---|
+| subtype | 0 | 1 | `01` |
+| **heart rate** | 1 | 1 | BPM, unsigned, direct value |
+| confidence | 2 | 1 | `20` while settling, rises to ~`236` once locked |
+| counter | 3 | 1 | increments by 1 per reading (confirms 1 Hz) |
+| state | 5 | 1 | `1` = acquiring, `2` = locked |
+| timestamp | 6 | 6 | little-endian |
+| status tail | 15 | 3 | see below |
+
+**The first readings must be discarded.** In the reference capture the sequence opened
+169 → 136 → 98 → 93 BPM with `confidence = 20` and `state = 1`, then settled at 91 BPM the
+moment `state` flipped to `2` and confidence jumped to 189 — four readings, ~4 s from stream
+start. The remaining 58 readings spanned 86–102 BPM, mean 93.1, tracking a plausible curve
+for light activity.
+
+The existing status-tail filter in `hr.rs` already does exactly this job. Tails observed:
+
+| Tail | n | In `KNOWN_HEART_RATE_STATUS_TAILS` | `state` |
+|---|---|---|---|
+| `10 00 00` | 58 | yes | 2 (locked) |
+| `10 02 81` | 3 | no | 1 (acquiring) |
+| `10 82 81` | 1 | no | 1 (acquiring) |
+
+So the decoder accepted 58/62 and rejected precisely the four settling readings — the tail
+filter and a `state == 2` test agree exactly on this capture. `10 02 81` / `10 82 81` are new
+variants of the known `20 02 80` / `20 82 80` pair; they should **not** be added to the accept
+list, since they mark unlocked readings.
+
 # LICENSE
 
 LibrePods - AirPods liberated from Apple’s ecosystem
