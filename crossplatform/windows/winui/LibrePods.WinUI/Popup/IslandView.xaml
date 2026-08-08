@@ -6,56 +6,86 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Width="380">
+    Width="300">
 
-    <!-- The card fills the (acrylic-backed, DWM-rounded) island window. The Grid
-         background is transparent so the window's DesktopAcrylic shows through;
-         a thin LibrePods-accent stripe on the left edge gives brand identity.
-         Theme-aware: all colours are ThemeResource brushes. -->
-    <Grid x:Name="Root" Background="Transparent" Padding="0">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+    <!-- Apple-style connection card (the default AirPods look): device name on
+         top, a large centred product render in the middle, and the L/R/Case
+         battery row beneath. The card fills the (acrylic-backed, DWM-rounded)
+         island window, so the Grid background is transparent and the window's
+         DesktopAcrylic shows through. All colours are ThemeResource brushes so it
+         follows light/dark. The product image gently floats and scales in — the
+         animation lives here (see the Storyboards); the slide-in of the whole
+         window is driven by IslandWindow. -->
+    <UserControl.Resources>
+        <!-- Continuous gentle "float" (bob) so the card feels alive without a real
+             3D turntable — a subtle ±4px vertical drift, eased both ways. -->
+        <Storyboard x:Name="FloatLoop" RepeatBehavior="Forever" AutoReverse="True">
+            <DoubleAnimation Storyboard.TargetName="ImageTransform"
+                             Storyboard.TargetProperty="TranslateY"
+                             From="-4" To="4" Duration="0:0:1.8">
+                <DoubleAnimation.EasingFunction>
+                    <QuadraticEase EasingMode="EaseInOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
 
-        <!-- Accent stripe (LibrePods #039BE5, theme-recoloured) -->
-        <Border Grid.Column="0"
-                Width="4"
-                CornerRadius="2"
-                Margin="6,10,0,10"
-                Background="{ThemeResource LibrePodsAccentBrush}" />
+        <!-- One-shot entrance: the render scales up from 0.82 as it fades in,
+             riding on top of the window's slide. -->
+        <Storyboard x:Name="Entrance">
+            <DoubleAnimation Storyboard.TargetName="ImageTransform"
+                             Storyboard.TargetProperty="ScaleX"
+                             From="0.82" To="1" Duration="0:0:0.35">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetName="ImageTransform"
+                             Storyboard.TargetProperty="ScaleY"
+                             From="0.82" To="1" Duration="0:0:0.35">
+                <DoubleAnimation.EasingFunction>
+                    <CubicEase EasingMode="EaseOut" />
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
+    </UserControl.Resources>
 
-        <!-- AirPods case image (the "connected" card look) -->
-        <Image x:Name="DeviceImage"
-               Grid.Column="1"
-               Width="60" Height="60"
-               Margin="14,14,14,14"
-               Stretch="Uniform"
-               Source="ms-appx:///Assets/airpods.png"
-               VerticalAlignment="Center" />
-
-        <StackPanel Grid.Column="2"
-                    Margin="0,14,18,14"
-                    VerticalAlignment="Center"
-                    Spacing="8">
+    <Grid x:Name="Root" Background="Transparent">
+        <StackPanel Padding="20,16,20,20"
+                    Spacing="10"
+                    HorizontalAlignment="Stretch">
 
             <TextBlock x:Name="DeviceName"
                        Text="AirPods"
-                       FontSize="16"
+                       FontSize="17"
                        FontWeight="SemiBold"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
                        TextTrimming="CharacterEllipsis"
                        Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
 
-            <!-- L / R / Case battery — each a tiny labelled accent bar. Absent
-                 components are collapsed by the code-behind. -->
-            <StackPanel Orientation="Horizontal" Spacing="16">
+            <!-- Large centred product render (floats + scales in). -->
+            <Image x:Name="DeviceImage"
+                   Width="112" Height="112"
+                   HorizontalAlignment="Center"
+                   Stretch="Uniform"
+                   Source="ms-appx:///Assets/airpods.png"
+                   RenderTransformOrigin="0.5,0.5">
+                <Image.RenderTransform>
+                    <CompositeTransform x:Name="ImageTransform" CenterX="56" CenterY="56" />
+                </Image.RenderTransform>
+            </Image>
 
-                <StackPanel x:Name="LeftItem" Spacing="3" MinWidth="56">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="L" FontSize="11"
+            <!-- L / R / Case battery — each a tiny labelled accent bar, centred.
+                 Absent components are collapsed by the code-behind. -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Spacing="18">
+
+                <StackPanel x:Name="LeftItem" Spacing="3" MinWidth="60">
+                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                        <TextBlock Text="L" FontSize="12"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock x:Name="LeftText" Text="—" FontSize="11" FontWeight="SemiBold"
+                        <TextBlock x:Name="LeftText" Text="—" FontSize="12" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                     </StackPanel>
                     <ProgressBar x:Name="LeftBar" Minimum="0" Maximum="100" Value="0"
@@ -63,11 +93,11 @@
                                  Foreground="{ThemeResource LibrePodsAccentBrush}" />
                 </StackPanel>
 
-                <StackPanel x:Name="RightItem" Spacing="3" MinWidth="56">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock Text="R" FontSize="11"
+                <StackPanel x:Name="RightItem" Spacing="3" MinWidth="60">
+                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                        <TextBlock Text="R" FontSize="12"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock x:Name="RightText" Text="—" FontSize="11" FontWeight="SemiBold"
+                        <TextBlock x:Name="RightText" Text="—" FontSize="12" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                     </StackPanel>
                     <ProgressBar x:Name="RightBar" Minimum="0" Maximum="100" Value="0"
@@ -75,11 +105,11 @@
                                  Foreground="{ThemeResource LibrePodsAccentBrush}" />
                 </StackPanel>
 
-                <StackPanel x:Name="CaseItem" Spacing="3" MinWidth="56">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <TextBlock x:Uid="IslandCaseLabel" FontSize="11"
+                <StackPanel x:Name="CaseItem" Spacing="3" MinWidth="60">
+                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                        <TextBlock x:Uid="IslandCaseLabel" FontSize="12"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock x:Name="CaseText" Text="—" FontSize="11" FontWeight="SemiBold"
+                        <TextBlock x:Name="CaseText" Text="—" FontSize="12" FontWeight="SemiBold"
                                    Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                     </StackPanel>
                     <ProgressBar x:Name="CaseBar" Minimum="0" Maximum="100" Value="0"

@@ -26,8 +26,11 @@ namespace LibrePods.WinUI.Popup;
 public sealed class IslandWindow : Window
 {
     // Card geometry (device-independent pixels). Width matches IslandView's Width.
-    private const double DesignWidthDip = 380;
-    private const double FallbackHeightDip = 92;
+    // The Apple-style card is a narrow vertical layout (name / render / battery),
+    // so it is taller than the old horizontal strip — the real height is measured
+    // from the view's DesiredSize; this fallback is only used if that measure fails.
+    private const double DesignWidthDip = 300;
+    private const double FallbackHeightDip = 210;
     private const double TopMarginDip = 12;
 
     // Animation timing.

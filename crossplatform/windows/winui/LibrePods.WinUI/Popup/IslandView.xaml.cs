@@ -14,6 +14,15 @@ public sealed partial class IslandView : UserControl
     public IslandView()
     {
         InitializeComponent();
+
+        // Kick off the product-render animation once laid out: a one-shot scale-in
+        // entrance, then a continuous gentle float. Wrapped so an animation failure
+        // can never break the popup (worst case: a static image).
+        Loaded += (_, _) =>
+        {
+            try { Entrance.Begin(); } catch { }
+            try { FloatLoop.Begin(); } catch { }
+        };
     }
 
     /// Populate the card from a daemon Snapshot (name + battery + model image).
