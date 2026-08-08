@@ -63,6 +63,17 @@
                        TextTrimming="CharacterEllipsis"
                        Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
 
+            <!-- Message body (shown in message mode instead of the render/battery,
+                 e.g. an ANC change) — collapsed by default, toggled by ApplyMessage. -->
+            <TextBlock x:Name="MessageBody"
+                       Visibility="Collapsed"
+                       FontSize="13"
+                       HorizontalAlignment="Center"
+                       TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       Margin="0,2,0,4"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
             <!-- Large centred product render (floats + scales in). -->
             <Image x:Name="DeviceImage"
                    Width="112" Height="112"
@@ -77,7 +88,8 @@
 
             <!-- L / R / Case battery — each a tiny labelled accent bar, centred.
                  Absent components are collapsed by the code-behind. -->
-            <StackPanel Orientation="Horizontal"
+            <StackPanel x:Name="BatteryRow"
+                        Orientation="Horizontal"
                         HorizontalAlignment="Center"
                         Spacing="18">
 

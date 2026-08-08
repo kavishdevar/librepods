@@ -28,6 +28,11 @@ public sealed partial class IslandView : UserControl
     /// Populate the card from a daemon Snapshot (name + battery + model image).
     public void Apply(Snapshot s)
     {
+        // Connection-card mode: render + battery, no message line.
+        MessageBody.Visibility = Visibility.Collapsed;
+        DeviceImage.Visibility = Visibility.Visible;
+        BatteryRow.Visibility = Visibility.Visible;
+
         DeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? Localize.Get("Island_DefaultName") : s.DevName;
 
         try
@@ -42,6 +47,18 @@ public sealed partial class IslandView : UserControl
         SetBattery(LeftItem, LeftBar, LeftText, s.Battery.Left, s.Battery.LeftCharging);
         SetBattery(RightItem, RightBar, RightText, s.Battery.Right, s.Battery.RightCharging);
         SetBattery(CaseItem, CaseBar, CaseText, s.Battery.Case, s.Battery.CaseCharging);
+    }
+
+    /// Message mode: show a title + body (e.g. an ANC change), hiding the render
+    /// and battery — so daemon overlays render as the centred island instead of a
+    /// Windows toast.
+    public void ApplyMessage(string title, string body)
+    {
+        DeviceName.Text = string.IsNullOrWhiteSpace(title) ? Localize.Get("Island_DefaultName") : title;
+        MessageBody.Text = body ?? "";
+        MessageBody.Visibility = Visibility.Visible;
+        DeviceImage.Visibility = Visibility.Collapsed;
+        BatteryRow.Visibility = Visibility.Collapsed;
     }
 
     /// Show a battery component only when it carries a real reading. Values >100

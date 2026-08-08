@@ -45,10 +45,11 @@ public partial class App : Application
         Notifier.Register(() =>
             _window.DispatcherQueue.TryEnqueue(() => _window.ShowFromTray()));
 
-        // Surface daemon overlays as a native toast (persists in the Action Center,
-        // clickable) as well as the in-app InfoBar. Marshalled to the UI thread.
+        // Surface daemon overlays as the centred floating island (not a Windows
+        // toast — the toast was the corner card the user didn't want). Marshalled
+        // to the UI thread.
         Daemon.OverlayReceived += (title, body) =>
-            _window.DispatcherQueue.TryEnqueue(() => Notifier.Show(title, body));
+            _window.DispatcherQueue.TryEnqueue(() => ShowIslandMessage(title, body));
 
         // Drive the tray's tooltip / menu / icon badge from daemon state. Snapshots
         // arrive on a background thread; marshal to the UI thread (same as the window).
@@ -91,6 +92,24 @@ public partial class App : Application
                 _island.Closed += (_, _) => _island = null;
             }
             _island.ShowConnected(snapshot);
+        }
+        catch
+        {
+            _island = null;
+        }
+    }
+
+    /// Show a daemon overlay as the centred floating island (message mode).
+    private void ShowIslandMessage(string title, string body)
+    {
+        try
+        {
+            if (_island is null)
+            {
+                _island = new IslandWindow();
+                _island.Closed += (_, _) => _island = null;
+            }
+            _island.ShowMessage(title, body);
         }
         catch
         {

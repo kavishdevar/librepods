@@ -114,6 +114,41 @@ public sealed class IslandWindow : Window
         }
     }
 
+    /// Show a daemon overlay as the centred island (message mode) instead of a
+    /// Windows toast — same slide/hold as the connection card.
+    public void ShowMessage(string title, string body)
+    {
+        if (_closed) return;
+        try
+        {
+            _view.ApplyMessage(title, body);
+
+            if (!_shown)
+            {
+                _shown = true;
+                try { ApplyExStyles(); } catch { }
+                try { RoundCorners(); } catch { }
+                AppWindow.Show(false);
+            }
+            else
+            {
+                _view.Opacity = 1;
+                _phase = Phase.Hold;
+                _clock.Restart();
+                if (_prepared)
+                {
+                    try { AppWindow.Move(new PointInt32(_centerX, _targetY)); } catch { }
+                }
+                try { AppWindow.Show(false); } catch { }
+                if (!_timer.IsRunning) _timer.Start();
+            }
+        }
+        catch
+        {
+            // Never let a popup refresh crash the app.
+        }
+    }
+
     // ---- Presenter / interop ----------------------------------------------
 
     private void ConfigurePresenter()
