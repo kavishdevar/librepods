@@ -94,7 +94,6 @@ MagicPods-style popup), with a full window for detailed settings.
 | Automatically connect to AirPods | ✅ | ✅ | ✅ |
 | Adaptive Audio / noise strength | ✅ | ✅ | ✅ |
 | **Hi-res two-way audio (native mic)** | ❌ | ❌ | ✅ |
-| Localized UI (en / pt / fr / es) | — | — | ✅ |
 | Loud Sound Reduction | ❌ | 🟡 | ❌ |
 | Head Gestures | ❌ | ✅ | ❌ |
 | Hearing Aid | ❌ | 🟡 | ❌ |

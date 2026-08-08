@@ -78,6 +78,7 @@
 
   <!-- ===== DeviceHeader ===== -->
   <data name="HeaderConnectBtn.Content" xml:space="preserve"><value>Connect</value></data>
+  <data name="HeaderDisconnectBtn.Content" xml:space="preserve"><value>Disconnect</value></data>
 
   <!-- ===== BatteryCard ===== -->
   <data name="BatteryTitle.Text" xml:space="preserve"><value>Battery</value></data>

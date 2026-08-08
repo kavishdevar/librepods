@@ -69,6 +69,7 @@
 
   <!-- ===== DeviceHeader ===== -->
   <data name="HeaderConnectBtn.Content" xml:space="preserve"><value>Ligar</value></data>
+  <data name="HeaderDisconnectBtn.Content" xml:space="preserve"><value>Desligar</value></data>
 
   <!-- ===== BatteryCard ===== -->
   <data name="BatteryTitle.Text" xml:space="preserve"><value>Bateria</value></data>

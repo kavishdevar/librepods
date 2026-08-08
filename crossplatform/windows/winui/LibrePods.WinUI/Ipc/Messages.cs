@@ -133,6 +133,17 @@ public sealed class ConnectCmd
     [JsonPropertyName("cmd")] public string Cmd => "connect";
 }
 
+public sealed class DisconnectCmd
+{
+    [JsonPropertyName("cmd")] public string Cmd => "disconnect";
+}
+
+public sealed class SetNameCmd
+{
+    [JsonPropertyName("cmd")] public string Cmd => "set_name";
+    [JsonPropertyName("name")] public string Name { get; init; } = "";
+}
+
 public sealed class ShutdownCmd
 {
     [JsonPropertyName("cmd")] public string Cmd => "shutdown";

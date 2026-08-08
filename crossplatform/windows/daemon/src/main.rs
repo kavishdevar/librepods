@@ -708,6 +708,24 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             // The user accepted the prompt — let the session start.
             ctx.connect_requested.store(true, Ordering::Relaxed);
         }
+        Command::Disconnect => {
+            // Release the control session: stop the recv loop (it checks this),
+            // drop the driver, mark disconnected. Never auto-reconnect (a prompt
+            // is required), so we don't steal the AirPods back from the phone.
+            ctx.connect_requested.store(false, Ordering::Relaxed);
+            ctx.state.lock().unwrap().connected = false;
+            *ctx.driver_cell.lock().unwrap() = None;
+            ctx.push_state();
+            ctx.overlay("Disconnected");
+        }
+        Command::SetName { name } => {
+            if !name.is_empty() && name.len() <= 64 {
+                if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
+                    let _ = drv.send(&aap::build_rename(&name));
+                }
+                ctx.overlay(&format!("Renamed to “{name}”"));
+            }
+        }
         Command::Shutdown => std::process::exit(0),
     }
 }
@@ -818,6 +836,12 @@ fn run_receiver(ctx: Ctx) {
         // can't tell them apart, so data flow is the tie-breaker.
         let mut last_data = Instant::now();
         loop {
+            // The user pressed Disconnect (connect_requested cleared) — release.
+            if !ctx.connect_requested.load(Ordering::Relaxed) {
+                log("run_receiver: disconnect requested — releasing");
+                *ctx.driver_cell.lock().unwrap() = None;
+                break;
+            }
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
                 if n > 0 {

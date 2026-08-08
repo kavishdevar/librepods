@@ -112,6 +112,11 @@ pub enum Command {
     SetHeartRate { on: bool },
     /// Start the AAP session (the user accepted the "connect?" prompt).
     Connect,
+    /// Release the AAP control session (the "Disconnect" button). Stops
+    /// controlling the AirPods without stealing the audio link from the OS.
+    Disconnect,
+    /// Rename the AirPods (sends the 0x1A rename command).
+    SetName { name: String },
     /// Request a fresh `State` snapshot.
     GetState,
     /// Stop the daemon too (e.g. from the tray's "Quit").

@@ -69,6 +69,8 @@ public sealed class DaemonClient : IDisposable
     public void ToggleMute() => Send(new ToggleMuteCmd());
     public void SetHeartRate(bool on) => Send(new SetHeartRateCmd { On = on });
     public void Connect() => Send(new ConnectCmd());
+    public void Disconnect() => Send(new DisconnectCmd());
+    public void SetName(string name) => Send(new SetNameCmd { Name = name });
     public void Shutdown() => Send(new ShutdownCmd());
 
     // ---- Reader ------------------------------------------------------------

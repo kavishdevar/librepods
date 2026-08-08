@@ -7,12 +7,13 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <!-- Header: AirPods image + name/status, full width -->
+    <!-- Header: AirPods image + name/status + actions, full width -->
     <Border Style="{StaticResource Card}">
         <Grid ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <Image x:Name="DeviceImage"
@@ -23,10 +24,32 @@
                    VerticalAlignment="Center" />
 
             <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-                <TextBlock x:Name="DeviceName"
-                           Text="LibrePods"
-                           Style="{ThemeResource TitleTextBlockStyle}"
-                           TextTrimming="CharacterEllipsis" />
+                <!-- Name — view (with a pencil) / edit (text box + submit/cancel) -->
+                <StackPanel x:Name="NameView" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock x:Name="DeviceName"
+                               Text="LibrePods"
+                               VerticalAlignment="Center"
+                               Style="{ThemeResource TitleTextBlockStyle}"
+                               TextTrimming="CharacterEllipsis" />
+                    <Button x:Name="RenameBtn" Click="Rename_Click"
+                            Background="Transparent" BorderThickness="0" Padding="6"
+                            Visibility="Collapsed" VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Rename">
+                        <FontIcon Glyph="&#xE70F;" FontSize="15" />
+                    </Button>
+                </StackPanel>
+                <StackPanel x:Name="NameEdit" Orientation="Horizontal" Spacing="6"
+                            Visibility="Collapsed" VerticalAlignment="Center">
+                    <TextBox x:Name="NameBox" Width="220" MaxLength="64" KeyDown="NameBox_KeyDown" />
+                    <Button x:Name="SubmitBtn" Click="Submit_Click"
+                            Style="{ThemeResource AccentButtonStyle}" Padding="8,4">
+                        <FontIcon Glyph="&#xE73E;" FontSize="14" />
+                    </Button>
+                    <Button x:Name="CancelBtn" Click="Cancel_Click" Padding="8,4">
+                        <FontIcon Glyph="&#xE711;" FontSize="14" />
+                    </Button>
+                </StackPanel>
+
                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                     <Ellipse x:Name="StatusDot" Width="10" Height="10"
                              Fill="{ThemeResource TextFillColorDisabledBrush}"
@@ -42,6 +65,17 @@
                                      Click="Connect_Click" />
                 </StackPanel>
             </StackPanel>
+
+            <!-- Disconnect (shown only while connected) -->
+            <Button x:Name="DisconnectButton" Grid.Column="2"
+                    Click="Disconnect_Click"
+                    Visibility="Collapsed"
+                    VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE8CD;" FontSize="14" />
+                    <TextBlock x:Uid="HeaderDisconnectBtn" />
+                </StackPanel>
+            </Button>
         </Grid>
     </Border>
 </UserControl>

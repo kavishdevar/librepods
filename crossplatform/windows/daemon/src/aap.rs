@@ -225,6 +225,15 @@ pub fn parse_rename(data: &[u8]) -> Option<String> {
     None
 }
 
+/// Build a rename command for the AirPods (the inverse of `parse_rename`):
+/// `[HEADER, 0x1A, 0x00, 0x01, size, 0x00, ...name]`.
+pub fn build_rename(name: &str) -> Vec<u8> {
+    let bytes = name.as_bytes();
+    let mut f = vec![0x04, 0x00, 0x04, 0x00, 0x1A, 0x00, 0x01, bytes.len() as u8, 0x00];
+    f.extend_from_slice(bytes);
+    f
+}
+
 /// Conversational Awareness event (opcode 0x4B): the AirPods signal that you
 /// started/stopped speaking; the status byte drives the host-side volume duck.
 /// 1 = start, 2 = reduce, 3 = partial, 4/6/7 = end.
