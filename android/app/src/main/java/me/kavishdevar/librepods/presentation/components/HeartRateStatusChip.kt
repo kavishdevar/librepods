@@ -104,6 +104,7 @@ private val HeartRateMonitoringStatus.label: String
     get() = when (this) {
         HeartRateMonitoringStatus.OFF -> "Off"
         HeartRateMonitoringStatus.WAITING_FOR_AIRPODS -> "Waiting for AirPods"
+        HeartRateMonitoringStatus.WAITING_TO_BE_WORN -> "Waiting to be worn"
         HeartRateMonitoringStatus.STARTING -> "Starting"
         HeartRateMonitoringStatus.CALIBRATING -> "Calibrating"
         HeartRateMonitoringStatus.LIVE -> "Live"

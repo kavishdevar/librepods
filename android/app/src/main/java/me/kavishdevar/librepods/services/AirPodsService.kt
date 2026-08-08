@@ -252,6 +252,8 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     private var aacpTransportResponsive = false
     private var heartRateAutomaticAacpRecoveryAttempted = false
     @Volatile
+    private var heartRateAirPodsWorn: Boolean? = null
+    @Volatile
     private var lastAacpPacketElapsedRealtime = 0L
 
     private lateinit var heartRateMonitor: HeartRateMonitor
@@ -320,6 +322,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
         override fun onBroadcastFromNewAddress(device: BLEManager.AirPodsStatus) {
             Log.d(TAG, "New address detected")
+            updateHeartRateWearState(
+                leftInEar = device.isLeftInEar,
+                rightInEar = device.isRightInEar,
+                source = "ble-initial"
+            )
         }
 
         override fun onLidStateChanged(
@@ -358,6 +365,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             device: BLEManager.AirPodsStatus, leftInEar: Boolean, rightInEar: Boolean
         ) {
             Log.d(TAG, "Ear state changed - Left: $leftInEar, Right: $rightInEar")
+            updateHeartRateWearState(
+                leftInEar = leftInEar,
+                rightInEar = rightInEar,
+                source = "ble"
+            )
 
             // In BLE-only mode, ear detection is purely based on BLE data
             if (config.bleOnlyMode) {
@@ -434,6 +446,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 false
             ),
             isTransportReady = ::isAacpTransportHealthy,
+            isAirPodsWorn = ::areAirPodsWornForHeartRate,
             beforeFirstStart = {
                 if (isHeadTrackingActive) {
                     stopHeadTracking()
@@ -787,6 +800,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     if (!isLocalTransportFailure) {
                         synchronized(transportRecoveryLock) {
                             heartRateAutomaticAacpRecoveryAttempted = false
+                            heartRateAirPodsWorn = null
                         }
                         suppressAacpReconnect("physical-disconnect-broadcast")
                         clearAacpTransport(
@@ -1345,9 +1359,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             listOf(it[0] == 0x00.toByte(), it[1] == 0x00.toByte())
         }
 
-        // Do not proactively restart the heart-rate session when the ear status changes. The
-        // AirPods can keep the active session running on the remaining/primary bud; the watchdog
-        // below still refreshes it if samples actually stop arriving.
+        newInEarData?.let { currentInEarData ->
+            updateHeartRateWearState(
+                leftInEar = currentInEarData[0],
+                rightInEar = currentInEarData[1],
+                source = "aacp"
+            )
+        }
 
         if (config.earDetectionEnabled) {
             val currentData = data ?: return
@@ -3715,6 +3733,40 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         if (::heartRateMonitor.isInitialized) heartRateMonitor.startIfPossible()
     }
 
+    private fun areAirPodsWornForHeartRate(): Boolean = heartRateAirPodsWorn != false
+
+    private fun updateHeartRateWearState(
+        leftInEar: Boolean,
+        rightInEar: Boolean,
+        source: String
+    ) {
+        // A single AirPod can keep providing heart-rate samples. Only pause once both are out.
+        val isWorn = leftInEar || rightInEar
+        val previousState = synchronized(transportRecoveryLock) {
+            heartRateAirPodsWorn.also {
+                heartRateAirPodsWorn = isWorn
+                if (isWorn && it != true) {
+                    heartRateAutomaticAacpRecoveryAttempted = false
+                }
+            }
+        }
+        if (previousState == isWorn) return
+
+        Log.i(
+            TAG,
+            "Heart-rate wear state changed worn=$isWorn source=$source; " +
+                if (isWorn) "resuming when transport is ready" else "pausing retries"
+        )
+        if (!::heartRateMonitor.isInitialized) return
+
+        heartRateMonitor.onWearStateChanged(isWorn)
+        if (isWorn && previousState == false && heartRateState.value.enabled &&
+            !isAacpTransportHealthy() && device != null
+        ) {
+            rebuildAacpForHeartRate(source = "heart-rate-wear-resume")
+        }
+    }
+
     private fun stopHeartRateMonitoring(
         forceStop: Boolean = false,
         sendStopFrame: Boolean = true
@@ -3729,6 +3781,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     }
 
     private fun requestAutomaticAacpRecoveryForHeartRate(): Boolean {
+        if (!areAirPodsWornForHeartRate()) {
+            heartRateMonitor.onWearStateChanged(false)
+            return false
+        }
         val claimed = synchronized(transportRecoveryLock) {
             if (heartRateAutomaticAacpRecoveryAttempted) {
                 false
@@ -3748,6 +3804,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     private fun rebuildAacpForHeartRate(source: String): Boolean {
         if (!heartRateState.value.enabled) return false
+        if (!areAirPodsWornForHeartRate()) {
+            heartRateMonitor.onWearStateChanged(false)
+            Log.i(TAG, "Deferring AACP rebuild source=$source until an AirPod is in ear")
+            return false
+        }
         val reconnectDevice = device ?: run {
             stopHeartRateMonitoring(sendStopFrame = false)
             return false
@@ -3758,6 +3819,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             suppressFutureReconnects = false
         )
         transportRecoveryScope.launch {
+            if (!heartRateState.value.enabled || !areAirPodsWornForHeartRate()) return@launch
             stopHeartRateMonitoring(forceStop = true)
             BluetoothConnectionManager.aacpSocket?.let { socket ->
                 clearAacpTransport(
@@ -3772,7 +3834,12 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     "before rebuilding AACP after heart-rate reset source=$source"
             )
             delay(HEART_RATE_AACP_RESET_QUIET_PERIOD_MILLIS)
-            if (!heartRateState.value.enabled) return@launch
+            if (!heartRateState.value.enabled || !areAirPodsWornForHeartRate()) {
+                if (!areAirPodsWornForHeartRate()) {
+                    heartRateMonitor.onWearStateChanged(false)
+                }
+                return@launch
+            }
 
             val adapter = getSystemService(BluetoothManager::class.java).adapter
             Log.i(TAG, "Starting AACP reconnect for heart-rate monitoring source=$source")

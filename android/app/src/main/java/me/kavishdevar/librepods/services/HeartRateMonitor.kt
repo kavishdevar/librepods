@@ -33,6 +33,7 @@ internal class HeartRateMonitor(
     private val scope: CoroutineScope,
     initiallyEnabled: Boolean,
     private val isTransportReady: () -> Boolean,
+    private val isAirPodsWorn: () -> Boolean,
     private val beforeFirstStart: suspend () -> Unit,
     private val sendConnectService0: () -> Boolean,
     private val sendCapabilitiesService0: () -> Boolean,
@@ -76,12 +77,14 @@ internal class HeartRateMonitor(
     fun setEnabled(enabled: Boolean) {
         val wasEnabled = state.value.enabled
         val transportReady = isTransportReady()
+        val airPodsWorn = isAirPodsWorn()
         updateState {
             it.copy(
                 enabled = enabled,
                 status = when {
                     !enabled -> HeartRateMonitoringStatus.OFF
                     !transportReady -> HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+                    !airPodsWorn -> HeartRateMonitoringStatus.WAITING_TO_BE_WORN
                     !wasEnabled -> HeartRateMonitoringStatus.STARTING
                     else -> it.status
                 }
@@ -99,6 +102,10 @@ internal class HeartRateMonitor(
         }
         if (!isTransportReady()) {
             updateStatus(HeartRateMonitoringStatus.WAITING_FOR_AIRPODS)
+            return
+        }
+        if (!isAirPodsWorn()) {
+            updateStatus(HeartRateMonitoringStatus.WAITING_TO_BE_WORN)
             return
         }
 
@@ -123,7 +130,31 @@ internal class HeartRateMonitor(
         if (state.value.enabled) updateStatus(HeartRateMonitoringStatus.RECONNECTING)
     }
 
+    fun onWearStateChanged(isWorn: Boolean) {
+        if (isWorn) {
+            startIfPossible()
+        } else {
+            stopAndUpdateStatus(
+                forceStop = false,
+                sendStopFrame = true,
+                enabledStatus = HeartRateMonitoringStatus.WAITING_TO_BE_WORN
+            )
+        }
+    }
+
     fun stop(forceStop: Boolean = false, sendStopFrame: Boolean = true) {
+        stopAndUpdateStatus(
+            forceStop = forceStop,
+            sendStopFrame = sendStopFrame,
+            enabledStatus = HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+        )
+    }
+
+    private fun stopAndUpdateStatus(
+        forceStop: Boolean,
+        sendStopFrame: Boolean,
+        enabledStatus: HeartRateMonitoringStatus
+    ) {
         synchronized(lock) {
             val jobWasActive = monitoringJob?.isActive == true
             monitoringJob?.cancel()
@@ -133,7 +164,7 @@ internal class HeartRateMonitor(
         }
         updateStatus(
             if (state.value.enabled) {
-                HeartRateMonitoringStatus.WAITING_FOR_AIRPODS
+                enabledStatus
             } else {
                 HeartRateMonitoringStatus.OFF
             }
@@ -174,6 +205,7 @@ internal class HeartRateMonitor(
                 }
 
                 synchronized(lock) { stopSessionLocked() }
+                if (!canRun()) return
                 val window = refreshWindow ?: RefreshWindow(
                     reason = failure,
                     deadlineElapsedRealtime =
@@ -196,6 +228,8 @@ internal class HeartRateMonitor(
                     updateStatus(HeartRateMonitoringStatus.RECONNECTING)
                     if (requestTransportRecovery()) {
                         Log.i(TAG, "Requesting one automatic AACP rebuild for heart-rate recovery")
+                    } else if (!canRun()) {
+                        return
                     } else {
                         updateStatus(HeartRateMonitoringStatus.COULDNT_START)
                         Log.i(TAG, "Automatic AACP rebuild unavailable; waiting for manual Retry")
@@ -335,7 +369,8 @@ internal class HeartRateMonitor(
         if (sendStopFrame && shouldStop && isTransportReady()) sendStop()
     }
 
-    private fun canRun(): Boolean = state.value.enabled && isTransportReady()
+    private fun canRun(): Boolean =
+        state.value.enabled && isTransportReady() && isAirPodsWorn()
 
     private fun updateStatus(status: HeartRateMonitoringStatus) {
         updateState { it.copy(status = status) }

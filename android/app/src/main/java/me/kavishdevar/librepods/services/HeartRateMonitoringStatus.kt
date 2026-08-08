@@ -15,6 +15,7 @@ import me.kavishdevar.librepods.bluetooth.HeartRateSample
 enum class HeartRateMonitoringStatus {
     OFF,
     WAITING_FOR_AIRPODS,
+    WAITING_TO_BE_WORN,
     STARTING,
     CALIBRATING,
     LIVE,
