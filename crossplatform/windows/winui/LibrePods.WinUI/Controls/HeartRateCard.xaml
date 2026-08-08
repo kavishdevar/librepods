@@ -15,6 +15,12 @@
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                        Style="{ThemeResource CaptionTextBlockStyle}"
                        TextWrapping="Wrap" />
+            <!-- Honest heads-up: the feature is a work-in-progress test and may
+                 not produce readings yet. Non-closable so it always shows. -->
+            <InfoBar x:Uid="HeartRateWarning"
+                     Severity="Warning"
+                     IsOpen="True"
+                     IsClosable="False" />
             <ToggleSwitch x:Name="HeartRateSwitch"
                           x:Uid="HeartRateSwitch"
                           Toggled="HeartRate_Toggled" />

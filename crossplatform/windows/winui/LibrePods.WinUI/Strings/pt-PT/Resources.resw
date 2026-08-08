@@ -110,6 +110,8 @@
   <data name="HeartRateSubtitle.Text" xml:space="preserve"><value>Apenas AirPods Pro 3 — experimental. Consome bateria.</value></data>
   <data name="HeartRateSwitch.Header" xml:space="preserve"><value>Monitorizar frequência cardíaca</value></data>
   <data name="HeartRateBpmLabel.Text" xml:space="preserve"><value>bpm</value></data>
+  <data name="HeartRateWarning.Title" xml:space="preserve"><value>Experimental — em teste</value></data>
+  <data name="HeartRateWarning.Message" xml:space="preserve"><value>Isto é um teste em desenvolvimento e pode ainda não apresentar leituras.</value></data>
 
   <!-- ===== SettingsPage ===== -->
   <data name="SettingsTitle.Text" xml:space="preserve"><value>Definições</value></data>
