@@ -48,12 +48,16 @@ pub const HR_CONNECT_SERVICE_4: [u8; 16] = [
 /// AACP 1.3 init, service 4 — CAPABILITIES (raw `sendPacket`).
 pub const HR_CAPABILITIES_SERVICE_4: [u8; 7] = [0x04, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00];
 
-/// HRM_STATE control command (id 0x30), value 0x01 = on.
+/// HRM_STATE control command (id 0x30), value 0x01 = on — the switch that powers
+/// the PPG measurement engine.
 ///
-/// **Not observed on iOS.** Control id 0x30 appears zero times across four
-/// captures of iOS 26.5.2 ↔ AirPods Pro 3, including two full workout sessions.
-/// Kept only in case older firmware needs it; `sensor_stream` below is what
-/// actually drives the stream.
+/// The enable step the working Android client (upstream PR #702, produces real BPM
+/// on AirPods Pro 3) sends: `sendControlCommand(HRM_STATE=0x30, true)` right after the
+/// AACP 1.3 session init and before the stream start. iOS reaches the engine by another
+/// (hidden) path, so the iOS PacketLogger captures never showed 0x30; the Android path
+/// is the reproducible one. NOTE: sending this makes our enable byte-match Android, but
+/// on the A3063 test unit the AirPods still ACK service 19 and emit no data frames — so
+/// it is necessary but, standalone, not sufficient here (see hr_retry_campaign).
 pub const HR_ENABLE: [u8; 11] = [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x30, 0x01, 0x00, 0x00, 0x00];
 
 // ---- Sensor stream control ----

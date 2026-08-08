@@ -586,21 +586,28 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             let _ = drv.send(pkt);
             thread::sleep(Duration::from_millis(delay));
         }
-        // Revised enable, from the RTBuddy protobuf schema (pabloaul/apple-wireshark,
-        // validated against the capture). iOS opens the Sensor Data WX service with
-        // `request_all_descriptors` (a named discovery call) — twice, without then
-        // with log_type — before any stream. The daemon never sent these; they are
-        // the top candidate for why the computed HR (type 19) never started.
-        let _ = drv.send(&aap::request_all_descriptors(next_hr_seq(), false));
-        thread::sleep(Duration::from_millis(120));
-        let _ = drv.send(&aap::request_all_descriptors(next_hr_seq(), true));
-        thread::sleep(Duration::from_millis(220));
-        // Stop head tracking (shares the sensor service), as the Android client does.
+        // Enable + start, faithfully reproducing the working Android sequence
+        // (upstream PR #702). A btvs/Wireshark capture of our own traffic proved the
+        // AirPods ACK the stream (service 19) but emit no data until the measurement
+        // engine is switched on with HRM_STATE (control 0x30). The earlier
+        // `request_all_descriptors` frames — a guess from the iOS PacketLogger capture
+        // — never helped (type 19 stayed 0) and Android does not send them, so they
+        // are dropped. Stop head tracking first (shares the sensor service), as
+        // Android's beforeFirstStart does.
         let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_HEAD_TRACKING, 0));
         thread::sleep(Duration::from_millis(220));
-        // Start ONLY the heart-rate stream. The 0x10 stream is DEVMOTION6 (6-axis
-        // motion), NOT PPG, and unrelated to heart rate — dropped (Android doesn't
-        // send it either; the ~150 frames/window we saw were motion, never PPG).
+        // HRM_STATE = on (control 0x30) — the enable step the working Android client
+        // (PR #702) sends, which the daemon had been missing. NOTE: a clean-conditions
+        // Wireshark capture (healthy driver, iPhone off, 0x30 dissector-confirmed on
+        // the wire) still yielded ACKs only — the AirPods ACK service 19 but emit zero
+        // data frames on this A3063 unit. So 0x30 is necessary-to-match-Android but not
+        // sufficient here; the remaining gap is non-protocol (fit / another Apple host
+        // holding the service / firmware). Kept because it mirrors the working client.
+        let _ = drv.send(&aap::HR_ENABLE);
+        thread::sleep(Duration::from_millis(120));
+        // Start the 1 Hz heart-rate stream (service 19). The 0x10 stream is DEVMOTION6
+        // (6-axis motion), NOT PPG — dropped (Android doesn't send it; the ~150
+        // frames/window we once saw were the iPhone's motion, never our PPG).
         let _ = drv.send(&aap::sensor_stream(
             next_hr_seq(),
             aap::STREAM_HEART_RATE,
@@ -621,11 +628,10 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             // Frames are arriving (HEARTRATE service is streaming) but carry no
             // reading yet — the enable worked, so stop the STOP/re-init churn and
             // keep the stream open; run_receiver keeps decoding, so a reading
-            // publishes if the sensor ever produces one. NOTE: on AirPods Pro 3 the
-            // sensor only emits reading frames during an active iOS HKWorkoutSession
-            // (confirmed by PacketLogger RE — see HANDOFF); standalone we only ever
-            // get status heartbeats. Kept correct in case a workout state carries
-            // over, but do not expect readings without iOS driving the session.
+            // publishes once the sensor produces one. HRM_STATE (0x30) is now sent, so
+            // the enable matches the working Android client; the first sample can take
+            // ~8 s. On the A3063 test unit no data ever followed the ACK — see the note
+            // above the HR_ENABLE send.
             if ctx.hr_stream_live.load(Ordering::Relaxed) {
                 log("HR: service streaming (frames arriving, awaiting a reading) — keeping stream open");
                 return HrOutcome::Live;
