@@ -41,6 +41,7 @@ internal class HeartRateMonitor(
     private val enableHeartRate: () -> Boolean,
     private val sendStart: () -> Boolean,
     private val sendStop: () -> Unit,
+    private val requestTransportRecovery: () -> Boolean,
     private val onPublishedSample: (HeartRateSample) -> Unit
 ) {
     private enum class RefreshReason(val diagnosticName: String) {
@@ -50,7 +51,7 @@ internal class HeartRateMonitor(
 
     private data class RefreshWindow(
         val reason: RefreshReason,
-        val deadlineElapsedRealtime: Long,
+        var deadlineElapsedRealtime: Long,
         var attempts: Int = 0
     )
 
@@ -118,6 +119,10 @@ internal class HeartRateMonitor(
         if (accepted) incomingSamples.trySend(sample)
     }
 
+    fun markReconnecting() {
+        if (state.value.enabled) updateStatus(HeartRateMonitoringStatus.RECONNECTING)
+    }
+
     fun stop(forceStop: Boolean = false, sendStopFrame: Boolean = true) {
         synchronized(lock) {
             val jobWasActive = monitoringJob?.isActive == true
@@ -153,6 +158,10 @@ internal class HeartRateMonitor(
 
                 val attemptStartedAt = startStreamAttempt()
                 if (!canRun()) return
+                if (attemptStartedAt != null) {
+                    refreshWindow?.deadlineElapsedRealtime =
+                        attemptStartedAt + FIRST_SAMPLE_TIMEOUT_MILLIS
+                }
 
                 val failure = if (attemptStartedAt == null) {
                     RefreshReason.FIRST_SAMPLE_TIMEOUT
@@ -160,7 +169,7 @@ internal class HeartRateMonitor(
                     awaitStreamFailure(
                         attemptStartedAt = attemptStartedAt,
                         refreshDeadline = refreshWindow?.deadlineElapsedRealtime,
-                        onStreamLive = { refreshWindow = null }
+                        onStreamStarted = { refreshWindow = null }
                     ) ?: return
                 }
 
@@ -179,13 +188,18 @@ internal class HeartRateMonitor(
                 }
 
                 if (!waitForRetry(window)) {
-                    updateStatus(HeartRateMonitoringStatus.COULDNT_START)
                     Log.w(
                         TAG,
                         "RTBuddy heart-rate refresh failed " +
                             "reason=${window.reason.diagnosticName} attempts=${window.attempts}"
                     )
-                    Log.i(TAG, "Waiting for a manual AACP reconnect after heart-rate retries failed")
+                    updateStatus(HeartRateMonitoringStatus.RECONNECTING)
+                    if (requestTransportRecovery()) {
+                        Log.i(TAG, "Requesting one automatic AACP rebuild for heart-rate recovery")
+                    } else {
+                        updateStatus(HeartRateMonitoringStatus.COULDNT_START)
+                        Log.i(TAG, "Automatic AACP rebuild unavailable; waiting for manual Retry")
+                    }
                     return
                 }
             }
@@ -245,15 +259,15 @@ internal class HeartRateMonitor(
     private suspend fun awaitStreamFailure(
         attemptStartedAt: Long,
         refreshDeadline: Long?,
-        onStreamLive: () -> Unit
+        onStreamStarted: () -> Unit
     ): RefreshReason? {
         var warmupSamplesRemaining = WARMUP_SAMPLE_COUNT
-        var live = false
+        var streamStarted = false
         val firstSampleDeadline = refreshDeadline
             ?: (attemptStartedAt + FIRST_SAMPLE_TIMEOUT_MILLIS)
 
         while (canRun()) {
-            val timeout = if (live) {
+            val timeout = if (streamStarted) {
                 STALL_TIMEOUT_MILLIS
             } else {
                 (firstSampleDeadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
@@ -261,13 +275,20 @@ internal class HeartRateMonitor(
             if (timeout == 0L) return RefreshReason.FIRST_SAMPLE_TIMEOUT
 
             val sample = withTimeoutOrNull(timeout) { incomingSamples.receive() }
-                ?: return if (live) {
+                ?: return if (streamStarted) {
                     RefreshReason.STREAM_STALLED
                 } else {
                     RefreshReason.FIRST_SAMPLE_TIMEOUT
                 }
 
             if (!canRun()) return null
+            if (!streamStarted) {
+                streamStarted = true
+                if (refreshDeadline != null) {
+                    Log.i(TAG, "RTBuddy heart-rate reconnect succeeded")
+                }
+                onStreamStarted()
+            }
             if (warmupSamplesRemaining > 0) {
                 warmupSamplesRemaining--
                 updateStatus(HeartRateMonitoringStatus.CALIBRATING)
@@ -275,34 +296,22 @@ internal class HeartRateMonitor(
             }
 
             publish(sample)
-            if (!live) {
-                if (refreshDeadline != null) {
-                    Log.i(TAG, "RTBuddy heart-rate refresh succeeded")
-                }
-                onStreamLive()
-            }
-            live = true
             updateStatus(HeartRateMonitoringStatus.LIVE)
         }
         return null
     }
 
-    private suspend fun waitForRetry(window: RefreshWindow): Boolean {
-        val remaining = window.deadlineElapsedRealtime - SystemClock.elapsedRealtime()
-        if (remaining <= 0L) return false
+    private fun waitForRetry(window: RefreshWindow): Boolean {
+        if (window.attempts >= MAX_RECONNECT_ATTEMPTS) return false
 
-        val backoff = RETRY_BACKOFF_MILLIS[
-            window.attempts.coerceAtMost(RETRY_BACKOFF_MILLIS.lastIndex)
-        ]
         window.attempts++
         updateStatus(HeartRateMonitoringStatus.RECONNECTING)
         Log.w(
             TAG,
-            "RTBuddy heart-rate refresh attempt=${window.attempts} " +
-                "reason=${window.reason.diagnosticName} backoff=${backoff}ms"
+            "RTBuddy heart-rate reconnect attempt=${window.attempts} " +
+                "reason=${window.reason.diagnosticName} timeout=${FIRST_SAMPLE_TIMEOUT_MILLIS}ms"
         )
-        delay(minOf(backoff, remaining))
-        return canRun() && SystemClock.elapsedRealtime() < window.deadlineElapsedRealtime
+        return canRun()
     }
 
     private fun publish(sample: HeartRateSample) {
@@ -348,10 +357,10 @@ internal class HeartRateMonitor(
         const val TAG = "HeartRateMonitor"
         const val MAX_SAMPLES = 60
         const val FIRST_SAMPLE_TIMEOUT_MILLIS = 8_000L
-        const val RECONNECT_WINDOW_MILLIS = 15_000L
+        const val RECONNECT_WINDOW_MILLIS = FIRST_SAMPLE_TIMEOUT_MILLIS
         const val STALL_TIMEOUT_MILLIS = 2_000L
         const val START_COMMAND_DELAY_MILLIS = 120L
         const val WARMUP_SAMPLE_COUNT = 4
-        val RETRY_BACKOFF_MILLIS = longArrayOf(500L, 1_000L, 2_000L)
+        const val MAX_RECONNECT_ATTEMPTS = 1
     }
 }
