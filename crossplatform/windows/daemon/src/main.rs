@@ -138,7 +138,7 @@ struct Ctx {
     /// transitional ANC echoes the AirPods emit while switching modes quickly
     /// (they briefly report Off), so the UI/toasts don't flicker through Off.
     anc_cmd: Arc<Mutex<Option<(u8, Instant)>>>,
-    dev_name: String,
+    dev_name: Arc<Mutex<String>>,
     mac: u64,
 }
 
@@ -157,7 +157,7 @@ impl Ctx {
             let mut s = self.state.lock().unwrap();
             s.mic_recording = self.mic_on.load(Ordering::Relaxed);
             s.auto_mode = self.auto_mode.load(Ordering::Relaxed);
-            s.dev_name = self.dev_name.clone();
+            s.dev_name = self.dev_name.lock().unwrap().clone();
             s.clone()
         };
         self.send_event(&Event::State(snap));
@@ -166,7 +166,7 @@ impl Ctx {
     /// Broadcast a notification for clients to render.
     fn overlay(&self, body: &str) {
         self.send_event(&Event::Overlay {
-            title: self.dev_name.clone(),
+            title: self.dev_name.lock().unwrap().clone(),
             body: body.to_string(),
         });
     }
@@ -723,6 +723,10 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
                 if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
                     let _ = drv.send(&aap::build_rename(&name));
                 }
+                // Update our name optimistically so the UI keeps the new name
+                // (the AirPods apply it; the OS's cached BT name may need re-pair).
+                *ctx.dev_name.lock().unwrap() = name.clone();
+                ctx.push_state();
                 ctx.overlay(&format!("Renamed to “{name}”"));
             }
         }
@@ -1273,7 +1277,7 @@ fn main() {
         conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
         pending_rename: Arc::new(Mutex::new(None)),
         anc_cmd: Arc::new(Mutex::new(None)),
-        dev_name: dev_name.clone(),
+        dev_name: Arc::new(Mutex::new(dev_name.clone())),
         mac,
     };
 
@@ -1320,7 +1324,7 @@ fn main() {
                     if lp.map_or(true, |t| now.duration_since(t) > Duration::from_secs(20)) {
                         *lp = Some(now);
                         drop(lp);
-                        c.send_event(&Event::ConnectPrompt { name: c.dev_name.clone() });
+                        c.send_event(&Event::ConnectPrompt { name: c.dev_name.lock().unwrap().clone() });
                         log("ble: AirPods nearby → connect prompt");
                     }
                 },
