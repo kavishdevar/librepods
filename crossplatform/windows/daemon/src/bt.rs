@@ -3,9 +3,77 @@
 use std::mem::{size_of, zeroed};
 
 use windows_sys::Win32::Devices::Bluetooth::{
-    BLUETOOTH_DEVICE_INFO, BLUETOOTH_DEVICE_SEARCH_PARAMS, BluetoothFindDeviceClose,
-    BluetoothFindFirstDevice, BluetoothFindNextDevice,
+    BLUETOOTH_DEVICE_INFO, BLUETOOTH_DEVICE_SEARCH_PARAMS, BLUETOOTH_FIND_RADIO_PARAMS,
+    BluetoothFindDeviceClose, BluetoothFindFirstDevice, BluetoothFindFirstRadio,
+    BluetoothFindNextDevice, BluetoothFindRadioClose, BluetoothSetServiceState,
 };
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+use windows_sys::core::GUID;
+
+// Classic-audio service GUIDs — A2DP AudioSink + Handsfree.
+const AUDIO_SINK: GUID = GUID {
+    data1: 0x0000_110b, data2: 0, data3: 0x1000,
+    data4: [0x80, 0x00, 0x00, 0x80, 0x5f, 0x9b, 0x34, 0xfb],
+};
+const HANDSFREE: GUID = GUID {
+    data1: 0x0000_111e, data2: 0, data3: 0x1000,
+    data4: [0x80, 0x00, 0x00, 0x80, 0x5f, 0x9b, 0x34, 0xfb],
+};
+
+/// Real Bluetooth connect/disconnect of the AirPods' AUDIO by toggling their audio
+/// services on the local radio — distinct from releasing our AAP control session.
+/// `connect = false` disconnects (Windows drops the device); `true` reconnects.
+/// Returns true if at least one service state was set. May require the device to be
+/// paired and, on some systems, elevation.
+pub fn set_audio_connected(mac: u64, connect: bool) -> bool {
+    unsafe {
+        let dev = match device_info(mac) {
+            Some(d) => d,
+            None => return false,
+        };
+        let mut rparams: BLUETOOTH_FIND_RADIO_PARAMS = zeroed();
+        rparams.dwSize = size_of::<BLUETOOTH_FIND_RADIO_PARAMS>() as u32;
+        let mut hradio: HANDLE = std::ptr::null_mut();
+        let hfind = BluetoothFindFirstRadio(&rparams, &mut hradio);
+        if hfind.is_null() {
+            return false;
+        }
+        let flags: u32 = if connect { 1 } else { 0 }; // ENABLE / DISABLE
+        let a = BluetoothSetServiceState(hradio, &dev, &AUDIO_SINK, flags);
+        let b = BluetoothSetServiceState(hradio, &dev, &HANDSFREE, flags);
+        CloseHandle(hradio);
+        BluetoothFindRadioClose(hfind);
+        a == 0 || b == 0 // ERROR_SUCCESS
+    }
+}
+
+/// Look up a paired device's `BLUETOOTH_DEVICE_INFO` by its 48-bit address.
+unsafe fn device_info(mac: u64) -> Option<BLUETOOTH_DEVICE_INFO> {
+    let mut params: BLUETOOTH_DEVICE_SEARCH_PARAMS = zeroed();
+    params.dwSize = size_of::<BLUETOOTH_DEVICE_SEARCH_PARAMS>() as u32;
+    params.fReturnAuthenticated = 1;
+    params.fReturnRemembered = 1;
+    params.fReturnConnected = 1;
+    let mut info: BLUETOOTH_DEVICE_INFO = zeroed();
+    info.dwSize = size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
+    let h = BluetoothFindFirstDevice(&params, &mut info);
+    if h.is_null() {
+        return None;
+    }
+    let mut found = None;
+    loop {
+        if info.Address.Anonymous.ullLong == mac {
+            found = Some(info);
+            break;
+        }
+        info.dwSize = size_of::<BLUETOOTH_DEVICE_INFO>() as u32;
+        if BluetoothFindNextDevice(h, &mut info) == 0 {
+            break;
+        }
+    }
+    BluetoothFindDeviceClose(h);
+    found
+}
 
 fn utf16_name(buf: &[u16]) -> String {
     let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());

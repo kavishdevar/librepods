@@ -57,13 +57,27 @@ fn frame(packet: &[u8]) -> Vec<u8> {
 
 fn log(s: &str) {
     use std::io::Write;
+    // Wall-clock UTC HH:MM:SS.mmm prefix so log lines can be correlated in time.
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| {
+            let secs = d.as_secs() % 86_400;
+            format!(
+                "{:02}:{:02}:{:02}.{:03}",
+                secs / 3600,
+                (secs % 3600) / 60,
+                secs % 60,
+                d.subsec_millis()
+            )
+        })
+        .unwrap_or_default();
     if let Ok(la) = std::env::var("LOCALAPPDATA") {
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(format!("{la}\\LibrePods\\daemon.log"))
         {
-            let _ = writeln!(f, "{s}");
+            let _ = writeln!(f, "{ts} {s}");
         }
     }
 }
@@ -705,18 +719,29 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
         }
         Command::SetHeartRate { on } => set_heart_rate(ctx, on),
         Command::Connect => {
-            // The user accepted the prompt — let the session start.
+            // The user accepted the prompt — let the session start, and ask the OS
+            // to (re)connect the audio in case the device was BT-disconnected.
             ctx.connect_requested.store(true, Ordering::Relaxed);
+            let mac = ctx.mac;
+            thread::spawn(move || {
+                let ok = bt::set_audio_connected(mac, true);
+                log(&format!("bt: connect audio = {ok}"));
+            });
         }
         Command::Disconnect => {
-            // Release the control session: stop the recv loop (it checks this),
-            // drop the driver, mark disconnected. Never auto-reconnect (a prompt
-            // is required), so we don't steal the AirPods back from the phone.
+            // Real disconnect: drop the control session AND ask the OS to
+            // disconnect the audio (toggle the A2DP/HFP services off). Never
+            // auto-reconnect on our own (a prompt is required).
             ctx.connect_requested.store(false, Ordering::Relaxed);
             ctx.state.lock().unwrap().connected = false;
             *ctx.driver_cell.lock().unwrap() = None;
             ctx.push_state();
             ctx.overlay("Disconnected");
+            let mac = ctx.mac;
+            thread::spawn(move || {
+                let ok = bt::set_audio_connected(mac, false);
+                log(&format!("bt: disconnect audio = {ok}"));
+            });
         }
         Command::SetName { name } => {
             if !name.is_empty() && name.len() <= 64 {
