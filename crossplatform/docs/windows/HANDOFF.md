@@ -149,3 +149,45 @@ byte at packet[9], 1=start/2/3/4=end, drives volume ducking); Personalized Volum
 unconfirmed). Still-unmapped ids `0x37/0x38/0x3b/0x3e` are likely Pro 3-exclusive
 automatic features with no simple Settings toggle (heart rate — HrmState 0x30
 already appears; Live Translation; Hearing Health). Chase them in those scenarios.
+
+### Heart rate (Pro 3) — protocol CONFIRMED correct; readings blocked by environment, not code (2026-08-08)
+
+Two independent lines of evidence pin this down:
+
+1. **PacketLogger capture of a live iOS Fitness/Strava workout** (real Pro 3):
+   our SensorDataWX START (`…17 00 00 00 10 00 10 00 08 E3 46 42 0B 08 13 10 02
+   1A 05 01 40 42 0F 00`, service 0x13=19, 1 s, seq 0x2363) is **byte-identical**
+   to the frame the iPhone sends. During the workout the AirPods stream **79-byte**
+   reading frames (payload len 0x43); standalone we get only **21-byte status
+   heartbeats** (log_type 3, service 19, command `4a 02 08 13`, no 18-byte reading
+   payload). The other iOS sends are NOT HR triggers: `0x44` (`04 00 04 00 44 00
+   04 00 02 00 03 07`) is a capabilities/mode negotiation (we tried it → only a
+   ~489-byte "VendorID" caps dump); `0x10` (86 B) is **Nearby-Audio** telemetry
+   (cleartext `idleTime`/`btAddress`/`btName="iPhone"`/`nearbyAudioScore` — audio
+   handoff arbitration).
+
+2. **`tomppi/airpods_rtbuddy_v37_probe` (v39, Android) reads real BPM standalone**
+   with a flow **byte-identical to ours**: AACP CONNECT/CAPS service 0 & 4 (delays
+   180/220/180/220), `HRM_ENABLE 0x30`, **one** SensorDataWX HEARTRATE(19) 1 s
+   start (seq 0x2363), then passive listen — no 0x44, no 0x893/DEVMOTION6, no
+   re-pulsing. Decoder rule (matches ours): descriptor 0x00100000, service 19, cmd
+   payload len 18, outer log_type 3, status tail `10 00 00`, bpm = payload[1];
+   reject transient frames (`10 82 81`, `10 02 81`).
+
+**Conclusion:** the protocol and decoder are CORRECT — a byte-identical sequence
+reads HR on another Pro 3. Our daemon streams the HEARTRATE service (status
+frames) but never receives the 18-byte reading payload, so on this unit the sensor
+isn't producing samples. Since identical bytes work elsewhere, the block is
+**environmental, not the code**. Most likely, in order of suspicion:
+
+- **Nearby iPhone arbitration.** AirPods run audio-handoff arbitration (the `0x10`
+  Nearby-Audio telemetry). Every HR test here had the owner's iPhone active and
+  nearby (it was driving the PacketLogger captures). **RETEST with the iPhone's
+  Bluetooth OFF / powered off / left in another room**, AirPods connected ONLY to
+  Windows — the strongest untested variable.
+- **Physical fit / skin contact** — both buds seated firmly, worn still for 60 s+.
+- **Firmware version** differences between units.
+
+Daemon flow now matches v39 exactly: init svc0/4 → `0x30` → single START → hold the
+stream open passively (no 0x44, no keepalive re-pulsing). Do NOT re-add those —
+they were tested and don't help. Next step is the iPhone-off retest, not code.
