@@ -91,8 +91,12 @@ pub const HR_ENABLE: [u8; 11] = [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x30, 0x01,
 
 /// Stream id for heart rate — data type 19.
 pub const STREAM_HEART_RATE: u8 = 0x13;
-/// Stream id for raw PPG — data type 16.
-pub const STREAM_PPG: u8 = 0x10;
+/// Stream id for 6-axis device motion — data type 16 (DEVMOTION6). This was
+/// mislabelled "raw PPG": the RTBuddy schema's ServiceType enum is 16=DEVMOTION6,
+/// 19=HEARTRATE. It is motion, unrelated to heart rate (Android never sends it),
+/// so it is NOT part of the HR enable — the ~150 frames/window we saw were motion,
+/// never PPG. Kept for reference only.
+pub const STREAM_DEVMOTION6: u8 = 0x10;
 /// Stream id for head tracking — data type 14. Head tracking lives on the same
 /// 0x17 sensor service as heart rate, so a running head-tracking stream may be
 /// what blocks the computed HR; stopping it first (period 0) is worth trying.
@@ -133,6 +137,27 @@ pub fn sensor_stream(seq: u16, stream_id: u8, period_us: u32) -> [u8; 28] {
         0x1A, 0x05, //   field 3, 5 bytes
         0x01, p[0], p[1], p[2], p[3], // mode 1 + period µs, little-endian
     ]
+}
+
+/// SensorDataWX `request_all_descriptors` (protobuf field 4, `22 00` = empty
+/// message) on the Sensor Data WX service. A *named discovery call* from the
+/// RTBuddy schema (pabloaul/apple-wireshark): iOS sends it twice at session open —
+/// once without `log_type`, once with `log_type=2` — before any stream. The daemon
+/// never sent these. Two-byte varint seq → length field 5 (no log_type) or 7.
+pub fn request_all_descriptors(seq: u16, log_type: bool) -> Vec<u8> {
+    let s0 = 0x80 | (seq & 0x7F) as u8;
+    let s1 = ((seq >> 7) & 0x7F) as u8;
+    let mut payload = vec![0x08, s0, s1];
+    if log_type {
+        payload.extend_from_slice(&[0x10, 0x02]); // log_type = 2
+    }
+    payload.extend_from_slice(&[0x22, 0x00]); // field 4 (request_all_descriptors), empty
+    let len = (payload.len() as u16).to_le_bytes();
+    let mut f = vec![
+        0x04, 0x00, 0x04, 0x00, 0x17, 0x00, 0x00, 0x00, 0x10, 0x00, len[0], len[1],
+    ];
+    f.extend_from_slice(&payload);
+    f
 }
 
 /// True if `data` is a 0x58 uplink audio packet (carries AAC-ELD frames).
