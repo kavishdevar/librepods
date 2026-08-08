@@ -760,6 +760,10 @@ fn run_receiver(ctx: Ctx) {
         // HR diagnostics (logged every ~3s while monitoring).
         let mut hr_last_log = Instant::now();
         let (mut hr_bytes, mut hr_frames, mut hr_samples) = (0usize, 0u32, 0u32);
+        // Diagnose stale-"connected": throttled log of the raw driver status when
+        // it isn't a clean 2, so we can see what "cased" vs "both-out-resting"
+        // actually report (the teardown decision hinges on them differing).
+        let mut status_diag = Instant::now();
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
@@ -1001,6 +1005,13 @@ fn run_receiver(ctx: Ctx) {
             if last_status.elapsed() >= Duration::from_secs(1) {
                 last_status = Instant::now();
                 let st = driver.status();
+                if !matches!(st, Ok(2)) && status_diag.elapsed() >= Duration::from_secs(2) {
+                    let both_out = !prev_ear[0] && !prev_ear[1];
+                    log(&format!(
+                        "status diag: st={st:?} both_out={both_out} fails={status_fails}"
+                    ));
+                    status_diag = Instant::now();
+                }
                 if matches!(st, Ok(2)) {
                     status_fails = 0;
                 } else {
