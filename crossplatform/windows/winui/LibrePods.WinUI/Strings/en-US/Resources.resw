@@ -137,6 +137,13 @@
   <data name="DeviceInfoModel.Text" xml:space="preserve"><value>Model</value></data>
   <data name="DeviceInfoFirmware.Text" xml:space="preserve"><value>Firmware</value></data>
   <data name="DeviceInfoSerial.Text" xml:space="preserve"><value>Serial</value></data>
+  <data name="Overlay_InCase" xml:space="preserve"><value>AirPod in case</value></data>
+  <data name="Overlay_HrOn" xml:space="preserve"><value>Heart rate monitoring on</value></data>
+  <data name="Overlay_HrOff" xml:space="preserve"><value>Heart rate monitoring off</value></data>
+  <data name="Overlay_MicOn" xml:space="preserve"><value>Hi-res microphone on</value></data>
+  <data name="Overlay_MicInUse" xml:space="preserve"><value>Microphone in use — hi-res on</value></data>
+  <data name="Overlay_MicReleasing" xml:space="preserve"><value>Microphone released — restoring stereo…</value></data>
+  <data name="Overlay_StereoRestored" xml:space="preserve"><value>Stereo restored</value></data>
   <data name="SettingsAbout.Text" xml:space="preserve"><value>About</value></data>
   <data name="SettingsAppDesc.Text" xml:space="preserve"><value>LibrePods — native Windows client of librepodsd</value></data>
 

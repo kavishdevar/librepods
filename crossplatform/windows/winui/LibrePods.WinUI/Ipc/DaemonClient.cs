@@ -139,7 +139,7 @@ public sealed class DaemonClient : IDisposable
                 SnapshotReceived?.Invoke(s.Snapshot);
                 break;
             case DaemonEvent.Overlay o:
-                OverlayReceived?.Invoke(o.Title, o.Body);
+                OverlayReceived?.Invoke(o.Title, LibrePods.WinUI.Services.OverlayText.Resolve(o.Body));
                 break;
             case DaemonEvent.ConnectPrompt p:
                 ConnectPromptReceived?.Invoke(p.Name);
