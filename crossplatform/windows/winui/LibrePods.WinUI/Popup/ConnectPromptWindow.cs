@@ -80,11 +80,16 @@ public sealed class ConnectPromptWindow : Window
         panel.Children.Add(connect);
         panel.Children.Add(dismiss);
 
-        var root = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        // Solid, opaque, theme-matched background — an acrylic backdrop on this
+        // small tool window left a white window edge showing around the card.
+        var root = new Grid { RequestedTheme = AppSettings.Theme };
+        if (Application.Current.Resources.TryGetValue("SolidBackgroundFillColorBaseBrush", out var bg) && bg is Brush bgBrush)
+            root.Background = bgBrush;
+        else
+            root.Background = new SolidColorBrush(Microsoft.UI.Colors.Black);
         root.Children.Add(panel);
         Content = root;
 
-        try { SystemBackdrop = new DesktopAcrylicBackdrop(); } catch { }
         try { ConfigurePresenter(); } catch { }
 
         _autoClose = DispatcherQueue.CreateTimer();
@@ -140,7 +145,7 @@ public sealed class ConnectPromptWindow : Window
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest);
         var work = area.WorkArea;
         int x = work.X + (work.Width - w) / 2;
-        int y = work.Y + (work.Height - h) / 3; // upper third, iOS-like
+        int y = work.Y + work.Height - h - (int)Math.Round(56 * scale); // bottom-centre
         try { AppWindow.Move(new PointInt32(x, y)); } catch { }
 
         try { RoundCorners(); } catch { }
