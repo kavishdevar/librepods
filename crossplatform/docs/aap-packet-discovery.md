@@ -134,14 +134,42 @@ Claude if your export looks different.
 
 ## 6. Part E — what to hunt (priorities)
 
-1. **HR enable sequence** (iOS capture) — the exact frames the iPhone sends
-   *before* the `17 00 …` RTBuddy stream begins. Diff against our
-   `HR_CONNECT_SERVICE_*`, `HR_ENABLE`, `HR_START` in `aap.rs`. This is the one
-   that would let us finally make `set_heart_rate` work.
-2. **Charging bit** — in a `…04` battery packet, watch the per-component status
-   byte flip when a bud is charging in the (open) case. Confirms `01` vs `05`.
-3. **Unknown opcodes** — anything with header `04 00 04 00` and an opcode not in
+1. **HR compute trigger** — the enable *mechanism* is solved: streams are driven
+   by `sensor_stream` (`0x17 … 42 0B`, stream id + period µs; see `AAP
+   Definitions.md` → "Starting and Stopping Sensor Streams"). On Windows this
+   already brings up **raw PPG (type 16) standalone**, but the AirPods never emit
+   the **computed heart rate (type 19)**. Every capture began mid-session, so the
+   trigger is believed to be in the setup. **Do a fresh capture from a
+   disconnected state**: start `idevicebtlogger` → connect the AirPods → start a
+   Fitness workout, and extract the full ordered host→device sequence up to the
+   first `08 13 1a 12` (type-19) frame.
+2. **Unknown opcodes** — anything with header `04 00 04 00` and an opcode not in
    the table above / `AAP Definitions.md`.
+
+## 6b. Part E-2 — case & lid sensors (open questions)
+
+`AAP Definitions.md` → "Case and Charging Transitions" leaves three things open;
+these targeted captures would settle them. Filter battery `…04` packets (the
+per-component status byte) and watch device→host opcodes + control id `0x3B`.
+
+1. **What selects charging `0x05` vs `0x01`.** Refuted so far: not elapsed time,
+   not the number of buds, not case detection. Remaining candidate: physically
+   handling the case/lid. Two runs, same buds:
+   - **Run A (hands-off):** seat both buds, lid open, do **not** touch the case or
+     lid for ~3 min. Count `0x05` occurrences.
+   - **Run B (handled):** seat both buds, then open/close the lid and handle the
+     case a few times. Count `0x05`.
+   - If `0x05` appears only in Run B → lid/case interaction is the selector.
+2. **The lid open/close signal** (never located). Buds already seated, hands-off,
+   start capture; **open** the lid (note t), wait, **close** it (note t). Diff the
+   packets at those two instants — look for a device→host opcode or a control id
+   that toggles with the lid.
+3. **Control id `0x3B`** fires 260 ms before the `0x05 → 0x01` flip — watch
+   whether it consistently precedes the flip (cause) or just co-occurs.
+
+Bring findings back to `AAP Definitions.md`; a clean lid signal would let the
+daemon fire real "Case opened/closed" events instead of inferring them from
+whether the case battery is being reported.
 
 ---
 
