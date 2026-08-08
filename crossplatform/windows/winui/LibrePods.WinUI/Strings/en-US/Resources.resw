@@ -133,6 +133,10 @@
   <data name="SettingsDefaultFrontendHint.Text" xml:space="preserve"><value>Choose which UI the tray's "Open App" launches next time.</value></data>
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Refresh state</value></data>
   <data name="SettingsSwitchUiBtn.Content" xml:space="preserve"><value>Switch default UI to iced</value></data>
+  <data name="SettingsDeviceInfo.Text" xml:space="preserve"><value>Device info</value></data>
+  <data name="DeviceInfoModel.Text" xml:space="preserve"><value>Model</value></data>
+  <data name="DeviceInfoFirmware.Text" xml:space="preserve"><value>Firmware</value></data>
+  <data name="DeviceInfoSerial.Text" xml:space="preserve"><value>Serial</value></data>
   <data name="SettingsAbout.Text" xml:space="preserve"><value>About</value></data>
   <data name="SettingsAppDesc.Text" xml:space="preserve"><value>LibrePods — native Windows client of librepodsd</value></data>
 

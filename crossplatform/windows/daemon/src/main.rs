@@ -996,6 +996,23 @@ fn run_receiver(ctx: Ctx) {
                             ctx.conv_duck.lock().unwrap().on_status(status);
                         }
                     }
+                    if let Some((model, firmware, serial)) = aap::parse_metadata(data) {
+                        // Device identity (0x1D): store model/firmware/serial once.
+                        let changed = {
+                            let mut s = ctx.state.lock().unwrap();
+                            let c = s.model != model;
+                            if c {
+                                s.model = model.clone();
+                                s.firmware = firmware;
+                                s.serial = serial;
+                            }
+                            c
+                        };
+                        if changed {
+                            log(&format!("device metadata: model={model}"));
+                            ctx.push_state();
+                        }
+                    }
                     if let Some((primary, secondary)) = aap::parse_ear_detection(data) {
                         // "In case" notification on the transition into the case.
                         // Ear-detection reports both buds together (never partial,
@@ -1011,7 +1028,13 @@ fn run_receiver(ctx: Ctx) {
                             }
                         }
                         prev_status = now;
-                        let new_ear = [primary.in_ear(), secondary.in_ear()];
+                        // 0x04 is a transitional (in-motion) value — hold the prior
+                        // in-ear state for that bud instead of reading it as "out",
+                        // so a bud being handled doesn't trigger a false auto-pause.
+                        let new_ear = [
+                            if primary.is_transitional() { prev_ear[0] } else { primary.in_ear() },
+                            if secondary.is_transitional() { prev_ear[1] } else { secondary.in_ear() },
+                        ];
                         if new_ear != prev_ear {
                             let all_in = new_ear[0] && new_ear[1];
                             let was_wearing = prev_ear[0] || prev_ear[1];

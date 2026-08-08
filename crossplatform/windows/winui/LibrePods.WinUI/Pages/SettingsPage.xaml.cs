@@ -22,14 +22,48 @@ public sealed partial class SettingsPage : UserControl
         InitializeComponent();
     }
 
+    /// Set the theme radio to the persisted choice on startup, without re-firing
+    /// ThemeChanged (the host applies the saved theme itself).
+    public void InitThemeSelector(int index)
+    {
+        if (index >= 0 && index <= 2) ThemeButtons.SelectedIndex = index;
+    }
+
     private void Theme_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        ThemeChanged?.Invoke(ThemeButtons.SelectedIndex switch
+        var index = ThemeButtons.SelectedIndex;
+        AppSettings.SetThemeIndex(index); // persist across restarts
+        ThemeChanged?.Invoke(index switch
         {
             1 => ElementTheme.Light,
             2 => ElementTheme.Dark,
             _ => ElementTheme.Default,
         });
+    }
+
+    /// Fill the (hidden-by-default) device-info card from the 0x1D metadata.
+    public void UpdateDeviceInfo(Snapshot s)
+    {
+        ModelText.Text = FriendlyModel(s.Model);
+        FirmwareText.Text = string.IsNullOrWhiteSpace(s.Firmware) ? "—" : s.Firmware;
+        SerialText.Text = string.IsNullOrWhiteSpace(s.Serial) ? "—" : s.Serial;
+    }
+
+    /// Map a known model number to a friendly name, else show the raw number.
+    private static string FriendlyModel(string model) => model switch
+    {
+        "" => "—",
+        "A3064" => "AirPods Pro 3 (A3064)",
+        "A2968" or "A2931" or "A2699" => $"AirPods Pro 2 ({model})",
+        "A2084" or "A2083" => $"AirPods Pro ({model})",
+        _ => model,
+    };
+
+    // The device info (incl. serial) is covered by a frosted blur; the eye toggles it.
+    private void RevealInfo_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (InfoBlur is not null)
+            InfoBlur.Visibility = RevealInfo.IsChecked == true ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Client?.RequestState();

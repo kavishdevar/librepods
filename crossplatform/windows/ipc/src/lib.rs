@@ -65,6 +65,15 @@ pub struct Snapshot {
     /// Latest validated heart-rate BPM (AirPods Pro 3 RTBuddy). `None` when HR
     /// monitoring is off or no sample has been decoded yet. Opt-in (drains battery).
     pub heart_rate: Option<u16>,
+    /// Device metadata parsed from the 0x1D packet (model number, firmware, serial).
+    /// Empty until that packet arrives. The serial is sensitive — the app keeps
+    /// this info hidden behind a reveal toggle. (serde default: older snapshots.)
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub firmware: String,
+    #[serde(default)]
+    pub serial: String,
 }
 
 /// A toggleable AAP control-command setting (the `id` byte of a 0x09 control

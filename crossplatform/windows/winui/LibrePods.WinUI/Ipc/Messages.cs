@@ -40,6 +40,12 @@ public sealed class Snapshot
     [JsonPropertyName("volume")] public byte Volume { get; set; }
     [JsonPropertyName("muted")] public bool Muted { get; set; }
     [JsonPropertyName("heart_rate")] public ushort? HeartRate { get; set; }
+
+    // Device metadata from the 0x1D packet (empty until it arrives). Serial is
+    // sensitive — the Settings page keeps these hidden behind a reveal toggle.
+    [JsonPropertyName("model")] public string Model { get; set; } = "";
+    [JsonPropertyName("firmware")] public string Firmware { get; set; } = "";
+    [JsonPropertyName("serial")] public string Serial { get; set; } = "";
 }
 
 /// AAP control-command feature ids (the `id` byte of a 0x09 control command).

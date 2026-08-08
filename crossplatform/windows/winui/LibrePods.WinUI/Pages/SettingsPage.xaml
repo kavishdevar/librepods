@@ -55,6 +55,67 @@
                 </StackPanel>
             </Border>
 
+            <!-- Device info — hidden behind an eye toggle + frosted blur (it carries
+                 the serial number). Populated from the 0x1D metadata packet. -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel Spacing="10">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Uid="SettingsDeviceInfo" Grid.Column="0"
+                                   VerticalAlignment="Center"
+                                   Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                        <ToggleButton x:Name="RevealInfo" Grid.Column="1" Padding="8,4"
+                                      Checked="RevealInfo_Toggled" Unchecked="RevealInfo_Toggled">
+                            <FontIcon Glyph="&#xE7B3;" FontSize="15" />
+                        </ToggleButton>
+                    </Grid>
+
+                    <Grid>
+                        <StackPanel Spacing="6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Uid="DeviceInfoModel"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock x:Name="ModelText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Uid="DeviceInfoFirmware"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock x:Name="FirmwareText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Uid="DeviceInfoSerial"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock x:Name="SerialText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Frosted "blur alto" cover; the eye toggles it off to reveal. -->
+                        <Border x:Name="InfoBlur" CornerRadius="6" Margin="-6">
+                            <Border.Background>
+                                <AcrylicBrush TintOpacity="0.55"
+                                              TintLuminosityOpacity="0.9"
+                                              FallbackColor="{ThemeResource CardBackgroundFillColorDefault}" />
+                            </Border.Background>
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <!-- About -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="4">

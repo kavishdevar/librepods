@@ -124,6 +124,10 @@
   <data name="SettingsDefaultFrontendHint.Text" xml:space="preserve"><value>Escolhe que interface o "Abrir app" da bandeja abre da próxima vez.</value></data>
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Atualizar estado</value></data>
   <data name="SettingsSwitchUiBtn.Content" xml:space="preserve"><value>Mudar interface predefinida para iced</value></data>
+  <data name="SettingsDeviceInfo.Text" xml:space="preserve"><value>Sobre o dispositivo</value></data>
+  <data name="DeviceInfoModel.Text" xml:space="preserve"><value>Modelo</value></data>
+  <data name="DeviceInfoFirmware.Text" xml:space="preserve"><value>Firmware</value></data>
+  <data name="DeviceInfoSerial.Text" xml:space="preserve"><value>Nº de série</value></data>
   <data name="SettingsAbout.Text" xml:space="preserve"><value>Acerca</value></data>
   <data name="SettingsAppDesc.Text" xml:space="preserve"><value>LibrePods — cliente nativo Windows do librepodsd</value></data>
 

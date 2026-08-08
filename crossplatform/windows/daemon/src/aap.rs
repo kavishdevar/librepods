@@ -287,19 +287,29 @@ pub enum EarStatus {
     OutOfEar,
     InCase,
     Disconnected,
+    /// 0x04 — a transitional value the iOS capture found: emitted only while a bud
+    /// is *in motion* between resting states, never at rest. Callers should hold
+    /// the previous state rather than act on it, to avoid false auto-pauses.
+    Transitional,
 }
 
 impl EarStatus {
     fn from_byte(b: u8) -> EarStatus {
         match b {
             0x00 => EarStatus::InEar,
+            0x01 => EarStatus::OutOfEar,
             0x02 => EarStatus::InCase,
             0x03 => EarStatus::Disconnected,
-            _ => EarStatus::OutOfEar, // 0x01 and anything unexpected
+            0x04 => EarStatus::Transitional,
+            _ => EarStatus::OutOfEar, // anything unexpected
         }
     }
     pub fn in_ear(self) -> bool {
         self == EarStatus::InEar
+    }
+    /// True for the 0x04 in-motion value — callers should keep the prior state.
+    pub fn is_transitional(self) -> bool {
+        self == EarStatus::Transitional
     }
 }
 
@@ -312,6 +322,32 @@ pub fn parse_ear_detection(data: &[u8]) -> Option<(EarStatus, EarStatus)> {
     } else {
         None
     }
+}
+
+/// Device metadata (from the iOS capture) parsed from the 0x1D packet: model
+/// number, firmware version and serial. The payload is a short header then a run
+/// of NUL-terminated ASCII strings in a stable order:
+/// `[name, model, manufacturer, serial, firmware, …]` (see `AAP Definitions.md`
+/// → "0x1D — device identity"). Best-effort — returns None if it can't be read.
+pub fn parse_metadata(data: &[u8]) -> Option<(String, String, String)> {
+    if data.len() < 8 || data[..4] != HEADER || data[4] != 0x1D {
+        return None;
+    }
+    // Collect the NUL-separated printable-ASCII strings, in order. The binary
+    // blocks (digest, timestamps) come after the fields we want, so index-based
+    // lookup is stable for the first few strings.
+    let strings: Vec<String> = data[6..]
+        .split(|&b| b == 0)
+        .filter(|s| s.len() >= 3 && s.iter().all(|&c| c.is_ascii_graphic() || c == b' '))
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect();
+    let model = strings.get(1).cloned().unwrap_or_default();
+    let serial = strings.get(3).cloned().unwrap_or_default();
+    let firmware = strings.get(4).cloned().unwrap_or_default();
+    if model.is_empty() && firmware.is_empty() {
+        return None;
+    }
+    Some((model, firmware, serial))
 }
 
 /// If `data` reports the listening mode (control command 0x09, id 0x0D),

@@ -1,5 +1,6 @@
 using System.IO;
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -35,6 +36,9 @@ public sealed partial class MainWindow : Window
         {
             if (RootGrid is not null) RootGrid.RequestedTheme = theme;
         };
+        // Restore the theme saved on a previous run (it wasn't persisted before).
+        if (RootGrid is not null) RootGrid.RequestedTheme = AppSettings.Theme;
+        SettingsPageView.InitThemeSelector(AppSettings.ThemeIndex);
 
         // Wider default so the responsive 2-column device layout shows at launch.
         AppWindow.Resize(new SizeInt32(1000, 800));
@@ -103,6 +107,7 @@ public sealed partial class MainWindow : Window
             // The device NavigationViewItem mirrors the header (name only).
             NavDeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? "LibrePods" : s.DevName;
             DevicePageView.Update(s);
+            SettingsPageView.UpdateDeviceInfo(s);
         });
 
     private void OnOverlay(string title, string body) =>
