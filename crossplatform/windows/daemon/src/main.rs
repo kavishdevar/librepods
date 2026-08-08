@@ -19,7 +19,7 @@ mod rename;
 mod volume;
 
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -456,12 +456,15 @@ const HR_START_COMMAND_DELAY_MS: u64 = 120;
 /// apart; whether the order or the gap matters is untested.
 const HR_PPG_COMMAND_DELAY_MS: u64 = 160;
 
-/// Sequence byte for sensor stream control frames. iOS increments this per
-/// frame; whether the AirPods validate it is untested, so we count up too.
-static HR_SEQ: AtomicU8 = AtomicU8::new(0x70);
+/// Sequence number for sensor stream control frames. iOS increments this per
+/// frame; whether the AirPods validate it is untested, so we count up too. Kept
+/// above 127 so it always encodes as the two-byte varint the captures show, and
+/// masked to 14 bits so it never overflows that encoding.
+static HR_SEQ: AtomicU16 = AtomicU16::new(0);
 
-fn next_hr_seq() -> u8 {
-    HR_SEQ.fetch_add(1, Ordering::Relaxed)
+fn next_hr_seq() -> u16 {
+    let n = HR_SEQ.fetch_add(1, Ordering::Relaxed);
+    128 + (n % (16_384 - 128))
 }
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];

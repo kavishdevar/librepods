@@ -427,63 +427,71 @@ Tracking above** — not with a different mechanism. The frame carries a stream 
 sampling period, and **a period of zero is the stop**:
 
 ```plaintext
-04 00 04 00 17 00 00 00 10 00 11 00 08 70 10 02 42 0b 08 53 10 02 1a 05 01 40 42 0f 00
-                              ^^^^^    ^^^^^ ^^^^^       ^^^^^          ^^ ^^^^^^^^^^^
-                              len=17   seq   10 02       stream id      md period µs LE
+04 00 04 00 17 00 00 00 10 00 10 00 08 98 01 42 0b 08 13 10 02 1a 05 01 40 42 0f 00
+                              ^^^^^ ^^^^^^^^       ^^^^^          ^^ ^^^^^^^^^^^
+                              len   seq varint     stream id      md period µs LE
 ```
 
 | Field | Meaning |
 |---|---|
-| length | `11 00` = **17**, little-endian |
+| length | little-endian; the **real payload byte count**, so it moves with the form and the varint width |
 | seq | varint, increments per control frame |
 | stream id | `08 <id>` inside the `42 0B` block |
 | mode | `1`, `2` or `4` — meaning unresolved |
 | period | little-endian u32, **microseconds**; `0` = stop the stream |
 
-Observed stream ids, consistent across all three captures:
+## Two forms of the frame
+
+**Mixing them produces a packet that appears in no capture.** Across 24 observed control
+frames the correlation is exact, with no exceptions:
+
+| Form | Between the sequence and `42 0B` | Stream id | Length seen |
+|---|---|---|---|
+| **A** | nothing | bare: `0x10`, `0x12`, `0x13` | `0x10` |
+| **B** | `10 02` | bit `0x40` set: `0x50`, `0x52`, `0x53` | `0x11`, `0x12` |
+
+The `10 02` field and the `0x40` bit always travel together. Form B also matches the Head
+Tracking stop frame documented above (`08 4E`, type 14 with the bit set).
+
+**Which form appears depends on when the capture started.** Three captures that began
+mid-session show only form B. The one capture that recorded a connection from scratch shows
+form A for the stream it starts, alongside some form B traffic — but never `0x53`. So a client
+establishing its own session should send **form A with the bare data type**.
+
+Observed stream ids:
 
 | Stream id | Period sent | Rate | Carries |
 |---|---|---|---|
-| `0x53` | `1000000` | 1 Hz | **heart rate** (data type 19) |
-| `0x50` | `20000` | 50 Hz | raw PPG (data type 16) |
-| `0x52` | `200` | — | the worn-state sensor (data type 18) |
-| `0x10`, `0x12` | `10` / `0` | — | seen with mode 4 / mode 2 around reconnection |
-
-The id appears to be the data type with bit `0x40` set: type 19 (`0x13`) → id `0x53`, type 16
-(`0x10`) → id `0x50`, type 18 (`0x12`) → id `0x52`. That also matches the Head Tracking stop
-frame documented above (`08 4E`, i.e. type 14 | `0x40`). Note that bare `0x10` and `0x12` also
-occur, so the bit is not simply part of the id.
+| `0x13` / `0x53` | `1000000` | 1 Hz | **heart rate** (data type 19) |
+| `0x10` / `0x50` | `20000` | 50 Hz | raw PPG (data type 16) |
+| `0x12` / `0x52` | `200` | — | the worn-state sensor (data type 18) |
 
 ## Worked example — a full heart-rate session
 
-From the third capture, one clock, showing that the `0x17` frame is what actually drives the
-stream:
+From the capture that recorded the connection from scratch, one clock:
 
 ```plaintext
-t=126.78  →  44 00 04 00 02 00 03 07            opcode 0x44 (see below)
-t=126.80  →  17 … 08 53 … period 1000000        start heart rate at 1 Hz
-t=126.96  →  17 … 08 50 … period 20000          start raw PPG at 50 Hz
-t=128.68  ←  first heart-rate frame                        (1.88 s after the start frame)
+t=364.35  →  17 … 08 13 … period 1000000        start heart rate at 1 Hz
+t=364.39  →  17 … 08 10 … period 20000          start raw PPG at 50 Hz
+t=365.92  ←  first heart-rate frame                        (1.57 s after the start frame)
    …
-t=209.99  →  17 … 08 50 … period 0              stop raw PPG
-t=241.48  →  17 … 08 53 … period 0              stop heart rate
-t=241.65  ←  last heart-rate frame                         (170 ms after the stop frame)
+t=438.15  →  17 … 08 10 … period 0              stop raw PPG
+t=472.02  ←  heart-rate frames still arriving
 ```
 
-## Corrections to `crossplatform/windows/daemon/src/aap.rs`
+107 heart-rate frames at 1 Hz. Note the stream **outlives the workout**: raw PPG was stopped
+34 s before the last heart-rate frame, and iOS had not yet sent the heart-rate stop. A client
+must not assume the stream ends when the user ends the activity.
 
-`HR_START` and `HR_STOP` are close but not correct. Against the captured frames:
+## Notes for `crossplatform/windows/daemon/src/aap.rs`
 
-| | `aap.rs` | captured |
-|---|---|---|
-| length field | `10 00` (16) | **`11 00` (17)** |
-| field after seq | *absent* | **`10 02`** |
-| stream id | `08 13` (19) | **`08 53` (83)** |
-| period (start) | `01 40 42 0F 00` | `01 40 42 0F 00` — **correct**, 1 Hz |
-| period (stop) | `01 00 00 00 00` | `01 00 00 00 00` — **correct** |
+The original `HR_START` / `HR_STOP` constants were **form A and structurally correct** — same
+length, same absent `10 02`, same bare `08 13`, same period. Only the sequence varint differed,
+which is expected. An intermediate revision rewrote them as form B on the strength of the
+mid-session captures; that was wrong and has been reverted.
 
-So the sampling period was right all along; the length, the `10 02` field and the stream id
-are wrong. `HR_STOP` additionally reuses the start id rather than switching to `0x53`.
+Reported symptom that prompted the recheck, on a daemon sending form B into a freshly
+established session: raw PPG came up at 50 Hz, heart rate never did.
 
 ## Opcode 0x44
 

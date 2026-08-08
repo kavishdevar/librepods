@@ -61,18 +61,38 @@ pub const HR_ENABLE: [u8; 11] = [0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x30, 0x01,
 // Streams are started and stopped with the `0x17` … `42 0B` frame family that
 // `AAP Definitions.md` already documents for Head Tracking. The frame carries a
 // stream id and a sampling period in microseconds; **a period of zero stops the
-// stream**. Verified against three captures — see `AAP Definitions.md` →
+// stream**. Verified against four captures — see `AAP Definitions.md` →
 // "Starting and Stopping Sensor Streams" for the alignment.
 //
-// The earlier constants here were structurally wrong in three ways: the length
-// field said 16 where the wire carries 17, the `10 02` field after the sequence
-// varint was missing, and the stream id was the raw data type (0x13) instead of
-// the control id (0x53). The sampling period was correct.
+// There are **two forms** of this frame, and mixing them produces a packet that
+// appears in no capture. Across 24 observed control frames the correlation is
+// exact, with no exceptions:
+//
+//   form A — no `10 02` after the sequence, bare stream id (0x10, 0x12, 0x13)
+//   form B — `10 02` after the sequence, stream id with bit 0x40 set (0x50, 0x52, 0x53)
+//
+// The payload length is not a constant: it is the real byte count, so it moves
+// with both the form and the width of the sequence varint (0x10 for form A with a
+// two-byte varint, 0x11 / 0x12 for form B).
+//
+// A session captured from the connection onwards uses **form A** to start heart
+// rate:
+//
+//   t=364.35  ->  08 13 ... period 1000000     heart rate at 1 Hz
+//   t=365.92  <-  first type-19 frame          (+1.57 s)
+//
+// Captures that begin mid-session show only form B, which is where an earlier
+// revision here got 0x53 and the `10 02` field from. That revision also fixed the
+// length at 17, which is only right for form B with a one-byte varint. This is
+// form A, matching both the fresh-session capture and the original constant.
+//
+// The Windows symptom that prompted the recheck fits: raw PPG came up but heart
+// rate never did, on a daemon sending form B into a freshly established session.
 
-/// Stream id for heart rate — data type 19 (`0x13`) with bit `0x40` set.
-pub const STREAM_HEART_RATE: u8 = 0x53;
-/// Stream id for raw PPG — data type 16 (`0x10`) with bit `0x40` set.
-pub const STREAM_PPG: u8 = 0x50;
+/// Stream id for heart rate — data type 19.
+pub const STREAM_HEART_RATE: u8 = 0x13;
+/// Stream id for raw PPG — data type 16.
+pub const STREAM_PPG: u8 = 0x10;
 
 /// One-second sampling period, in microseconds — the cadence iOS uses for heart rate.
 pub const PERIOD_HEART_RATE_US: u32 = 1_000_000;
@@ -81,21 +101,28 @@ pub const PERIOD_PPG_US: u32 = 20_000;
 
 /// Build a sensor stream control frame, ready to send via the driver.
 ///
-/// `seq` is the sequence byte the phone increments per control frame; whether
-/// the AirPods care about its value is untested, so callers should still count
-/// up rather than reuse one value. Pass `period_us = 0` to stop the stream.
+/// `seq` is the sequence number the phone increments per control frame. It is
+/// encoded as a **two-byte varint**, which is what both the captures and the
+/// original constant here used, and what makes the payload length come out at
+/// 16 — so pass a value that stays inside 14 bits and just count up. Whether the
+/// AirPods validate it is untested.
 ///
-/// Captured start frame this reproduces byte-for-byte (with `seq = 0x70`):
-/// `04 00 04 00 17 00 00 00 10 00 11 00 08 70 10 02 42 0b 08 53 10 02 1a 05 01 40 42 0f 00`
-pub fn sensor_stream(seq: u8, stream_id: u8, period_us: u32) -> [u8; 29] {
+/// Pass `period_us = 0` to stop the stream.
+///
+/// Reproduces the captured heart-rate start frame byte-for-byte (`seq = 152`
+/// there, encoding as `98 01`):
+/// `04 00 04 00 17 00 00 00 10 00 10 00 08 98 01 42 0b 08 13 10 02 1a 05 01 40 42 0f 00`
+pub fn sensor_stream(seq: u16, stream_id: u8, period_us: u32) -> [u8; 28] {
+    // Two-byte varint: low 7 bits with the continuation bit, then the next 7.
+    let s0 = 0x80 | (seq & 0x7F) as u8;
+    let s1 = ((seq >> 7) & 0x7F) as u8;
     let p = period_us.to_le_bytes();
     [
         0x04, 0x00, 0x04, 0x00, // header
         0x17, 0x00, 0x00, 0x00, // opcode
         0x10, 0x00, // service
-        0x11, 0x00, // payload length = 17
-        0x08, seq, // sequence varint
-        0x10, 0x02, // field 2 = 2
+        0x10, 0x00, // payload length = 16
+        0x08, s0, s1, // sequence, two-byte varint
         0x42, 0x0B, // field 8, 11 bytes
         0x08, stream_id, //   stream id
         0x10, 0x02, //   field 2 = 2
