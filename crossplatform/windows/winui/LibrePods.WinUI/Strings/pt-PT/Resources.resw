@@ -128,6 +128,9 @@
   <data name="DeviceInfoModel.Text" xml:space="preserve"><value>Modelo</value></data>
   <data name="DeviceInfoFirmware.Text" xml:space="preserve"><value>Firmware</value></data>
   <data name="DeviceInfoSerial.Text" xml:space="preserve"><value>Nº de série</value></data>
+  <data name="ConnectPrompt_Nearby" xml:space="preserve"><value>AirPods por perto</value></data>
+  <data name="ConnectPrompt_Connect" xml:space="preserve"><value>Ligar</value></data>
+  <data name="ConnectPrompt_Dismiss" xml:space="preserve"><value>Agora não</value></data>
   <data name="Overlay_InCase" xml:space="preserve"><value>AirPod na caixa</value></data>
   <data name="Overlay_HrOn" xml:space="preserve"><value>Monitorização cardíaca ligada</value></data>
   <data name="Overlay_HrOff" xml:space="preserve"><value>Monitorização cardíaca desligada</value></data>

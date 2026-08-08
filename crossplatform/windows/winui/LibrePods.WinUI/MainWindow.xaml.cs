@@ -113,8 +113,23 @@ public sealed partial class MainWindow : Window
     private void OnOverlay(string title, string body) =>
         DispatcherQueue.TryEnqueue(() => DevicePageView.ShowOverlay(title, body));
 
+    private Popup.ConnectPromptWindow? _connectPrompt;
+
     private void OnConnectPrompt(string name) =>
-        DispatcherQueue.TryEnqueue(() => DevicePageView.ShowConnectPrompt(name));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            // The iOS-style centred "Connect?" popup — shows even when the app is
+            // hidden to the tray. Also mirror it in the in-app InfoBar.
+            try
+            {
+                _connectPrompt?.Close();
+                _connectPrompt = new Popup.ConnectPromptWindow(name, () => _client.Connect());
+                _connectPrompt.Closed += (_, _) => _connectPrompt = null;
+                _connectPrompt.ShowPrompt();
+            }
+            catch { }
+            DevicePageView.ShowConnectPrompt(name);
+        });
 
     private void OnConnectionChanged(bool connected) =>
         DispatcherQueue.TryEnqueue(() =>
