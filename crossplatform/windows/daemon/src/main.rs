@@ -568,6 +568,12 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             let _ = drv.send(pkt);
             thread::sleep(Duration::from_millis(delay));
         }
+        // Start the heart-rate stream, then raw PPG ~160 ms later, exactly as iOS
+        // does. NOTE: on Windows this streams raw PPG (type 16) but the AirPods do
+        // not emit the computed heart rate (type 19) — replicating iOS's 0x44 /
+        // 0x59 / 0x0B pre-stream context did not change that, so the trigger is
+        // believed to live in the session setup none of the captures recorded.
+        // See crossplatform/docs/aap-packet-discovery.md.
         let _ = drv.send(&aap::sensor_stream(
             next_hr_seq(),
             aap::STREAM_HEART_RATE,
@@ -785,6 +791,9 @@ fn run_receiver(ctx: Ctx) {
         // HR diagnostics (logged every ~3s while monitoring).
         let mut hr_last_log = Instant::now();
         let (mut hr_bytes, mut hr_frames, mut hr_samples) = (0usize, 0u32, 0u32);
+        // Frames carrying the type-19 heart-rate signature `08 13 1a 12` (vs the
+        // 50 Hz type-16 raw-PPG flood, which shares the RTBuddy prefix).
+        let mut hr_type19 = 0u32;
         // Diagnose stale-"connected": throttled log of the raw driver status when
         // it isn't a clean 2, so we can see what "cased" vs "both-out-resting"
         // actually report (the teardown decision hinges on them differing).
@@ -811,15 +820,20 @@ fn run_receiver(ctx: Ctx) {
                         if hr::contains_frame_prefix(data) {
                             hr_frames += 1;
                             ctx.hr_stream_live.store(true, Ordering::Relaxed);
-                            // Dump the raw bytes of an HR-prefixed frame so we can
-                            // see why the decoder rejects it (bpm_samples stays 0).
-                            let dump: String = data
-                                .iter()
-                                .take(80)
-                                .map(|b| format!("{b:02x}"))
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            log(&format!("HR frame ({} bytes): {dump}", data.len()));
+                            // Only the 1 Hz heart-rate stream carries `08 13 1a 12`
+                            // (type 19, 18-byte payload). Dump those; the 50 Hz
+                            // type-16 raw-PPG frames share the prefix and would
+                            // drown the log, so we only count them (hr_frames).
+                            if data.windows(4).any(|w| w == [0x08, 0x13, 0x1a, 0x12]) {
+                                hr_type19 += 1;
+                                let dump: String = data
+                                    .iter()
+                                    .take(48)
+                                    .map(|b| format!("{b:02x}"))
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
+                                log(&format!("HR type-19 ({} bytes): {dump}", data.len()));
+                            }
                         }
                         let samples = hr_decoder.feed(data);
                         hr_samples += samples.len() as u32;
@@ -840,11 +854,12 @@ fn run_receiver(ctx: Ctx) {
                         }
                         if hr_last_log.elapsed() >= Duration::from_secs(3) {
                             log(&format!(
-                                "HR diag: bytes={hr_bytes} frame_prefix_hits={hr_frames} bpm_samples={hr_samples}"
+                                "HR diag: bytes={hr_bytes} prefix={hr_frames} type19={hr_type19} bpm_samples={hr_samples}"
                             ));
                             hr_last_log = Instant::now();
                             hr_bytes = 0;
                             hr_frames = 0;
+                            hr_type19 = 0;
                             hr_samples = 0;
                         }
                     } else if ctx.state.lock().unwrap().heart_rate.take().is_some() {
