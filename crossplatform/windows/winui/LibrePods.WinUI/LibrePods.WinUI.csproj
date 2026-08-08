@@ -49,42 +49,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Ship the icons next to the exe and in the .pri so both ms-appx:///Assets
-         URIs (tray) and on-disk paths (AppWindow.SetIcon) resolve at runtime. -->
+    <!-- App/tray icons next to the exe (ms-appx:///Assets URIs + AppWindow.SetIcon). -->
     <Content Include="Assets\tray.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Assets\app.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Assets\icon.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\airpods.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <!-- AirPods case art for the connection island (copied from the Android
-         res-apple drawables). IslandView picks one by device name and falls
-         back to airpods.png. -->
-    <Content Include="Assets\airpods_1_case.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\airpods_2_case.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\airpods_3_case.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\airpods_4_case.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\airpods_pro_1_case.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\airpods_pro_2_case.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\airpods_pro_3_case.png">
+    <!-- All product/art PNGs via a wildcard — the full AirPods render set (buds /
+         left / right / case / full, per model) copied from the Android app's
+         res-apple drawables. Wildcard so new art ships without listing each file. -->
+    <Content Include="Assets\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
