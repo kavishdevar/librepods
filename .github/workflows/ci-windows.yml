@@ -1,0 +1,81 @@
+name: Windows CI (frontend)
+
+# Builds the native Windows frontend: the Rust daemon (librepodsd) + tray
+# (librepods-tray) and the WinUI 3 app (librepods-winui). The two kernel drivers
+# (AAP L2CAP + hi-res mic) are NOT built here — they need the WDK and test/EV
+# signing, which is a separate, manual pipeline.
+
+on:
+  push:
+    branches: [cross-platform]
+    paths:
+      - 'crossplatform/windows/**'
+      - '.github/workflows/ci-windows.yml'
+  pull_request:
+    paths:
+      - 'crossplatform/windows/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Rust: daemon + tray (native msvc target) --------------------------
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            crossplatform/windows/daemon/target
+            crossplatform/windows/tray/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('crossplatform/windows/**/Cargo.lock') }}
+
+      - name: Build daemon (librepodsd)
+        working-directory: crossplatform/windows/daemon
+        run: cargo build --release
+
+      - name: Build tray (librepods-tray)
+        working-directory: crossplatform/windows/tray
+        run: cargo build --release
+
+      # ---- .NET: WinUI 3 app (unpackaged, self-contained) --------------------
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore WinUI app
+        working-directory: crossplatform/windows/winui
+        run: dotnet restore LibrePods.WinUI/LibrePods.WinUI.csproj
+
+      - name: Build WinUI app
+        working-directory: crossplatform/windows/winui
+        # If the WindowsAppSDK PRI/priconfig MSBuild tasks fail on the runner, a
+        # `dotnet workload restore` (or the "WinUI .NET app dev tools" component)
+        # may be needed — the app is unpackaged (WindowsPackageType=None), which
+        # normally avoids the Appx tooling.
+        run: dotnet build LibrePods.WinUI/LibrePods.WinUI.csproj -c Release -p:Platform=x64 --no-restore
+
+      # ---- Collect + upload artifacts ----------------------------------------
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item crossplatform/windows/daemon/target/release/librepodsd.exe dist/
+          Copy-Item crossplatform/windows/tray/target/release/librepods-tray.exe dist/
+          $winui = "crossplatform/windows/winui/LibrePods.WinUI/bin/x64/Release/net10.0-windows10.0.19041.0/win-x64"
+          Copy-Item -Recurse $winui dist/winui
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: librepods-windows-frontend
+          path: dist
+          if-no-files-found: error
