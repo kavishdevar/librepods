@@ -45,23 +45,28 @@ jobs:
         working-directory: crossplatform/windows/tray
         run: cargo build --release
 
-      # ---- .NET: WinUI 3 app (unpackaged, self-contained) --------------------
+      # ---- WinUI 3 app (unpackaged, self-contained) --------------------------
+      # WinUI resource generation runs the PRI MSBuild task
+      # (Microsoft.Build.Packaging.Pri.Tasks.dll), which is a .NET *Framework*
+      # assembly. `dotnet build` hosts MSBuild on .NET (Core) and cannot load it
+      # → MSB4062. Visual Studio's msbuild.exe is .NET Framework and loads it, so
+      # build the WinUI project with VS MSBuild. The .NET 10 SDK is still needed
+      # for the net10.0 target resolver.
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
       - name: Restore WinUI app
         working-directory: crossplatform/windows/winui
-        run: dotnet restore LibrePods.WinUI/LibrePods.WinUI.csproj
+        run: msbuild LibrePods.WinUI/LibrePods.WinUI.csproj -t:Restore -p:Configuration=Release -p:Platform=x64
 
       - name: Build WinUI app
         working-directory: crossplatform/windows/winui
-        # If the WindowsAppSDK PRI/priconfig MSBuild tasks fail on the runner, a
-        # `dotnet workload restore` (or the "WinUI .NET app dev tools" component)
-        # may be needed — the app is unpackaged (WindowsPackageType=None), which
-        # normally avoids the Appx tooling.
-        run: dotnet build LibrePods.WinUI/LibrePods.WinUI.csproj -c Release -p:Platform=x64 --no-restore
+        run: msbuild LibrePods.WinUI/LibrePods.WinUI.csproj -t:Build -p:Configuration=Release -p:Platform=x64 -p:RestorePackages=false
 
       # ---- Collect + upload artifacts ----------------------------------------
       - name: Collect artifacts
@@ -70,8 +75,11 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item crossplatform/windows/daemon/target/release/librepodsd.exe dist/
           Copy-Item crossplatform/windows/tray/target/release/librepods-tray.exe dist/
-          $winui = "crossplatform/windows/winui/LibrePods.WinUI/bin/x64/Release/net10.0-windows10.0.19041.0/win-x64"
-          Copy-Item -Recurse $winui dist/winui
+          # Find the WinUI output dir by locating the exe (path varies with TFM/RID).
+          $exe = Get-ChildItem -Recurse -Filter librepods-winui.exe `
+            crossplatform/windows/winui/LibrePods.WinUI/bin | Select-Object -First 1
+          if (-not $exe) { throw "WinUI build output (librepods-winui.exe) not found" }
+          Copy-Item -Recurse $exe.Directory.FullName dist/winui
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
