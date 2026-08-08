@@ -764,11 +764,17 @@ fn run_receiver(ctx: Ctx) {
         // it isn't a clean 2, so we can see what "cased" vs "both-out-resting"
         // actually report (the teardown decision hinges on them differing).
         let mut status_diag = Instant::now();
+        // Last time an AAP packet actually arrived. The driver State drops to 0
+        // both on a transient channel re-negotiation (e.g. both buds just left the
+        // ears) and on a real disconnect (cased / on the phone) — status alone
+        // can't tell them apart, so data flow is the tie-breaker.
+        let mut last_data = Instant::now();
         loop {
             let mut got_data = false;
             if let Ok(n) = driver.recv(2000, &mut buf) {
                 if n > 0 {
                     got_data = true;
+                    last_data = Instant::now();
                     let data = &buf[..n];
                     // Forward the raw packet to the full app (if attached) so it
                     // runs its own AAP session over us.
@@ -1008,22 +1014,25 @@ fn run_receiver(ctx: Ctx) {
                 if !matches!(st, Ok(2)) && status_diag.elapsed() >= Duration::from_secs(2) {
                     let both_out = !prev_ear[0] && !prev_ear[1];
                     log(&format!(
-                        "status diag: st={st:?} both_out={both_out} fails={status_fails}"
+                        "status diag: st={st:?} both_out={both_out} fails={status_fails} data_age={}ms",
+                        last_data.elapsed().as_millis()
                     ));
                     status_diag = Instant::now();
                 }
                 if matches!(st, Ok(2)) {
                     status_fails = 0;
                 } else {
-                    // Removing both AirPods from the ears makes them idle the AAP
-                    // link (a soft, non-2 status) — that is NOT a disconnect, so
-                    // don't tear down (doing so dropped the driver handle and
-                    // churned the BT link → "disconnects and comes back"). Only a
-                    // hard driver error (device actually gone, e.g. cased) counts
-                    // while unworn.
-                    let both_out = !prev_ear[0] && !prev_ear[1];
-                    let soft_idle = st.is_ok();
-                    if both_out && soft_idle {
+                    // The driver State is not "connected". That happens both on a
+                    // transient channel re-negotiation (e.g. both buds just left the
+                    // ears — tearing down here dropped the driver handle and churned
+                    // the BT link, "disconnects and comes back") and on a real loss
+                    // (cased / handed to the phone → the remote closes the channel).
+                    // status can't distinguish them, so use data flow: while AAP
+                    // packets are still arriving the link is alive — don't tear down.
+                    // Cased/gone goes silent, so status_fails climbs to the 3s
+                    // teardown.
+                    let recent_data = last_data.elapsed() < Duration::from_secs(3);
+                    if recent_data {
                         status_fails = 0;
                     } else {
                         status_fails += 1;
