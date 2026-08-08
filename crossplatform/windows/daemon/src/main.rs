@@ -482,7 +482,7 @@ fn set_heart_rate(ctx: &Ctx, on: bool) {
         ctx.overlay("Heart rate monitoring on");
     } else if !on && was {
         if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
-            let _ = drv.send(&aap::HR_STOP);
+            let _ = drv.send(&aap::HR_UNSUBSCRIBE);
         }
         ctx.state.lock().unwrap().heart_rate = None;
         ctx.overlay("Heart rate monitoring off");
@@ -534,10 +534,12 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
                 return HrOutcome::GiveUp;
             }
         };
-        // stopSessionLocked reset → init (connect0/caps0/connect4/caps4) →
-        // HR_ENABLE → 120 ms → HR_START. Same order/delays as the Android impl.
-        let _ = drv.send(&aap::HR_STOP);
-        thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
+        // AACP 1.3 init (connect0/caps0/connect4/caps4) then the iOS-26 sensor
+        // subscription (opcode 0x44). Ground-truth capture (AAP Definitions.md →
+        // "Sensor Subscription") showed iOS starts heart rate with 0x44, NOT the
+        // 0x30 control id + 0x17 START frame the old path used — that is why the
+        // stream never armed. The init packets are kept (unrefuted: the capture
+        // began with the session already open); 0x44 replaces enable+start.
         let init: [(&[u8], u64); 4] = [
             (&aap::HR_CONNECT_SERVICE_0, 180),
             (&aap::HR_CAPABILITIES_SERVICE_0, 220),
@@ -551,9 +553,7 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
             let _ = drv.send(pkt);
             thread::sleep(Duration::from_millis(delay));
         }
-        let _ = drv.send(&aap::HR_ENABLE);
-        thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
-        let _ = drv.send(&aap::HR_START);
+        let _ = drv.send(&aap::HR_SUBSCRIBE);
 
         // Wait up to FIRST_SAMPLE_TIMEOUT for the decoder to yield a sample,
         // polling so we react promptly to the user turning HR off.

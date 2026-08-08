@@ -64,6 +64,25 @@ pub const HR_STOP: [u8; 28] = [
     0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00,
 ];
 
+// ---- iOS 26 sensor subscription (opcode 0x44) — the REAL heart-rate enable ----
+//
+// Ground-truth capture (iOS 26.5.2 <-> AirPods Pro 3, fw 8B41; see
+// `AAP Definitions.md` → "Sensor Subscription") showed the phone does NOT use the
+// 0x30 control id nor the 0x17 START frame above to start heart rate. It sends
+// opcode 0x44 declaring the COMPLETE set of sensors it wants: `subcmd | count |
+// sensor-ids`. Sensor 0x03 carries HEARTRATE (inner type 19) + raw PPG. The
+// command is absolute, so re-declaring the set (re)subscribes.
+
+/// Subscribe the heart-rate sensor set. subcmd=0x0004, count=2, ids 0x03 (heart
+/// rate / PPG) + 0x07 (co-active alongside HR in the iOS capture; mirrored here
+/// so the first attempt replicates the known-working command exactly).
+pub const HR_SUBSCRIBE: [u8; 12] = [
+    0x04, 0x00, 0x04, 0x00, 0x44, 0x00, 0x04, 0x00, 0x02, 0x00, 0x03, 0x07,
+];
+/// Unsubscribe: the same 0x44 command declaring an empty set (count 0).
+pub const HR_UNSUBSCRIBE: [u8; 10] =
+    [0x04, 0x00, 0x04, 0x00, 0x44, 0x00, 0x04, 0x00, 0x00, 0x00];
+
 /// True if `data` is a 0x58 uplink audio packet (carries AAC-ELD frames).
 pub fn is_audio_packet(data: &[u8]) -> bool {
     data.len() >= 8
