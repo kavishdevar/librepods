@@ -186,14 +186,14 @@ public sealed class TrayController : IDisposable
                 LineAlignment = StringAlignment.Center,
             };
 
-            // Shrink from a large face until the number fits ~96% of the box, so a
-            // big "9" and a big "100" both fill the icon.
-            float emSize = 60f;
+            // Shrink from a large face until the number nearly fills the box, so a
+            // big "9" and a big "100" both read large in the tray.
+            float emSize = 64f;
             while (emSize > 12f)
             {
                 using var probe = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
                 var m = g.MeasureString(text, probe);
-                if (m.Width <= size * 0.96f && m.Height <= size) break;
+                if (m.Width <= size * 1.0f && m.Height <= size) break;
                 emSize -= 2f;
             }
             using var font = new Font("Segoe UI", emSize, FontStyle.Bold, GraphicsUnit.Pixel);
