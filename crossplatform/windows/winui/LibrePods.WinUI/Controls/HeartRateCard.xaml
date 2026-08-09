@@ -21,7 +21,7 @@
                      Severity="Warning"
                      IsOpen="True"
                      IsClosable="False" />
-            <ToggleSwitch x:Name="HeartRateSwitch"
+            <ToggleSwitch OnContent="{Binding [Toggle_On], Source={StaticResource Loc}}" OffContent="{Binding [Toggle_Off], Source={StaticResource Loc}}" x:Name="HeartRateSwitch"
                           Header="{Binding [HeartRateSwitch_Header], Source={StaticResource Loc}}"
                           Toggled="HeartRate_Toggled" />
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">

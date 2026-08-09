@@ -68,7 +68,11 @@ public sealed partial class MainWindow : Window
         // SettingsItem only exists once the control template is applied (Loaded).
         NavView.Loaded += (_, _) => LocalizeSettingsNavItem();
         Services.Loc.Instance.PropertyChanged += (_, _) =>
-            DispatcherQueue.TryEnqueue(LocalizeSettingsNavItem);
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                LocalizeSettingsNavItem();
+                if (_lastSnapshot is { } s) RenderSnapshot(s);
+            });
 
         // Close hides to tray (the app keeps running as an IPC client).
         AppWindow.Closing += OnClosing;
@@ -124,6 +128,15 @@ public sealed partial class MainWindow : Window
     private void OnSnapshot(Snapshot s) =>
         DispatcherQueue.TryEnqueue(() =>
         {
+            _lastSnapshot = s;
+            RenderSnapshot(s);
+        });
+
+    // Re-render the last snapshot on a language change so code-picked strings (the
+    // header status, mic state, ANC mode name…) — which are only set when a snapshot
+    // arrives — refresh into the new language instead of lingering in the old one.
+    private void RenderSnapshot(Snapshot s)
+    {
             _connected = s.Connected;
 
             // The device NavigationViewItem mirrors the header: name, a model-aware
@@ -161,7 +174,7 @@ public sealed partial class MainWindow : Window
 
             DevicePageView.Update(s);
             SettingsPageView.UpdateDeviceInfo(s);
-        });
+    }
 
     /// The lowest valid (<=100) battery reading among the given components, or null
     /// when none report. The 0xFF "absent" sentinel (>100) is ignored.
@@ -180,6 +193,7 @@ public sealed partial class MainWindow : Window
     private Popup.ConnectPromptWindow? _connectPrompt;
     private bool _connected;
     private string? _navArtFamily;
+    private Snapshot? _lastSnapshot;
 
     private void OnConnectPrompt(string name) =>
         DispatcherQueue.TryEnqueue(() =>

@@ -80,6 +80,8 @@
   <!-- ===== VolumeCard ===== -->
   <data name="VolumeTitle.Text" xml:space="preserve"><value>Volume</value></data>
   <data name="MuteToggle.Content" xml:space="preserve"><value>Muet</value></data>
+  <data name="Toggle_On" xml:space="preserve"><value>Activé</value></data>
+  <data name="Toggle_Off" xml:space="preserve"><value>Désactivé</value></data>
 
   <!-- ===== AdaptiveNoiseCard ===== -->
   <data name="AdaptiveNoiseTitle.Text" xml:space="preserve"><value>Bruit adaptatif</value></data>

@@ -13,7 +13,7 @@
             <TextBlock Text="{Binding [MicTitle_Text], Source={StaticResource Loc}}" Style="{ThemeResource BodyStrongTextBlockStyle}" />
             <TextBlock x:Name="MicStatusText"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <ToggleSwitch x:Name="MicAutoSwitch"
+            <ToggleSwitch OnContent="{Binding [Toggle_On], Source={StaticResource Loc}}" OffContent="{Binding [Toggle_Off], Source={StaticResource Loc}}" x:Name="MicAutoSwitch"
                           Header="{Binding [MicAutoSwitch_Header], Source={StaticResource Loc}}"
                           Toggled="MicAuto_Toggled" />
             <ToggleButton x:Name="MicManualToggle"
