@@ -1370,28 +1370,38 @@ fn main() {
         thread::spawn(move || unsafe { l2cap_tx_server(c) });
     }
 
-    // BLE proximity: when the AirPods advertise nearby and we're neither
-    // connected nor already accepted, prompt "connect?" (debounced ~20 s).
+    // BLE proximity: prompt "connect?" ONCE when the AirPods appear. The watcher
+    // fires on every advertisement (several/sec), so a plain time debounce still
+    // re-asks forever while they sit nearby — spammy, and it ignores a dismissed
+    // prompt. Instead edge-trigger: fire once, then stay quiet until the buds have
+    // been ABSENT (no advertisement for a while — cased or out of range) and return,
+    // which is the natural "ask again on the next case-open" behaviour.
     if mac != 0 {
         let c = ctx.clone();
         let c_scan = ctx.clone();
-        let last_prompt: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        // (prompted_this_visit, last_advertisement_seen)
+        let prox: Arc<Mutex<(bool, Instant)>> = Arc::new(Mutex::new((false, Instant::now())));
         thread::spawn(move || {
             le::watch_nearby(
                 move || {
-                    if c.state.lock().unwrap().connected
+                    let now = Instant::now();
+                    let mut p = prox.lock().unwrap();
+                    // A >45 s gap since the last advertisement means they went away;
+                    // re-arm so their next appearance prompts once more.
+                    if now.duration_since(p.1) > Duration::from_secs(45) {
+                        p.0 = false;
+                    }
+                    p.1 = now;
+                    if p.0
+                        || c.state.lock().unwrap().connected
                         || c.connect_requested.load(Ordering::Relaxed)
                     {
                         return;
                     }
-                    let now = Instant::now();
-                    let mut lp = last_prompt.lock().unwrap();
-                    if lp.map_or(true, |t| now.duration_since(t) > Duration::from_secs(20)) {
-                        *lp = Some(now);
-                        drop(lp);
-                        c.send_event(&Event::ConnectPrompt { name: c.dev_name.lock().unwrap().clone() });
-                        log("ble: AirPods nearby → connect prompt");
-                    }
+                    p.0 = true; // prompted for this visit — don't re-ask until they leave
+                    drop(p);
+                    c.send_event(&Event::ConnectPrompt { name: c.dev_name.lock().unwrap().clone() });
+                    log("ble: AirPods nearby → connect prompt");
                 },
                 // Only scan while idle (disconnected) — no BLE radio during audio.
                 move || !c_scan.state.lock().unwrap().connected,
