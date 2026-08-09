@@ -61,7 +61,13 @@ public sealed class Loc : INotifyPropertyChanged
         if (!_map.ContainsKey(c)) c = Fallback;
         if (string.Equals(c, _culture, StringComparison.OrdinalIgnoreCase)) return;
         _culture = c;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs("Item[]"));
+        var h = PropertyChanged;
+        if (h is null) return;
+        // WinUI (unlike WPF) doesn't reliably refresh `{Binding [key]}` on an
+        // "Item[]" notification — raise the "all properties changed" signal (empty
+        // string) so every binding sourced on this object re-fetches.
+        h(this, new PropertyChangedEventArgs(string.Empty));
+        h(this, new PropertyChangedEventArgs("Item[]"));
     }
 
     private static Dictionary<string, string> Load(string culture)
@@ -70,7 +76,15 @@ public sealed class Loc : INotifyPropertyChanged
         try
         {
             var asm = typeof(Loc).Assembly;
-            using var stream = asm.GetManifestResourceStream($"loc.{culture}");
+            // Find the embedded resw by name — exact LogicalName first, else any
+            // manifest name containing the culture (in case a namespace prefix or
+            // mangling was applied), so loading never silently returns empty.
+            var names = asm.GetManifestResourceNames();
+            var resName = System.Array.Find(names, n => n == $"loc.{culture}")
+                ?? System.Array.Find(names, n => n.Contains(culture) && n.EndsWith(".resw", StringComparison.OrdinalIgnoreCase))
+                ?? System.Array.Find(names, n => n.Contains(culture));
+            if (resName is null) return dict;
+            using var stream = asm.GetManifestResourceStream(resName);
             if (stream is null) return dict;
             var doc = XDocument.Load(stream);
             foreach (var data in doc.Root?.Elements("data") ?? System.Linq.Enumerable.Empty<XElement>())
