@@ -490,6 +490,12 @@ fn next_hr_seq() -> u16 {
     let n = HR_SEQ.fetch_add(1, Ordering::Relaxed);
     128 + (n % (16_384 - 128))
 }
+/// Fixed sequence number for the heart-rate START frame, matching the exact
+/// constant the working Android client bakes in (`08 e3 46` = varint 9059). The PR
+/// author flagged our incrementing seq as the one remaining difference from his
+/// packet; a request/sequence id shouldn't matter, but on Windows it's worth ruling
+/// out, and using a constant also mirrors his client re-sending the same bytes.
+const HR_START_SEQ: u16 = 9059; // 0x2363 → varint e3 46
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
 /// Consecutive enable attempts (each an ~8 s sample wait) with no reading before
@@ -619,7 +625,7 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
         let _ = drv.send(&aap::HR_ENABLE);
         thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
         let _ = drv.send(&aap::sensor_stream(
-            next_hr_seq(),
+            HR_START_SEQ, // exact seq from the working Android constant (e3 46)
             aap::STREAM_HEART_RATE,
             aap::PERIOD_HEART_RATE_US,
         ));
