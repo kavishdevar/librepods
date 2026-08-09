@@ -36,6 +36,12 @@ public sealed partial class DevicePage : UserControl
         // Show the card only when the user opts in via Settings ▸ Experimental.
         HeartRateCard.Visibility =
             AppSettings.EnableHeartRate ? Visibility.Visible : Visibility.Collapsed;
+
+        // Daemon overlays are one-shot strings resolved when they arrive, so one
+        // shown before a language change stays in the old language. Dismiss it on a
+        // culture switch (the next overlay renders in the new language).
+        Services.Loc.Instance.PropertyChanged += (_, _) =>
+            DispatcherQueue.TryEnqueue(() => OverlayBar.IsOpen = false);
     }
 
     /// Re-read the heart-rate opt-in (call after the Settings toggle changes so the
