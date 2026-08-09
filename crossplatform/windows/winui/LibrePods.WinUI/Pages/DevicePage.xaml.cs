@@ -36,6 +36,12 @@ public sealed partial class DevicePage : UserControl
         // Show the card only when the user opts in via Settings ▸ Experimental.
         HeartRateCard.Visibility =
             AppSettings.EnableHeartRate ? Visibility.Visible : Visibility.Collapsed;
+
+        // Daemon overlays are one-shot strings resolved when they arrive, so one
+        // shown before a language change stays in the old language. Dismiss it on a
+        // culture switch (the next overlay renders in the new language).
+        Services.Loc.Instance.PropertyChanged += (_, _) =>
+            DispatcherQueue.TryEnqueue(() => OverlayBar.IsOpen = false);
     }
 
     /// Re-read the heart-rate opt-in (call after the Settings toggle changes so the
@@ -81,6 +87,9 @@ public sealed partial class DevicePage : UserControl
         ConnectPromptBar.IsOpen = true;
     }
 
+    /// Hide the "nearby — connect?" prompt (e.g. once the device is connected).
+    public void DismissConnectPrompt() => ConnectPromptBar.IsOpen = false;
+
     /// The events pipe dropped — surface it in the header.
     public void ShowWaitingForDaemon() => Header.ShowWaitingForDaemon();
 
@@ -93,5 +102,8 @@ public sealed partial class DevicePage : UserControl
         Grid.SetRow(RightColumn, wide ? 0 : 1);
         Grid.SetColumn(RightColumn, wide ? 1 : 0);
         Col1.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        // In one-column mode the collapsed Col1 still reserves ColumnSpacing (16px),
+        // leaving a phantom gap on the right — drop the spacing when single-column.
+        CardsGrid.ColumnSpacing = wide ? 16 : 0;
     }
 }

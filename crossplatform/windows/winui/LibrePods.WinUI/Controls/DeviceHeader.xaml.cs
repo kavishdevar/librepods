@@ -1,9 +1,11 @@
+using System;
 using LibrePods.WinUI.Ipc;
 using LibrePods.WinUI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace LibrePods.WinUI.Controls;
 
@@ -13,6 +15,10 @@ namespace LibrePods.WinUI.Controls;
 public sealed partial class DeviceHeader : UserControl
 {
     public DaemonClient? Client { get; set; }
+
+    // The artwork family currently shown, so we only reload the image when the
+    // detected model actually changes (snapshots arrive several times a second).
+    private string? _artFamily;
 
     public DeviceHeader()
     {
@@ -25,6 +31,15 @@ public sealed partial class DeviceHeader : UserControl
         // Don't clobber the name while the user is editing it.
         if (NameEdit.Visibility != Visibility.Visible)
             DeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? "LibrePods" : s.DevName;
+
+        // Model-aware product image (falls back to the generic airpods.png until
+        // the 0x1D metadata arrives / for unknown models).
+        var family = DeviceArt.Family(s.Model);
+        if (family != _artFamily)
+        {
+            _artFamily = family;
+            DeviceImage.Source = new BitmapImage(new Uri(DeviceArt.MainImage(s.Model)));
+        }
 
         StatusText.Text = Localize.Get(s.Connected ? "Status_Connected" : "Status_Disconnected");
         StatusDot.Fill = new SolidColorBrush(

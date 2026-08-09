@@ -1,7 +1,8 @@
 <Application
     x:Class="LibrePods.WinUI.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:services="using:LibrePods.WinUI.Services">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -32,6 +33,10 @@
                     <SolidColorBrush x:Key="LibrePodsAccentBrush" Color="{ThemeResource SystemColorHighlightColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
+
+            <!-- Live localization service — the ONE Loc instance; code shares it via
+                 Loc.Instance (published from its ctor). UI text binds {StaticResource Loc}. -->
+            <services:Loc x:Key="Loc" />
 
             <!-- Shared card look used by every device/settings section. Lifted to
                  app scope so each UserControl (Controls/*, Pages/*) can reference

@@ -59,7 +59,7 @@
                                VerticalAlignment="Center"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <HyperlinkButton x:Name="ConnectButton"
-                                     x:Uid="HeaderConnectBtn"
+                                     Content="{Binding [HeaderConnectBtn_Content], Source={StaticResource Loc}}"
                                      Padding="0"
                                      Visibility="Collapsed"
                                      Click="Connect_Click" />
@@ -73,7 +73,7 @@
                     VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <FontIcon Glyph="&#xE8CD;" FontSize="14" />
-                    <TextBlock x:Uid="HeaderDisconnectBtn" />
+                    <TextBlock Text="{Binding [HeaderDisconnectBtn_Text], Source={StaticResource Loc}}" />
                 </StackPanel>
             </Button>
         </Grid>

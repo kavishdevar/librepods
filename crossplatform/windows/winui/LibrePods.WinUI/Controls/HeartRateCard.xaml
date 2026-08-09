@@ -10,26 +10,26 @@
     <!-- Heart rate (AirPods Pro 3, experimental) -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="8">
-            <TextBlock x:Uid="HeartRateTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-            <TextBlock x:Uid="HeartRateSubtitle"
+            <TextBlock Text="{Binding [HeartRateTitle_Text], Source={StaticResource Loc}}" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="{Binding [HeartRateSubtitle_Text], Source={StaticResource Loc}}"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                        Style="{ThemeResource CaptionTextBlockStyle}"
                        TextWrapping="Wrap" />
             <!-- Honest heads-up: the feature is a work-in-progress test and may
                  not produce readings yet. Non-closable so it always shows. -->
-            <InfoBar x:Uid="HeartRateWarning"
+            <InfoBar Title="{Binding [HeartRateWarning_Title], Source={StaticResource Loc}}" Message="{Binding [HeartRateWarning_Message], Source={StaticResource Loc}}"
                      Severity="Warning"
                      IsOpen="True"
                      IsClosable="False" />
-            <ToggleSwitch x:Name="HeartRateSwitch"
-                          x:Uid="HeartRateSwitch"
+            <ToggleSwitch OnContent="{Binding [Toggle_On], Source={StaticResource Loc}}" OffContent="{Binding [Toggle_Off], Source={StaticResource Loc}}" x:Name="HeartRateSwitch"
+                          Header="{Binding [HeartRateSwitch_Header], Source={StaticResource Loc}}"
                           Toggled="HeartRate_Toggled" />
             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
                 <TextBlock x:Name="HeartRateBpm"
                            Text="—"
                            Style="{ThemeResource TitleTextBlockStyle}"
                            Foreground="{ThemeResource LibrePodsAccentBrush}" />
-                <TextBlock x:Uid="HeartRateBpmLabel"
+                <TextBlock Text="{Binding [HeartRateBpmLabel_Text], Source={StaticResource Loc}}"
                            VerticalAlignment="Bottom"
                            Margin="0,0,0,4"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

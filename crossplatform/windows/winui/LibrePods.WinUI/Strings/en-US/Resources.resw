@@ -89,6 +89,8 @@
   <!-- ===== VolumeCard ===== -->
   <data name="VolumeTitle.Text" xml:space="preserve"><value>Volume</value></data>
   <data name="MuteToggle.Content" xml:space="preserve"><value>Mute</value></data>
+  <data name="Toggle_On" xml:space="preserve"><value>On</value></data>
+  <data name="Toggle_Off" xml:space="preserve"><value>Off</value></data>
 
   <!-- ===== AdaptiveNoiseCard ===== -->
   <data name="AdaptiveNoiseTitle.Text" xml:space="preserve"><value>Adaptive Noise</value></data>
@@ -130,6 +132,11 @@
   <data name="ThemeSystemRadio.Content" xml:space="preserve"><value>System</value></data>
   <data name="ThemeLightRadio.Content" xml:space="preserve"><value>Light</value></data>
   <data name="ThemeDarkRadio.Content" xml:space="preserve"><value>Dark</value></data>
+  <data name="SettingsLanguage.Text" xml:space="preserve"><value>Language</value></data>
+  <data name="SettingsLanguageHint.Text" xml:space="preserve"><value>Override the app's display language — changes immediately.</value></data>
+  <data name="LangSystem.Content" xml:space="preserve"><value>System default</value></data>
+  <data name="SettingsLanguageRestart.Title" xml:space="preserve"><value>Restart to apply</value></data>
+  <data name="SettingsLanguageRestart.Message" xml:space="preserve"><value>The language changes fully the next time you open LibrePods.</value></data>
   <data name="SettingsDefaultFrontend.Text" xml:space="preserve"><value>Default front-end</value></data>
   <data name="SettingsDefaultFrontendHint.Text" xml:space="preserve"><value>Choose which UI the tray's "Open App" launches next time.</value></data>
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Refresh state</value></data>

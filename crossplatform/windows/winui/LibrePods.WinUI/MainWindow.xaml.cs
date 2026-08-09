@@ -5,6 +5,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Graphics;
 
 namespace LibrePods.WinUI;
@@ -62,6 +63,17 @@ public sealed partial class MainWindow : Window
         // Start on the device page.
         NavView.SelectedItem = DeviceNavItem;
 
+        // The built-in NavigationView Settings item is OS-localized; re-label it
+        // from our Loc service so it follows the in-app language too (live). The
+        // SettingsItem only exists once the control template is applied (Loaded).
+        NavView.Loaded += (_, _) => LocalizeSettingsNavItem();
+        Services.Loc.Instance.PropertyChanged += (_, _) =>
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                LocalizeSettingsNavItem();
+                if (_lastSnapshot is { } s) RenderSnapshot(s);
+            });
+
         // Close hides to tray (the app keeps running as an IPC client).
         AppWindow.Closing += OnClosing;
 
@@ -104,25 +116,93 @@ public sealed partial class MainWindow : Window
         SettingsPageView.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// Re-label the built-in NavigationView Settings item from the Loc service.
+    private void LocalizeSettingsNavItem()
+    {
+        if (NavView.SettingsItem is NavigationViewItem item)
+            item.Content = Localize.Get("SettingsTitle.Text");
+    }
+
     // ---- Daemon events (marshalled to the UI thread) -----------------------
 
     private void OnSnapshot(Snapshot s) =>
         DispatcherQueue.TryEnqueue(() =>
         {
-            // The device NavigationViewItem mirrors the header (name only).
+            _lastSnapshot = s;
+            RenderSnapshot(s);
+        });
+
+    // Re-render the last snapshot on a language change so code-picked strings (the
+    // header status, mic state, ANC mode name…) — which are only set when a snapshot
+    // arrives — refresh into the new language instead of lingering in the old one.
+    private void RenderSnapshot(Snapshot s)
+    {
+            _connected = s.Connected;
+
+            // The device NavigationViewItem mirrors the header: name, a model-aware
+            // icon, and a compact battery summary (visible in the expanded pane).
             NavDeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? "LibrePods" : s.DevName;
+
+            var family = DeviceArt.Family(s.Model);
+            if (family != _navArtFamily)
+            {
+                _navArtFamily = family;
+                try { NavDeviceIcon.Source = new BitmapImage(new Uri(DeviceArt.MainImage(s.Model))); }
+                catch { }
+            }
+
+            // Lowest earbud reading (or the headphone band for Max) — one number is
+            // enough at nav width; the full L/R/Case breakdown is on the card.
+            byte? summary = LowestReading(s.Battery.Left, s.Battery.Right, s.Battery.Headphone);
+            if (summary is byte v)
+            {
+                NavDeviceBattery.Text = $"{v}%";
+                NavDeviceBattery.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                NavDeviceBattery.Visibility = Visibility.Collapsed;
+            }
+
+            // A live connection dismisses any stale "Connect?" prompt (in-app InfoBar
+            // + the centred popup window).
+            if (s.Connected)
+            {
+                DevicePageView.DismissConnectPrompt();
+                try { _connectPrompt?.Close(); } catch { }
+            }
+
             DevicePageView.Update(s);
             SettingsPageView.UpdateDeviceInfo(s);
-        });
+    }
+
+    /// The lowest valid (<=100) battery reading among the given components, or null
+    /// when none report. The 0xFF "absent" sentinel (>100) is ignored.
+    private static byte? LowestReading(params byte?[] values)
+    {
+        byte? lowest = null;
+        foreach (var value in values)
+            if (value is byte v and <= 100 && (lowest is null || v < lowest))
+                lowest = v;
+        return lowest;
+    }
 
     private void OnOverlay(string title, string body) =>
         DispatcherQueue.TryEnqueue(() => DevicePageView.ShowOverlay(title, body));
 
     private Popup.ConnectPromptWindow? _connectPrompt;
+    private bool _connected;
+    private string? _navArtFamily;
+    private Snapshot? _lastSnapshot;
 
     private void OnConnectPrompt(string name) =>
         DispatcherQueue.TryEnqueue(() =>
         {
+            // Already connected — a proximity "Connect?" prompt is stale (the daemon
+            // can still emit it from a BLE advertisement while the AACP session is
+            // live). Suppress both the popup and the in-app InfoBar.
+            if (_connected) return;
+
             // The iOS-style centred "Connect?" popup — shows even when the app is
             // hidden to the tray. Also mirror it in the in-app InfoBar.
             try

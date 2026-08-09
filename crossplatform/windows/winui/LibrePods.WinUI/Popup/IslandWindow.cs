@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using LibrePods.WinUI.Ipc;
+using LibrePods.WinUI.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -74,6 +75,14 @@ public sealed class IslandWindow : Window
         Closed += (_, _) => { _closed = true; try { _timer.Stop(); } catch { } };
     }
 
+    /// Match the island to the app's chosen theme — the DesktopAcrylic tint and the
+    /// ThemeResource text brushes follow the content's RequestedTheme. Default just
+    /// follows the system. Applied on each show in case the theme changed meanwhile.
+    private void ApplyTheme()
+    {
+        try { _view.RequestedTheme = AppSettings.Theme; } catch { }
+    }
+
     /// Show the island for a fresh connection, or — if one is already on screen —
     /// re-populate it and reset the hold so reconnect spam never stacks popups.
     public void ShowConnected(Snapshot s)
@@ -81,6 +90,7 @@ public sealed class IslandWindow : Window
         if (_closed) return;
         try
         {
+            ApplyTheme();
             _view.Apply(s);
 
             if (!_shown)
@@ -116,12 +126,13 @@ public sealed class IslandWindow : Window
 
     /// Show a daemon overlay as the centred island (message mode) instead of a
     /// Windows toast — same slide/hold as the connection card.
-    public void ShowMessage(string title, string body)
+    public void ShowMessage(string title, string body, string? model = null)
     {
         if (_closed) return;
         try
         {
-            _view.ApplyMessage(title, body);
+            ApplyTheme();
+            _view.ApplyMessage(title, body, model);
 
             if (!_shown)
             {

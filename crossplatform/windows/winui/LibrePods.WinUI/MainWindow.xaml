@@ -21,7 +21,7 @@
                         OpenPaneLength="260"
                         SelectionChanged="Nav_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItemHeader x:Uid="NavDevicesHeader" />
+                <NavigationViewItemHeader Content="{Binding [NavDevicesHeader_Content], Source={StaticResource Loc}}" />
                 <!-- The daemon is single-device: one item, populated from the
                      snapshot's dev_name. Structured so more could be added later. -->
                 <!-- One line (icon + name); the connection status shows in the
@@ -29,11 +29,30 @@
                      (a 2-line item became a tall block in icon-only compact mode). -->
                 <NavigationViewItem x:Name="DeviceNavItem" Tag="device">
                     <NavigationViewItem.Icon>
-                        <ImageIcon Source="ms-appx:///Assets/airpods.png" />
+                        <ImageIcon x:Name="NavDeviceIcon" Source="ms-appx:///Assets/airpods.png" />
                     </NavigationViewItem.Icon>
-                    <TextBlock x:Name="NavDeviceName"
-                               Text="LibrePods"
-                               TextTrimming="CharacterEllipsis" />
+                    <!-- Name + a compact battery summary on one line. The battery
+                         shows only in the expanded pane (NavigationView hides item
+                         content in icon-only compact mode) — handy once more than
+                         one device is listed. -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock x:Name="NavDeviceName"
+                                   Grid.Column="0"
+                                   Text="LibrePods"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="NavDeviceBattery"
+                                   Grid.Column="1"
+                                   Margin="8,0,0,0"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"
+                                   Visibility="Collapsed"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </Grid>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 

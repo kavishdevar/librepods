@@ -28,21 +28,15 @@ public sealed partial class IslandView : UserControl
     /// Populate the card from a daemon Snapshot (name + battery + model image).
     public void Apply(Snapshot s)
     {
-        // Connection-card mode: render + battery, no message line.
+        // Connection-card mode: render + battery, no message line / mode glyph.
         MessageBody.Visibility = Visibility.Collapsed;
         DeviceImage.Visibility = Visibility.Visible;
+        ModeIcon.Visibility = Visibility.Collapsed;
         BatteryRow.Visibility = Visibility.Visible;
 
         DeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? Localize.Get("Island_DefaultName") : s.DevName;
 
-        try
-        {
-            DeviceImage.Source = new BitmapImage(new Uri(ImageForName(s.DevName)));
-        }
-        catch
-        {
-            // Leave the XAML default (airpods.png) if the URI fails for any reason.
-        }
+        SetImage(s.Model);
 
         SetBattery(LeftItem, LeftBar, LeftText, s.Battery.Left, s.Battery.LeftCharging);
         SetBattery(RightItem, RightBar, RightText, s.Battery.Right, s.Battery.RightCharging);
@@ -52,13 +46,56 @@ public sealed partial class IslandView : UserControl
     /// Message mode: show a title + body (e.g. an ANC change), hiding the render
     /// and battery — so daemon overlays render as the centred island instead of a
     /// Windows toast.
-    public void ApplyMessage(string title, string body)
+    public void ApplyMessage(string title, string body, string? model = null)
     {
         DeviceName.Text = string.IsNullOrWhiteSpace(title) ? Localize.Get("Island_DefaultName") : title;
         MessageBody.Text = body ?? "";
         MessageBody.Visibility = Visibility.Visible;
-        DeviceImage.Visibility = Visibility.Collapsed;
         BatteryRow.Visibility = Visibility.Collapsed;
+
+        // A noise-control change shows the mode's glyph — a vector FontIcon so it
+        // follows the theme (the raster ANC art was fixed-colour and washed out on
+        // one theme). Everything else shows the device render.
+        var glyph = ModeGlyph(body);
+        if (glyph is not null)
+        {
+            ModeIcon.Glyph = glyph;
+            ModeIcon.Visibility = Visibility.Visible;
+            DeviceImage.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            SetImage(model);
+            DeviceImage.Visibility = Visibility.Visible;
+            ModeIcon.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    /// The Segoe Fluent glyph for a noise-control mode body (localized match), or
+    /// null when the message isn't a mode change. Char codes (not literal PUA chars)
+    /// keep the source clean. Matches the tray menu's mode glyphs.
+    private static string? ModeGlyph(string body)
+    {
+        if (body == Localize.Get("Anc_Off")) return ((char)0xE7E8).ToString();            // power
+        if (body == Localize.Get("Anc_NoiseCancellation")) return ((char)0xE7F6).ToString(); // headphone
+        if (body == Localize.Get("Anc_Transparency")) return ((char)0xE890).ToString();   // view
+        if (body == Localize.Get("Anc_Adaptive")) return ((char)0xE72C).ToString();       // refresh
+        return null;
+    }
+
+    /// Set the product render from the model number. When the live model isn't known
+    /// yet (the 0x1D metadata lags the connect popup), fall back to the last-seen
+    /// model cached across runs, then to the generic airpods.png.
+    private void SetImage(string? model)
+    {
+        var m = string.IsNullOrEmpty(model) ? AppSettings.LastModel : model;
+        TrySetSource(DeviceArt.MainImage(m));
+    }
+
+    private void TrySetSource(string uri)
+    {
+        try { DeviceImage.Source = new BitmapImage(new Uri(uri)); }
+        catch { /* leave the XAML default (airpods.png) */ }
     }
 
     /// Show a battery component only when it carries a real reading. Values >100
@@ -79,36 +116,5 @@ public sealed partial class IslandView : UserControl
             text.Text = "—";
             item.Visibility = Visibility.Collapsed;
         }
-    }
-
-    /// Best-effort map from the device name to one of the AirPods case images
-    /// bundled in Assets. The daemon only reports a free-text dev_name (no model
-    /// id), so we match on substrings and fall back to the generic airpods.png.
-    /// Uses the "_case.png" art because the island is a "connected" card.
-    private static string ImageForName(string? devName)
-    {
-        const string root = "ms-appx:///Assets/";
-        const string fallback = root + "airpods.png";
-
-        var n = (devName ?? string.Empty).ToLowerInvariant();
-        if (n.Length == 0) return fallback;
-
-        // No Max case art bundled — fall back to the generic image.
-        if (n.Contains("max")) return fallback;
-
-        if (n.Contains("pro"))
-        {
-            if (n.Contains("3")) return root + "airpods_pro_3_case.png";
-            if (n.Contains("1")) return root + "airpods_pro_1_case.png";
-            // "AirPods Pro" / "Pro 2" → Pro 2 art (the common case).
-            return root + "airpods_pro_2_case.png";
-        }
-
-        if (n.Contains("4")) return root + "airpods_4_case.png";
-        if (n.Contains("3")) return root + "airpods_3_case.png";
-        if (n.Contains("2")) return root + "airpods_2_case.png";
-        if (n.Contains("1")) return root + "airpods_1_case.png";
-
-        return fallback;
     }
 }

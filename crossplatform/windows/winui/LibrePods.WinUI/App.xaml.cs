@@ -14,7 +14,7 @@ public partial class App : Application
     public DaemonClient Daemon { get; } = new();
 
     private MainWindow? _window;
-    private TrayIcon? _tray;
+    private TrayController? _tray;
 
     // The connection "island" popup. A single instance is reused so reconnect
     // spam re-populates it rather than stacking multiple popups; it self-closes
@@ -22,9 +22,14 @@ public partial class App : Application
     // AirPods connected state so we fire only on the false→true transition.
     private IslandWindow? _island;
     private bool _podsConnected;
+    // Last-seen model number (from the 0x1D metadata), so message-mode island
+    // popups can show the right device render even without a full Snapshot.
+    private string _lastModel = "";
 
     public App()
     {
+        // InitializeComponent loads App.xaml, which creates the single Loc instance
+        // (<services:Loc x:Key="Loc"/>); its ctor publishes Loc.Instance for code.
         InitializeComponent();
     }
 
@@ -33,7 +38,7 @@ public partial class App : Application
         // The main window is created hidden; closing it hides back to the tray.
         _window = new MainWindow(Daemon);
 
-        _tray = new TrayIcon(
+        _tray = new TrayController(
             onOpen: () => _window.ShowFromTray(),
             onQuit: ExitApp,
             client: Daemon);
@@ -64,6 +69,11 @@ public partial class App : Application
         Daemon.SnapshotReceived += s =>
             _window.DispatcherQueue.TryEnqueue(() =>
             {
+                if (!string.IsNullOrEmpty(s.Model))
+                {
+                    _lastModel = s.Model;
+                    AppSettings.SetLastModel(s.Model); // survive restarts for the connect island
+                }
                 var now = s.Connected;
                 if (now && !_podsConnected) ShowIsland(s);
                 _podsConnected = now;
@@ -109,7 +119,7 @@ public partial class App : Application
                 _island = new IslandWindow();
                 _island.Closed += (_, _) => _island = null;
             }
-            _island.ShowMessage(title, body);
+            _island.ShowMessage(title, body, _lastModel);
         }
         catch
         {
