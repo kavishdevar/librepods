@@ -5,6 +5,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Graphics;
 
 namespace LibrePods.WinUI;
@@ -109,20 +110,71 @@ public sealed partial class MainWindow : Window
     private void OnSnapshot(Snapshot s) =>
         DispatcherQueue.TryEnqueue(() =>
         {
-            // The device NavigationViewItem mirrors the header (name only).
+            _connected = s.Connected;
+
+            // The device NavigationViewItem mirrors the header: name, a model-aware
+            // icon, and a compact battery summary (visible in the expanded pane).
             NavDeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? "LibrePods" : s.DevName;
+
+            var family = DeviceArt.Family(s.Model);
+            if (family != _navArtFamily)
+            {
+                _navArtFamily = family;
+                try { NavDeviceIcon.Source = new BitmapImage(new Uri(DeviceArt.MainImage(s.Model))); }
+                catch { }
+            }
+
+            // Lowest earbud reading (or the headphone band for Max) — one number is
+            // enough at nav width; the full L/R/Case breakdown is on the card.
+            byte? summary = LowestReading(s.Battery.Left, s.Battery.Right, s.Battery.Headphone);
+            if (summary is byte v)
+            {
+                NavDeviceBattery.Text = $"{v}%";
+                NavDeviceBattery.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                NavDeviceBattery.Visibility = Visibility.Collapsed;
+            }
+
+            // A live connection dismisses any stale "Connect?" prompt (in-app InfoBar
+            // + the centred popup window).
+            if (s.Connected)
+            {
+                DevicePageView.DismissConnectPrompt();
+                try { _connectPrompt?.Close(); } catch { }
+            }
+
             DevicePageView.Update(s);
             SettingsPageView.UpdateDeviceInfo(s);
         });
+
+    /// The lowest valid (<=100) battery reading among the given components, or null
+    /// when none report. The 0xFF "absent" sentinel (>100) is ignored.
+    private static byte? LowestReading(params byte?[] values)
+    {
+        byte? lowest = null;
+        foreach (var value in values)
+            if (value is byte v and <= 100 && (lowest is null || v < lowest))
+                lowest = v;
+        return lowest;
+    }
 
     private void OnOverlay(string title, string body) =>
         DispatcherQueue.TryEnqueue(() => DevicePageView.ShowOverlay(title, body));
 
     private Popup.ConnectPromptWindow? _connectPrompt;
+    private bool _connected;
+    private string? _navArtFamily;
 
     private void OnConnectPrompt(string name) =>
         DispatcherQueue.TryEnqueue(() =>
         {
+            // Already connected — a proximity "Connect?" prompt is stale (the daemon
+            // can still emit it from a BLE advertisement while the AACP session is
+            // live). Suppress both the popup and the in-app InfoBar.
+            if (_connected) return;
+
             // The iOS-style centred "Connect?" popup — shows even when the app is
             // hidden to the tray. Also mirror it in the in-app InfoBar.
             try

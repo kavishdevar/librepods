@@ -19,6 +19,15 @@ public static class AppSettings
         // the HR stream to Apple hosts and it does not work on Windows (they ACK the
         // enable but never send readings). See docs/windows/heart-rate.md.
         public bool EnableHeartRate { get; set; }
+
+        // BCP-47 UI language override (e.g. "pt-PT"); "" = follow the system.
+        // Applied as ApplicationLanguages.PrimaryLanguageOverride at startup.
+        public string LanguageTag { get; set; } = "";
+
+        // Last-seen device model number (from the 0x1D metadata). Cached so the
+        // connect island can show the right artwork *immediately*, before this
+        // session's metadata packet arrives.
+        public string LastModel { get; set; } = "";
     }
 
     private static readonly object _gate = new();
@@ -91,6 +100,30 @@ public static class AppSettings
     {
         var m = Load();
         m.EnableHeartRate = on;
+        Save(m);
+    }
+
+    /// The last-seen device model number (for the connect island's early artwork).
+    public static string LastModel => Load().LastModel ?? "";
+
+    /// Persist the last-seen device model number.
+    public static void SetLastModel(string model)
+    {
+        if (string.IsNullOrWhiteSpace(model)) return;
+        var m = Load();
+        if (m.LastModel == model) return;
+        m.LastModel = model;
+        Save(m);
+    }
+
+    /// The saved UI language override (BCP-47, e.g. "pt-PT"); "" = follow the system.
+    public static string LanguageTag => Load().LanguageTag ?? "";
+
+    /// Persist the chosen UI language override (takes effect on restart).
+    public static void SetLanguageTag(string tag)
+    {
+        var m = Load();
+        m.LanguageTag = tag ?? "";
         Save(m);
     }
 }

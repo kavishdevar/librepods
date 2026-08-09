@@ -7,7 +7,8 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <!-- Battery -->
+    <!-- Battery — model-aware device artwork above each gauge. The images collapse
+         for unknown models (no artwork), leaving the label + bar + % on their own. -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="12">
             <TextBlock x:Uid="BatteryTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
@@ -19,16 +20,22 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Spacing="4">
+                    <Image x:Name="LeftImg" Height="56" Stretch="Uniform"
+                           Visibility="Collapsed" Margin="0,0,0,2" />
                     <TextBlock x:Uid="BatteryLeftLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ProgressBar x:Name="LeftBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
                     <TextBlock x:Name="LeftText" Text="—" />
                 </StackPanel>
                 <StackPanel Grid.Column="1" Spacing="4">
+                    <Image x:Name="RightImg" Height="56" Stretch="Uniform"
+                           Visibility="Collapsed" Margin="0,0,0,2" />
                     <TextBlock x:Uid="BatteryRightLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ProgressBar x:Name="RightBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
                     <TextBlock x:Name="RightText" Text="—" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Spacing="4">
+                    <Image x:Name="CaseImg" Height="56" Stretch="Uniform"
+                           Visibility="Collapsed" Margin="0,0,0,2" />
                     <TextBlock x:Uid="BatteryCaseLabel" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ProgressBar x:Name="CaseBar" Maximum="100" Value="0" Foreground="{ThemeResource LibrePodsAccentBrush}" />
                     <TextBlock x:Name="CaseText" Text="—" />

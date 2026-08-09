@@ -81,6 +81,9 @@ public sealed partial class DevicePage : UserControl
         ConnectPromptBar.IsOpen = true;
     }
 
+    /// Hide the "nearby — connect?" prompt (e.g. once the device is connected).
+    public void DismissConnectPrompt() => ConnectPromptBar.IsOpen = false;
+
     /// The events pipe dropped — surface it in the header.
     public void ShowWaitingForDaemon() => Header.ShowWaitingForDaemon();
 
@@ -93,5 +96,8 @@ public sealed partial class DevicePage : UserControl
         Grid.SetRow(RightColumn, wide ? 0 : 1);
         Grid.SetColumn(RightColumn, wide ? 1 : 0);
         Col1.Width = wide ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        // In one-column mode the collapsed Col1 still reserves ColumnSpacing (16px),
+        // leaving a phantom gap on the right — drop the spacing when single-column.
+        CardsGrid.ColumnSpacing = wide ? 16 : 0;
     }
 }

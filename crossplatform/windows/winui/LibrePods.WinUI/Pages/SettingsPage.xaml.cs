@@ -21,6 +21,8 @@ public sealed partial class SettingsPage : UserControl
     /// refresh the DevicePage card visibility live.
     public event Action? HeartRateVisibilityChanged;
 
+    private bool _applyingLang;
+
     public SettingsPage()
     {
         InitializeComponent();
@@ -32,6 +34,38 @@ public sealed partial class SettingsPage : UserControl
             if (v is not null) VersionText.Text = $"v{v.Major}.{v.Minor}.{v.Build}";
         }
         catch { }
+
+        InitLanguageCombo();
+    }
+
+    /// Select the persisted UI language on load, without firing the restart hint.
+    private void InitLanguageCombo()
+    {
+        _applyingLang = true;
+        try
+        {
+            var tag = AppSettings.LanguageTag;
+            foreach (var obj in LanguageCombo.Items)
+                if (obj is ComboBoxItem item && (string)(item.Tag ?? "") == tag)
+                {
+                    LanguageCombo.SelectedItem = item;
+                    break;
+                }
+            if (LanguageCombo.SelectedItem is null) LanguageCombo.SelectedIndex = 0; // System
+        }
+        finally { _applyingLang = false; }
+    }
+
+    private void Language_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_applyingLang) return;
+        var tag = (LanguageCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+        AppSettings.SetLanguageTag(tag);
+        // Nudge the override now (helps newly-created windows); already-rendered
+        // x:Uid text only re-resolves on a full restart — hence the hint.
+        try { Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = tag; }
+        catch { }
+        LanguageRestartBar.IsOpen = true;
     }
 
     /// Set the theme radio to the persisted choice on startup, without re-firing

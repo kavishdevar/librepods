@@ -37,6 +37,30 @@
                 </StackPanel>
             </Border>
 
+            <!-- Language — overrides the system UI language. Applied on next launch
+                 (x:Uid/.resw resolve at load), so a restart hint shows on change. -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel Spacing="8">
+                    <TextBlock x:Uid="SettingsLanguage" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Uid="SettingsLanguageHint"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Style="{ThemeResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap" />
+                    <ComboBox x:Name="LanguageCombo" MinWidth="220"
+                              SelectionChanged="Language_SelectionChanged">
+                        <ComboBoxItem x:Uid="LangSystem" Tag="" />
+                        <ComboBoxItem Content="English" Tag="en-US" />
+                        <ComboBoxItem Content="Português" Tag="pt-PT" />
+                        <ComboBoxItem Content="Français" Tag="fr-FR" />
+                        <ComboBoxItem Content="Español" Tag="es-ES" />
+                    </ComboBox>
+                    <InfoBar x:Name="LanguageRestartBar"
+                             x:Uid="SettingsLanguageRestart"
+                             Severity="Informational"
+                             IsOpen="False" IsClosable="True" />
+                </StackPanel>
+            </Border>
+
             <!-- Front-end preference -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">
