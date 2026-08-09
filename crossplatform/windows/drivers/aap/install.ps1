@@ -40,6 +40,15 @@ $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse
     Where-Object { $_.FullName -match 'x64' } | Select-Object -First 1).FullName
 Write-Host "==> Signing with $signtool"
 & $signtool sign /v /fd SHA256 /sm /s My /sha1 $cert.Thumbprint $sys
+
+# Regenerate the catalog over the *signed* .sys so its hash matches (signing the
+# .sys changes the file), then sign the catalog.
+Write-Host "==> Regenerating catalog over the signed .sys..."
+$inf2cat = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter inf2cat.exe |
+    Where-Object { $_.FullName -match '\\x86\\' } | Sort-Object FullName | Select-Object -Last 1).FullName
+& $inf2cat /driver:$PackageDir /os:10_X64
+if ($LASTEXITCODE -ne 0) { throw "inf2cat failed ($LASTEXITCODE)" }
+
 & $signtool sign /v /fd SHA256 /sm /s My /sha1 $cert.Thumbprint $cat
 
 Write-Host "==> Removing any previously installed LibrePodsAAP package..."

@@ -12,7 +12,7 @@ Class       = Bluetooth
 ClassGuid   = {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
 Provider    = %ProviderString%
 CatalogFile = LibrePodsAAP.cat
-DriverVer   = 01/01/2026,1.0.0.0
+DriverVer   = 08/08/2026,1.0.3.0
 PnpLockdown = 1
 
 [DestinationDirs]

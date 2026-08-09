@@ -78,6 +78,15 @@ LpConnect(
         LpDisconnect(Ctx);
     }
 
+    // Basic-mode L2CAP open. ERTM was investigated exhaustively and ruled out: the
+    // Windows bthport stack does NOT serialize a Retransmission-and-Flow option to
+    // the wire when a profile driver requests ERTM via BRB_L2CA_OPEN_ENHANCED_CHANNEL
+    // (CM_RETRANSMISSION_AND_FLOW). Two builds — timeouts 0, then 2000/12000 with
+    // RtlZeroMemory + MPS>0 — both produced Configure Requests carrying only MTU +
+    // FlushTO (btvs-confirmed); the ERTM option never left the host. The AirPods run
+    // AAP over Basic regardless (they counter-propose Basic), as does Android (whose
+    // ERTM request is likewise rejected and falls back). So ERTM is not the heart-
+    // rate differentiator, and requesting it just breaks the connect on Windows.
     brb = (struct _BRB_L2CA_OPEN_CHANNEL*)
         Ctx->BthInterface.BthAllocateBrb(BRB_L2CA_OPEN_CHANNEL, LP_POOL_TAG);
     if (brb == NULL) {
