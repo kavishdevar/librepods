@@ -20,10 +20,11 @@ public sealed class Loc : INotifyPropertyChanged
     public const string Fallback = "en-US";
     private static readonly string[] Cultures = { "en-US", "pt-PT", "fr-FR", "es-ES" };
 
-    // Single instance shared by code (Localize.Get -> Loc.Instance) AND XAML (App
-    // injects THIS object as the {StaticResource Loc}). A second instance would
-    // split the culture — code in one language, bindings in another.
-    public static Loc Instance { get; } = new();
+    // The ONE instance: App.xaml declares <services:Loc x:Key="Loc"/>, whose ctor
+    // publishes itself here so code (Localize.Get -> Loc.Instance) and XAML
+    // ({StaticResource Loc}) share it. There is no static `new()` — a second
+    // instance would split the culture (code in one language, bindings in another).
+    public static Loc Instance { get; private set; } = null!;
 
     private readonly Dictionary<string, Dictionary<string, string>> _map =
         new(StringComparer.OrdinalIgnoreCase);
@@ -31,10 +32,11 @@ public sealed class Loc : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private Loc()
+    public Loc()
     {
         foreach (var c in Cultures) _map[c] = Load(c);
         _culture = ResolveInitial();
+        Instance = this;
     }
 
     /// The active BCP-47 culture (e.g. "pt-PT").

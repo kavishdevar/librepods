@@ -28,13 +28,9 @@ public partial class App : Application
 
     public App()
     {
+        // InitializeComponent loads App.xaml, which creates the single Loc instance
+        // (<services:Loc x:Key="Loc"/>); its ctor publishes Loc.Instance for code.
         InitializeComponent();
-
-        // Inject the SINGLE Loc instance as {StaticResource Loc} so XAML bindings and
-        // code (Localize.Get -> Loc.Instance) share one object — otherwise a second
-        // instance splits the culture (code in one language, bindings in another).
-        // Done after InitializeComponent so Resources exists, before any page loads.
-        Resources["Loc"] = Services.Loc.Instance;
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)

@@ -34,6 +34,10 @@
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
+            <!-- Live localization service — the ONE Loc instance; code shares it via
+                 Loc.Instance (published from its ctor). UI text binds {StaticResource Loc}. -->
+            <services:Loc x:Key="Loc" />
+
             <!-- Shared card look used by every device/settings section. Lifted to
                  app scope so each UserControl (Controls/*, Pages/*) can reference
                  {StaticResource Card} without redefining it. -->
