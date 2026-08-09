@@ -63,6 +63,13 @@ public sealed partial class MainWindow : Window
         // Start on the device page.
         NavView.SelectedItem = DeviceNavItem;
 
+        // The built-in NavigationView Settings item is OS-localized; re-label it
+        // from our Loc service so it follows the in-app language too (live). The
+        // SettingsItem only exists once the control template is applied (Loaded).
+        NavView.Loaded += (_, _) => LocalizeSettingsNavItem();
+        Services.Loc.Instance.PropertyChanged += (_, _) =>
+            DispatcherQueue.TryEnqueue(LocalizeSettingsNavItem);
+
         // Close hides to tray (the app keeps running as an IPC client).
         AppWindow.Closing += OnClosing;
 
@@ -103,6 +110,13 @@ public sealed partial class MainWindow : Window
         var settings = args.IsSettingsSelected;
         DevicePageView.Visibility = settings ? Visibility.Collapsed : Visibility.Visible;
         SettingsPageView.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// Re-label the built-in NavigationView Settings item from the Loc service.
+    private void LocalizeSettingsNavItem()
+    {
+        if (NavView.SettingsItem is NavigationViewItem item)
+            item.Content = Localize.Get("SettingsTitle.Text");
     }
 
     // ---- Daemon events (marshalled to the UI thread) -----------------------

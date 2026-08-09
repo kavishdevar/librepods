@@ -122,7 +122,7 @@
   <data name="ThemeLightRadio.Content" xml:space="preserve"><value>Clair</value></data>
   <data name="ThemeDarkRadio.Content" xml:space="preserve"><value>Sombre</value></data>
   <data name="SettingsLanguage.Text" xml:space="preserve"><value>Langue</value></data>
-  <data name="SettingsLanguageHint.Text" xml:space="preserve"><value>Remplace la langue d'affichage de l'application. Effective après un redémarrage.</value></data>
+  <data name="SettingsLanguageHint.Text" xml:space="preserve"><value>Remplace la langue d'affichage de l'application — s'applique immédiatement.</value></data>
   <data name="LangSystem.Content" xml:space="preserve"><value>Par défaut du système</value></data>
   <data name="SettingsLanguageRestart.Title" xml:space="preserve"><value>Redémarrez pour appliquer</value></data>
   <data name="SettingsLanguageRestart.Message" xml:space="preserve"><value>La langue change entièrement au prochain lancement de LibrePods.</value></data>
