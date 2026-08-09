@@ -28,16 +28,9 @@ public partial class App : Application
 
     public App()
     {
-        // Apply the saved UI-language override as early as possible — before
-        // InitializeComponent() (App.xaml) touches the resource system, so x:Uid /
-        // .resw resolve in the chosen language. "" = follow the system.
-        var lang = AppSettings.LanguageTag;
-        if (!string.IsNullOrEmpty(lang))
-        {
-            try { Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = lang; }
-            catch { }
-        }
-
+        // The Loc service (declared in App.xaml resources) reads the saved language
+        // (AppSettings.LanguageTag) itself and drives all text via bindings — no
+        // PrimaryLanguageOverride, which doesn't work on the unpackaged build.
         InitializeComponent();
     }
 

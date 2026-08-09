@@ -7,6 +7,10 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
+    <!-- Text binds to the runtime {StaticResource Loc} service (not x:Uid) so the UI
+         language switches live, without a restart, on the unpackaged build. Keys are
+         the .resw names with the dot replaced by '_' (e.g. SettingsTitle.Text →
+         [SettingsTitle_Text]) — a dot inside a binding indexer is ambiguous. -->
     <ScrollViewer VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   Padding="0,0,0,24">
@@ -14,7 +18,8 @@
                     Padding="24"
                     HorizontalAlignment="Stretch">
 
-            <TextBlock x:Uid="SettingsTitle" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="{Binding [SettingsTitle_Text], Source={StaticResource Loc}}"
+                       Style="{ThemeResource TitleTextBlockStyle}" />
 
             <InfoBar x:Name="SettingsInfoBar"
                      IsOpen="False"
@@ -23,56 +28,54 @@
             <!-- Appearance -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">
-                    <TextBlock x:Uid="SettingsAppearance" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <TextBlock x:Uid="SettingsTheme"
+                    <TextBlock Text="{Binding [SettingsAppearance_Text], Source={StaticResource Loc}}"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{Binding [SettingsTheme_Text], Source={StaticResource Loc}}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <RadioButtons x:Name="ThemeButtons"
                                   MaxColumns="3"
                                   SelectedIndex="0"
                                   SelectionChanged="Theme_SelectionChanged">
-                        <RadioButton x:Uid="ThemeSystemRadio" />
-                        <RadioButton x:Uid="ThemeLightRadio" />
-                        <RadioButton x:Uid="ThemeDarkRadio" />
+                        <RadioButton Content="{Binding [ThemeSystemRadio_Content], Source={StaticResource Loc}}" />
+                        <RadioButton Content="{Binding [ThemeLightRadio_Content], Source={StaticResource Loc}}" />
+                        <RadioButton Content="{Binding [ThemeDarkRadio_Content], Source={StaticResource Loc}}" />
                     </RadioButtons>
                 </StackPanel>
             </Border>
 
-            <!-- Language — overrides the system UI language. Applied on next launch
-                 (x:Uid/.resw resolve at load), so a restart hint shows on change. -->
+            <!-- Language — live switch via the Loc service (no restart). -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">
-                    <TextBlock x:Uid="SettingsLanguage" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <TextBlock x:Uid="SettingsLanguageHint"
+                    <TextBlock Text="{Binding [SettingsLanguage_Text], Source={StaticResource Loc}}"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{Binding [SettingsLanguageHint_Text], Source={StaticResource Loc}}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Style="{ThemeResource CaptionTextBlockStyle}"
                                TextWrapping="Wrap" />
                     <ComboBox x:Name="LanguageCombo" MinWidth="220"
                               SelectionChanged="Language_SelectionChanged">
-                        <ComboBoxItem x:Uid="LangSystem" Tag="" />
+                        <ComboBoxItem Content="{Binding [LangSystem_Content], Source={StaticResource Loc}}" Tag="" />
                         <ComboBoxItem Content="English" Tag="en-US" />
                         <ComboBoxItem Content="Português" Tag="pt-PT" />
                         <ComboBoxItem Content="Français" Tag="fr-FR" />
                         <ComboBoxItem Content="Español" Tag="es-ES" />
                     </ComboBox>
-                    <InfoBar x:Name="LanguageRestartBar"
-                             x:Uid="SettingsLanguageRestart"
-                             Severity="Informational"
-                             IsOpen="False" IsClosable="True" />
                 </StackPanel>
             </Border>
 
             <!-- Front-end preference -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">
-                    <TextBlock x:Uid="SettingsDefaultFrontend" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <TextBlock x:Uid="SettingsDefaultFrontendHint"
+                    <TextBlock Text="{Binding [SettingsDefaultFrontend_Text], Source={StaticResource Loc}}"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{Binding [SettingsDefaultFrontendHint_Text], Source={StaticResource Loc}}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                Style="{ThemeResource CaptionTextBlockStyle}"
                                TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button x:Uid="SettingsRefreshBtn" Click="Refresh_Click" />
+                        <Button Content="{Binding [SettingsRefreshBtn_Content], Source={StaticResource Loc}}" Click="Refresh_Click" />
                         <Button x:Name="SwitchUiButton"
-                                x:Uid="SettingsSwitchUiBtn"
+                                Content="{Binding [SettingsSwitchUiBtn_Content], Source={StaticResource Loc}}"
                                 Click="SwitchUi_Click" />
                     </StackPanel>
                 </StackPanel>
@@ -82,11 +85,13 @@
                  the HR stream to Apple hosts; on Windows it does not work. -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="8">
-                    <TextBlock x:Uid="SettingsExperimental" Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <InfoBar x:Uid="SettingsHrWarning"
-                             Severity="Warning" IsOpen="True" IsClosable="False" />
+                    <TextBlock Text="{Binding [SettingsExperimental_Text], Source={StaticResource Loc}}"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <InfoBar Severity="Warning" IsOpen="True" IsClosable="False"
+                             Title="{Binding [SettingsHrWarning_Title], Source={StaticResource Loc}}"
+                             Message="{Binding [SettingsHrWarning_Message], Source={StaticResource Loc}}" />
                     <ToggleSwitch x:Name="HeartRateSetting"
-                                  x:Uid="SettingsHrToggle"
+                                  Header="{Binding [SettingsHrToggle_Header], Source={StaticResource Loc}}"
                                   Toggled="HeartRateSetting_Toggled" />
                 </StackPanel>
             </Border>
@@ -100,7 +105,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Uid="SettingsDeviceInfo" Grid.Column="0"
+                        <TextBlock Text="{Binding [SettingsDeviceInfo_Text], Source={StaticResource Loc}}" Grid.Column="0"
                                    VerticalAlignment="Center"
                                    Style="{ThemeResource BodyStrongTextBlockStyle}" />
                         <ToggleButton x:Name="RevealInfo" Grid.Column="1" Padding="8,4"
@@ -116,7 +121,7 @@
                                 <ColumnDefinition Width="96" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Uid="DeviceInfoModel"
+                            <TextBlock Text="{Binding [DeviceInfoModel_Text], Source={StaticResource Loc}}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <TextBlock x:Name="ModelText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
                         </Grid>
@@ -125,7 +130,7 @@
                                 <ColumnDefinition Width="96" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Uid="DeviceInfoFirmware"
+                            <TextBlock Text="{Binding [DeviceInfoFirmware_Text], Source={StaticResource Loc}}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <TextBlock x:Name="FirmwareText" Grid.Column="1" Text="—" TextWrapping="Wrap" />
                         </Grid>
@@ -135,7 +140,7 @@
                                 <ColumnDefinition Width="96" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock x:Uid="DeviceInfoSerial"
+                            <TextBlock Text="{Binding [DeviceInfoSerial_Text], Source={StaticResource Loc}}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <Grid Grid.Column="1">
                                 <TextBlock x:Name="SerialText" Text="—" TextWrapping="Wrap" />
@@ -155,10 +160,11 @@
             <!-- About -->
             <Border Style="{StaticResource Card}">
                 <StackPanel Spacing="4">
-                    <TextBlock x:Uid="SettingsAbout" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{Binding [SettingsAbout_Text], Source={StaticResource Loc}}"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
                     <TextBlock Text="LibrePods"
                                Style="{ThemeResource SubtitleTextBlockStyle}" />
-                    <TextBlock x:Uid="SettingsAppDesc"
+                    <TextBlock Text="{Binding [SettingsAppDesc_Text], Source={StaticResource Loc}}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap" />
                     <TextBlock x:Name="VersionText"

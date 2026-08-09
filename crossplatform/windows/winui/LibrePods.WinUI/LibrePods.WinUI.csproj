@@ -41,6 +41,17 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The same .resw embedded so the runtime Loc service can parse them into its
+         culture -> key -> value map. This backs live language switching (bindings to
+         {StaticResource Loc}) which works on the unpackaged build, unlike x:Uid /
+         PrimaryLanguageOverride. LogicalName = loc.<culture>. -->
+    <EmbeddedResource Include="Strings\en-US\Resources.resw" LogicalName="loc.en-US" />
+    <EmbeddedResource Include="Strings\pt-PT\Resources.resw" LogicalName="loc.pt-PT" />
+    <EmbeddedResource Include="Strings\fr-FR\Resources.resw" LogicalName="loc.fr-FR" />
+    <EmbeddedResource Include="Strings\es-ES\Resources.resw" LogicalName="loc.es-ES" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4188" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />

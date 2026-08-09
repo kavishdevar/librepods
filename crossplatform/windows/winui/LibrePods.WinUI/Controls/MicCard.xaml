@@ -10,14 +10,14 @@
     <!-- Hi-res microphone -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="8">
-            <TextBlock x:Uid="MicTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="{Binding [MicTitle_Text], Source={StaticResource Loc}}" Style="{ThemeResource BodyStrongTextBlockStyle}" />
             <TextBlock x:Name="MicStatusText"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <ToggleSwitch x:Name="MicAutoSwitch"
-                          x:Uid="MicAutoSwitch"
+                          Header="{Binding [MicAutoSwitch_Header], Source={StaticResource Loc}}"
                           Toggled="MicAuto_Toggled" />
             <ToggleButton x:Name="MicManualToggle"
-                          x:Uid="MicEnableBtn"
+                          Content="{Binding [MicEnableBtn_Content], Source={StaticResource Loc}}"
                           Click="MicManual_Click" />
         </StackPanel>
     </Border>

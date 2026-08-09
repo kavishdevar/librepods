@@ -61,11 +61,7 @@ public sealed partial class SettingsPage : UserControl
         if (_applyingLang) return;
         var tag = (LanguageCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
         AppSettings.SetLanguageTag(tag);
-        // Nudge the override now (helps newly-created windows); already-rendered
-        // x:Uid text only re-resolves on a full restart — hence the hint.
-        try { Windows.Globalization.ApplicationLanguages.PrimaryLanguageOverride = tag; }
-        catch { }
-        LanguageRestartBar.IsOpen = true;
+        Loc.Instance.SetCulture(tag); // live — every {StaticResource Loc} binding re-fetches
     }
 
     /// Set the theme radio to the persisted choice on startup, without re-firing

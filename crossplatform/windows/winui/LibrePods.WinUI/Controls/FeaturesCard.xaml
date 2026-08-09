@@ -10,15 +10,15 @@
     <!-- Feature toggles -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="4">
-            <TextBlock x:Uid="FeaturesTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" Margin="0,0,0,8" />
+            <TextBlock Text="{Binding [FeaturesTitle_Text], Source={StaticResource Loc}}" Style="{ThemeResource BodyStrongTextBlockStyle}" Margin="0,0,0,8" />
             <ToggleSwitch x:Name="ConvAwarenessSwitch"
-                          x:Uid="FeatureCaSwitch"
+                          Header="{Binding [FeatureCaSwitch_Header], Source={StaticResource Loc}}"
                           Toggled="ConvAwareness_Toggled" />
             <ToggleSwitch x:Name="AdaptiveVolumeSwitch"
-                          x:Uid="FeatureAvSwitch"
+                          Header="{Binding [FeatureAvSwitch_Header], Source={StaticResource Loc}}"
                           Toggled="AdaptiveVolume_Toggled" />
             <ToggleSwitch x:Name="AllowOffSwitch"
-                          x:Uid="FeatureAllowOffSwitch"
+                          Header="{Binding [FeatureAllowOffSwitch_Header], Source={StaticResource Loc}}"
                           Toggled="AllowOff_Toggled" />
         </StackPanel>
     </Border>

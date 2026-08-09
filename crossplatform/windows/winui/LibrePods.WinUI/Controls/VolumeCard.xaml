@@ -10,7 +10,7 @@
     <!-- Volume -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="12">
-            <TextBlock x:Uid="VolumeTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="{Binding [VolumeTitle_Text], Source={StaticResource Loc}}" Style="{ThemeResource BodyStrongTextBlockStyle}" />
             <Grid ColumnSpacing="12" VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -28,7 +28,7 @@
                            MinWidth="56"
                            Margin="8,0,0,0" />
             </Grid>
-            <ToggleButton x:Name="MuteToggle" x:Uid="MuteToggle" Click="Mute_Click" />
+            <ToggleButton x:Name="MuteToggle" Content="{Binding [MuteToggle_Content], Source={StaticResource Loc}}" Click="Mute_Click" />
         </StackPanel>
     </Border>
 </UserControl>

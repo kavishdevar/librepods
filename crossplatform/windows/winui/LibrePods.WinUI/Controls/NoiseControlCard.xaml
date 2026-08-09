@@ -12,7 +12,7 @@
          below the row. Off is disabled unless the daemon reports allow_off. -->
     <Border Style="{StaticResource Card}">
         <StackPanel Spacing="10">
-            <TextBlock x:Uid="NoiseControlTitle" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+            <TextBlock Text="{Binding [NoiseControlTitle_Text], Source={StaticResource Loc}}" Style="{ThemeResource BodyStrongTextBlockStyle}" />
 
             <Grid ColumnSpacing="6">
                 <Grid.ColumnDefinitions>
