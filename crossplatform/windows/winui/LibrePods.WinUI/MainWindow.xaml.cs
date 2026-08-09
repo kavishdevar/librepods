@@ -40,6 +40,11 @@ public sealed partial class MainWindow : Window
         if (RootGrid is not null) RootGrid.RequestedTheme = AppSettings.Theme;
         SettingsPageView.InitThemeSelector(AppSettings.ThemeIndex);
 
+        // The experimental heart-rate opt-in lives in Settings; the DevicePage owns
+        // the card. Refresh its visibility live when the toggle flips.
+        SettingsPageView.HeartRateVisibilityChanged += () => DevicePageView.RefreshHeartRateVisibility();
+        SettingsPageView.InitHeartRateSetting();
+
         // Wider default so the responsive 2-column device layout shows at launch.
         AppWindow.Resize(new SizeInt32(1000, 800));
         // Enforce a minimum size — the layout breaks if the window is dragged

@@ -125,6 +125,10 @@
   <data name="SettingsDefaultFrontendHint.Text" xml:space="preserve"><value>Elige qué interfaz abre «Abrir app» de la bandeja la próxima vez.</value></data>
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Actualizar estado</value></data>
   <data name="SettingsSwitchUiBtn.Content" xml:space="preserve"><value>Cambiar a la interfaz iced</value></data>
+  <data name="SettingsExperimental.Text" xml:space="preserve"><value>Experimental</value></data>
+  <data name="SettingsHrWarning.Title" xml:space="preserve"><value>Es muy probable que la frecuencia cardíaca no funcione en Windows</value></data>
+  <data name="SettingsHrWarning.Message" xml:space="preserve"><value>Los AirPods Pro 3 restringen el envío de la frecuencia cardíaca a equipos Apple (iPhone/iPad). En Windows los auriculares aceptan y confirman la solicitud, pero nunca envían ninguna lectura: es una restricción intencionada del ecosistema Apple, no un fallo de LibrePods. Activar esto solo muestra la tarjeta; casi con seguridad quedará vacía. Se mantiene para el día en que se pueda sortear el bloqueo a equipos Apple.</value></data>
+  <data name="SettingsHrToggle.Header" xml:space="preserve"><value>Mostrar monitorización de frecuencia cardíaca (experimental)</value></data>
   <data name="SettingsDeviceInfo.Text" xml:space="preserve"><value>Información del dispositivo</value></data>
   <data name="DeviceInfoModel.Text" xml:space="preserve"><value>Modelo</value></data>
   <data name="DeviceInfoFirmware.Text" xml:space="preserve"><value>Firmware</value></data>

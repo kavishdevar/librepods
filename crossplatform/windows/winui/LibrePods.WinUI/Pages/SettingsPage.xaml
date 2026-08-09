@@ -54,6 +54,19 @@
                 </StackPanel>
             </Border>
 
+            <!-- Experimental — heart-rate opt-in. Off by default because AirPods gate
+                 the HR stream to Apple hosts; on Windows it does not work. -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel Spacing="8">
+                    <TextBlock x:Uid="SettingsExperimental" Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <InfoBar x:Uid="SettingsHrWarning"
+                             Severity="Warning" IsOpen="True" IsClosable="False" />
+                    <ToggleSwitch x:Name="HeartRateSetting"
+                                  x:Uid="SettingsHrToggle"
+                                  Toggled="HeartRateSetting_Toggled" />
+                </StackPanel>
+            </Border>
+
             <!-- Device info — hidden behind an eye toggle + frosted blur (it carries
                  the serial number). Populated from the 0x1D metadata packet. -->
             <Border Style="{StaticResource Card}">

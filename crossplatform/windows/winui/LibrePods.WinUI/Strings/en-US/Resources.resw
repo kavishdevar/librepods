@@ -134,6 +134,10 @@
   <data name="SettingsDefaultFrontendHint.Text" xml:space="preserve"><value>Choose which UI the tray's "Open App" launches next time.</value></data>
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Refresh state</value></data>
   <data name="SettingsSwitchUiBtn.Content" xml:space="preserve"><value>Switch default UI to iced</value></data>
+  <data name="SettingsExperimental.Text" xml:space="preserve"><value>Experimental</value></data>
+  <data name="SettingsHrWarning.Title" xml:space="preserve"><value>Heart rate very likely won't work on Windows</value></data>
+  <data name="SettingsHrWarning.Message" xml:space="preserve"><value>AirPods Pro 3 restrict the heart-rate stream to Apple hosts (iPhone/iPad). On Windows the buds accept the request and acknowledge it, but never send any readings — this is an intentional Apple-ecosystem restriction, not a bug in LibrePods. Turning this on only shows the card; it will almost certainly stay empty. It's kept for the day the Apple-host gate can be bypassed.</value></data>
+  <data name="SettingsHrToggle.Header" xml:space="preserve"><value>Show heart-rate monitoring (experimental)</value></data>
   <data name="SettingsDeviceInfo.Text" xml:space="preserve"><value>Device info</value></data>
   <data name="DeviceInfoModel.Text" xml:space="preserve"><value>Model</value></data>
   <data name="DeviceInfoFirmware.Text" xml:space="preserve"><value>Firmware</value></data>

@@ -14,6 +14,11 @@ public static class AppSettings
     {
         // 0 = System (Default), 1 = Light, 2 = Dark — the ThemeButtons indices.
         public int ThemeIndex { get; set; }
+
+        // Experimental: show the heart-rate card. Off by default — the AirPods gate
+        // the HR stream to Apple hosts and it does not work on Windows (they ACK the
+        // enable but never send readings). See docs/windows/heart-rate.md.
+        public bool EnableHeartRate { get; set; }
     }
 
     private static readonly object _gate = new();
@@ -75,6 +80,17 @@ public static class AppSettings
     {
         var m = Load();
         m.ThemeIndex = index;
+        Save(m);
+    }
+
+    /// Whether the experimental heart-rate card is shown (off by default).
+    public static bool EnableHeartRate => Load().EnableHeartRate;
+
+    /// Persist the experimental heart-rate opt-in.
+    public static void SetEnableHeartRate(bool on)
+    {
+        var m = Load();
+        m.EnableHeartRate = on;
         Save(m);
     }
 }

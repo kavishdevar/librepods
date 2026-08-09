@@ -61,7 +61,13 @@
                     <controls:BatteryCard x:Name="BatteryCard" />
                     <controls:VolumeCard x:Name="VolumeCard" />
                     <controls:AdaptiveNoiseCard x:Name="AdaptiveNoiseCard" />
-                    <controls:HeartRateCard x:Name="HeartRateCard" />
+                    <!-- Heart-rate: hidden by default. The AirPods gate the HR stream
+                         to Apple hosts (they ACK the enable but never send data to a
+                         non-Apple host, by design — see docs/windows/heart-rate.md), so
+                         it does not work on Windows. Shown only when the user opts in via
+                         Settings ▸ Experimental; visibility is set from AppSettings in the
+                         DevicePage code-behind. -->
+                    <controls:HeartRateCard x:Name="HeartRateCard" Visibility="Collapsed" />
                 </StackPanel>
 
                 <!-- Right column: Noise Control, Features, Hi-res Mic -->
