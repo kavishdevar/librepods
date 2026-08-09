@@ -86,6 +86,16 @@
                 </Image.RenderTransform>
             </Image>
 
+            <!-- Mode glyph for control-change messages (ANC etc.) — a vector icon so
+                 it follows the theme (the raster ANC art was fixed-colour and washed
+                 out on one theme). Shown instead of the device render in that case. -->
+            <FontIcon x:Name="ModeIcon"
+                      Visibility="Collapsed"
+                      Height="112"
+                      FontSize="56"
+                      HorizontalAlignment="Center"
+                      Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+
             <!-- L / R / Case battery — each a tiny labelled accent bar, centred.
                  Absent components are collapsed by the code-behind. -->
             <StackPanel x:Name="BatteryRow"

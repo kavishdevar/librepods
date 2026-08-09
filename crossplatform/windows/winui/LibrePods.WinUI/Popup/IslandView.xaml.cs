@@ -28,9 +28,10 @@ public sealed partial class IslandView : UserControl
     /// Populate the card from a daemon Snapshot (name + battery + model image).
     public void Apply(Snapshot s)
     {
-        // Connection-card mode: render + battery, no message line.
+        // Connection-card mode: render + battery, no message line / mode glyph.
         MessageBody.Visibility = Visibility.Collapsed;
         DeviceImage.Visibility = Visibility.Visible;
+        ModeIcon.Visibility = Visibility.Collapsed;
         BatteryRow.Visibility = Visibility.Visible;
 
         DeviceName.Text = string.IsNullOrWhiteSpace(s.DevName) ? Localize.Get("Island_DefaultName") : s.DevName;
@@ -52,24 +53,33 @@ public sealed partial class IslandView : UserControl
         MessageBody.Visibility = Visibility.Visible;
         BatteryRow.Visibility = Visibility.Collapsed;
 
-        // A noise-control change shows the mode's icon (matching the Noise Control
-        // card), not the device render — everything else shows the device.
-        var modeIcon = ModeIconFor(body);
-        if (modeIcon is not null)
-            TrySetSource(modeIcon);
+        // A noise-control change shows the mode's glyph — a vector FontIcon so it
+        // follows the theme (the raster ANC art was fixed-colour and washed out on
+        // one theme). Everything else shows the device render.
+        var glyph = ModeGlyph(body);
+        if (glyph is not null)
+        {
+            ModeIcon.Glyph = glyph;
+            ModeIcon.Visibility = Visibility.Visible;
+            DeviceImage.Visibility = Visibility.Collapsed;
+        }
         else
+        {
             SetImage(model);
-        DeviceImage.Visibility = Visibility.Visible;
+            DeviceImage.Visibility = Visibility.Visible;
+            ModeIcon.Visibility = Visibility.Collapsed;
+        }
     }
 
-    /// The Assets icon for a noise-control mode body (localized match), or null when
-    /// the message isn't a mode change. "Off" has no dedicated art → null (device).
-    private static string? ModeIconFor(string body)
+    /// The Segoe Fluent glyph for a noise-control mode body (localized match), or
+    /// null when the message isn't a mode change. Char codes (not literal PUA chars)
+    /// keep the source clean. Matches the tray menu's mode glyphs.
+    private static string? ModeGlyph(string body)
     {
-        const string root = "ms-appx:///Assets/";
-        if (body == Localize.Get("Anc_NoiseCancellation")) return root + "anc_nc.png";
-        if (body == Localize.Get("Anc_Transparency")) return root + "anc_transparency.png";
-        if (body == Localize.Get("Anc_Adaptive")) return root + "anc_adaptive.png";
+        if (body == Localize.Get("Anc_Off")) return ((char)0xE7E8).ToString();            // power
+        if (body == Localize.Get("Anc_NoiseCancellation")) return ((char)0xE7F6).ToString(); // headphone
+        if (body == Localize.Get("Anc_Transparency")) return ((char)0xE890).ToString();   // view
+        if (body == Localize.Get("Anc_Adaptive")) return ((char)0xE72C).ToString();       // refresh
         return null;
     }
 
