@@ -1398,10 +1398,21 @@ fn main() {
                     {
                         return;
                     }
-                    p.0 = true; // prompted for this visit — don't re-ask until they leave
+                    p.0 = true; // acted on this visit — don't re-fire until they leave
                     drop(p);
-                    c.send_event(&Event::ConnectPrompt { name: c.dev_name.lock().unwrap().clone() });
-                    log("ble: AirPods nearby → connect prompt");
+                    // Auto-connect: open the AAP session automatically when the
+                    // AirPods appear, instead of prompting. run_receiver picks up
+                    // connect_requested; also nudge the OS audio up in case the
+                    // classic link is down.
+                    c.connect_requested.store(true, Ordering::Relaxed);
+                    c.hr_rebuilds.store(0, Ordering::Relaxed);
+                    c.hr_wants_rebuild.store(false, Ordering::Relaxed);
+                    let mac = c.mac;
+                    thread::spawn(move || {
+                        let ok = bt::set_audio_connected(mac, true);
+                        log(&format!("bt: auto-connect audio = {ok}"));
+                    });
+                    log("ble: AirPods nearby → auto-connecting");
                 },
                 // Only scan while idle (disconnected) — no BLE radio during audio.
                 move || !c_scan.state.lock().unwrap().connected,
