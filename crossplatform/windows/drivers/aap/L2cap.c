@@ -95,6 +95,12 @@ LpConnect(
 
     brb->BtAddress    = Address;
     brb->Psm          = Psm;
+    // CF_ROLE_EITHER only. Tried adding CF_LINK_ENCRYPTED (the AACP socket is opened
+    // auth/encrypt on Android) — it triggers a re-authentication at open time that
+    // the controller rejects (HCI status 0x27), failing the connect, exactly the
+    // race a LibrePods dev described. The paired link is already encrypted de-facto
+    // (battery/ANC work), so requiring it explicitly only breaks the open; it is not
+    // the heart-rate blocker.
     brb->ChannelFlags = CF_ROLE_EITHER;
 
     // Flags == 0 => let the stack negotiate default MTU/flush/QoS.

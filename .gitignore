@@ -675,3 +675,6 @@ result-*
 
 # LibrePods WinUI app manifest is a source file, not a build artifact
 !crossplatform/windows/winui/LibrePods.WinUI/app.manifest
+
+# Visual Studio per-user project settings (local build config — never shared)
+*.vcxproj.user
