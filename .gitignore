@@ -678,3 +678,6 @@ result-*
 
 # Visual Studio per-user project settings (local build config — never shared)
 *.vcxproj.user
+
+# Visual Studio Static Driver Verifier log (generated when running SDV/DVL locally)
+DvlErrLog.txt
