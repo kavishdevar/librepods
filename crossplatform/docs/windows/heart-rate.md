@@ -42,8 +42,13 @@ Every plausible transport/host cause was investigated and eliminated:
   client profile driver (proven across two driver builds). And it wouldn't have
   mattered: the working Android runs AAP over **Basic mode** anyway
   (`l2c_link_adjust_chnl_allocation: FCR Mode:0`), which is what our driver uses.
-- **Not encryption.** The paired ACL link is already encrypted; forcing
-  `CF_LINK_ENCRYPTED` only broke the connect (HCI `0x27`).
+- **Not encryption.** We opened the AAP channel with encryption *required* —
+  `CF_LINK_ENCRYPTED` in the BRB `ChannelFlags` — and confirmed it connects,
+  encrypted; the AirPods still ACK service 19 and stream **zero** readings. (An
+  earlier attempt also put `CF_LINK_ENCRYPTED` in `ConfigOut/In.Flags`, which are
+  a `CFG_*` option bitmask — not link flags — and that broke every connect with
+  `STATUS_INVALID_PARAMETER 0xC000000D`. That was a field-placement bug, not
+  encryption; with it in the correct field the encrypted channel changes nothing.)
 - **Not a missing capability.** The AirPods themselves advertise the `HRM_STATE`
   (0x30) capability to us and ACK the enable — they simply withhold the data.
 - **Not descriptor enumeration.** Proper protobuf parsing of
@@ -67,9 +72,12 @@ Windows can't do the equivalent:
 - The Microsoft Bluetooth stack (`bthport`) is **closed**; there's no in-stack
   hook point like Fluoride's.
 - The one vendor knob Windows exposes — the local **Device ID (PnP/SDP 0x1200)**
-  record (`DIDVendorID` etc. under `BTHPORT\Parameters`) — can be set to Apple's
-  `0x4C`, **but the AirPods never query it.** They only read the host's L2CAP SDP
-  record, not the PnP Device-ID record, so the spoof is never seen.
+  record under `BTHPORT\Parameters` — was set to the **complete** Apple record a
+  real AirPod advertises (`DIDVendorIDSource=1` SIG, `DIDVendorID=0x4C`,
+  `DIDProductID=0x2027`, `DIDVersion=0x100`) and republished with a reboot. It
+  changed **nothing**: the channel connects identically with or without it, and HR
+  stays blocked. The AirPods gate on the host being a real Apple device, which
+  this record alone does not establish.
 
 So on Windows the request goes through, the AirPods acknowledge it, and — because
 the host isn't (and can't easily be made to look like) an Apple device — they
