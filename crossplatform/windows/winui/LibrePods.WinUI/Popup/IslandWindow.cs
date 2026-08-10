@@ -47,6 +47,7 @@ public sealed class IslandWindow : Window
     private Phase _phase = Phase.In;
     private bool _shown;
     private bool _prepared;
+    private bool _loaded;
     private bool _closed;
 
     // Physical-pixel geometry, computed once the XamlRoot scale is known.
@@ -102,7 +103,10 @@ public sealed class IslandWindow : Window
                 try { ApplyExStyles(); } catch { }
                 try { RoundCorners(); } catch { }
                 AppWindow.Show(false);
-                // The slide-in is kicked off from OnViewLoaded.
+                // First-ever show: the slide-in is kicked off from OnViewLoaded (the
+                // XamlRoot isn't ready yet). Reuse after a hide: the view is already
+                // loaded, so start it now.
+                if (_loaded) StartSlideIn();
             }
             else
             {
@@ -140,6 +144,7 @@ public sealed class IslandWindow : Window
                 try { ApplyExStyles(); } catch { }
                 try { RoundCorners(); } catch { }
                 AppWindow.Show(false);
+                if (_loaded) StartSlideIn(); // reuse after a hide (see ShowConnected)
             }
             else
             {
@@ -177,6 +182,17 @@ public sealed class IslandWindow : Window
 
     private void OnViewLoaded(object sender, RoutedEventArgs e)
     {
+        _loaded = true;
+        if (_closed) return;
+        // A show requested before the view had loaded (the first show) starts here,
+        // once the XamlRoot/scale is available.
+        if (_shown) StartSlideIn();
+    }
+
+    /// Begin the slide-in → hold → slide-out cycle from the top. Callable on every
+    /// show (the first waits for OnViewLoaded; reuse-after-hide calls it directly).
+    private void StartSlideIn()
+    {
         if (_closed) return;
         try
         {
@@ -185,11 +201,11 @@ public sealed class IslandWindow : Window
             _view.Opacity = 0;
             try { AppWindow.Move(new PointInt32(_centerX, _startY)); } catch { }
             _clock.Restart();
-            _timer.Start();
+            if (!_timer.IsRunning) _timer.Start();
         }
         catch
         {
-            // If we can't set up the slide, just close quietly.
+            // If we can't set up the slide, just hide quietly.
             SafeClose();
         }
     }
@@ -288,10 +304,20 @@ public sealed class IslandWindow : Window
         try { AppWindow.Move(new PointInt32(_centerX, (int)Math.Round(y))); } catch { }
     }
 
+    /// End the current popup. Deliberately does NOT call Window.Close(): closing a
+    /// WinUI 3 Window that carries a DesktopAcrylicBackdrop + themed content, from a
+    /// DispatcherQueueTimer tick, fail-fasts inside the XAML theme-resource teardown
+    /// (Microsoft_UI_Xaml!OverrideXamlResourcePropertyBag, 0xC000027B) — a native
+    /// crash a try/catch can't stop. Instead we hide the single window and reset the
+    /// animation state so the next show slides it back in (the reuse the design
+    /// already intends). The window then lives for the app's lifetime.
     private void SafeClose()
     {
         if (_closed) return;
-        try { Close(); } catch { _closed = true; }
+        try { _timer.Stop(); } catch { }
+        try { AppWindow.Hide(); } catch { }
+        _shown = false;
+        _phase = Phase.In;
     }
 
     private static double Lerp(double a, double b, double t) => a + (b - a) * t;

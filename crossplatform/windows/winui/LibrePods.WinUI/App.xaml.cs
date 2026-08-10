@@ -97,8 +97,9 @@ public partial class App : Application
             if (_island is null)
             {
                 _island = new IslandWindow();
-                // Self-closes after its slide-out — drop the reference so the next
-                // connection builds a fresh one.
+                // The island hides + reuses itself after each slide-out (it never
+                // calls Window.Close, which fail-fasts in WinUI's theme teardown).
+                // Keep the Closed handler only as a shutdown safety net.
                 _island.Closed += (_, _) => _island = null;
             }
             _island.ShowConnected(snapshot);
