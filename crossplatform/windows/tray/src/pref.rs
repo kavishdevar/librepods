@@ -32,11 +32,13 @@ fn pref_path() -> Option<PathBuf> {
     Some(PathBuf::from(base).join("LibrePods").join("ui.pref"))
 }
 
-/// The saved choice, defaulting to the iced app (always present, cross-platform).
+/// The saved choice. On Windows we prefer the native WinUI client by default; the
+/// iced app is still launched if it's explicitly chosen, or as a fallback when the
+/// WinUI client isn't installed (see `launch`).
 pub fn get() -> Ui {
     match pref_path().and_then(|p| std::fs::read_to_string(p).ok()) {
-        Some(s) if s.trim() == "winui" => Ui::WinUi,
-        _ => Ui::Iced,
+        Some(s) if s.trim() == "iced" => Ui::Iced,
+        _ => Ui::WinUi,
     }
 }
 
