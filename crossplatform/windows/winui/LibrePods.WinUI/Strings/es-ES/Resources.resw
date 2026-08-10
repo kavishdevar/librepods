@@ -148,6 +148,8 @@
   <data name="Overlay_BatteryLow" xml:space="preserve"><value>Batería baja —</value></data>
   <data name="Overlay_CaseBatteryLow" xml:space="preserve"><value>Batería del estuche baja —</value></data>
   <data name="Overlay_RenamedTo" xml:space="preserve"><value>Renombrado a</value></data>
+  <data name="Rename_WindowsNoticeTitle" xml:space="preserve"><value>Nombre actualizado</value></data>
+  <data name="Rename_WindowsNoticeBody" xml:space="preserve"><value>En Windows, el nuevo nombre solo aparece después de desconectar y volver a conectar los AirPods.</value></data>
   <data name="Battery_LeftShort" xml:space="preserve"><value>Izq</value></data>
   <data name="Battery_RightShort" xml:space="preserve"><value>Der</value></data>
   <data name="Battery_CaseShort" xml:space="preserve"><value>Estuche</value></data>

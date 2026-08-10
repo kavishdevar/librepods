@@ -157,6 +157,8 @@
   <data name="Overlay_BatteryLow" xml:space="preserve"><value>Battery low —</value></data>
   <data name="Overlay_CaseBatteryLow" xml:space="preserve"><value>Case battery low —</value></data>
   <data name="Overlay_RenamedTo" xml:space="preserve"><value>Renamed to</value></data>
+  <data name="Rename_WindowsNoticeTitle" xml:space="preserve"><value>Name updated</value></data>
+  <data name="Rename_WindowsNoticeBody" xml:space="preserve"><value>In Windows, the new name only appears after you disconnect and reconnect the AirPods.</value></data>
   <data name="Battery_LeftShort" xml:space="preserve"><value>Left</value></data>
   <data name="Battery_RightShort" xml:space="preserve"><value>Right</value></data>
   <data name="Battery_CaseShort" xml:space="preserve"><value>Case</value></data>

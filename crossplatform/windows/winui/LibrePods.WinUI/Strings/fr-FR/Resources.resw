@@ -148,6 +148,8 @@
   <data name="Overlay_BatteryLow" xml:space="preserve"><value>Batterie faible —</value></data>
   <data name="Overlay_CaseBatteryLow" xml:space="preserve"><value>Batterie du boîtier faible —</value></data>
   <data name="Overlay_RenamedTo" xml:space="preserve"><value>Renommé en</value></data>
+  <data name="Rename_WindowsNoticeTitle" xml:space="preserve"><value>Nom mis à jour</value></data>
+  <data name="Rename_WindowsNoticeBody" xml:space="preserve"><value>Sous Windows, le nouveau nom n'apparaît qu'après avoir déconnecté puis reconnecté les AirPods.</value></data>
   <data name="Battery_LeftShort" xml:space="preserve"><value>G</value></data>
   <data name="Battery_RightShort" xml:space="preserve"><value>D</value></data>
   <data name="Battery_CaseShort" xml:space="preserve"><value>Boîtier</value></data>

@@ -76,6 +76,12 @@
                     <TextBlock Text="{Binding [HeaderDisconnectBtn_Text], Source={StaticResource Loc}}" />
                 </StackPanel>
             </Button>
+
+            <!-- Shown after a rename: the OS only reflects the new name on the
+                 next connect. Title/Subtitle are set (localized) in code. -->
+            <TeachingTip x:Name="RenameHint"
+                         IsLightDismissEnabled="True"
+                         PreferredPlacement="Bottom" />
         </Grid>
     </Border>
 </UserControl>

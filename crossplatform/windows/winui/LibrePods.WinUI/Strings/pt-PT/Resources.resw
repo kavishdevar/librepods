@@ -148,6 +148,8 @@
   <data name="Overlay_BatteryLow" xml:space="preserve"><value>Bateria fraca —</value></data>
   <data name="Overlay_CaseBatteryLow" xml:space="preserve"><value>Bateria do estojo fraca —</value></data>
   <data name="Overlay_RenamedTo" xml:space="preserve"><value>Renomeado para</value></data>
+  <data name="Rename_WindowsNoticeTitle" xml:space="preserve"><value>Nome atualizado</value></data>
+  <data name="Rename_WindowsNoticeBody" xml:space="preserve"><value>No Windows, o novo nome só aparece depois de desligares e voltares a ligar os AirPods.</value></data>
   <data name="Battery_LeftShort" xml:space="preserve"><value>Esq</value></data>
   <data name="Battery_RightShort" xml:space="preserve"><value>Dir</value></data>
   <data name="Battery_CaseShort" xml:space="preserve"><value>Estojo</value></data>

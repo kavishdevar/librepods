@@ -75,6 +75,15 @@ public sealed partial class DeviceHeader : UserControl
         {
             Client?.SetName(name);
             DeviceName.Text = name; // optimistic
+            ExitEdit();
+            // The daemon renames the device, but Windows only reflects the new
+            // name after a disconnect/reconnect — tell the user so the unchanged
+            // OS name doesn't read as a failure.
+            RenameHint.Target = DeviceName;
+            RenameHint.Title = Localize.Get("Rename_WindowsNoticeTitle");
+            RenameHint.Subtitle = Localize.Get("Rename_WindowsNoticeBody");
+            RenameHint.IsOpen = true;
+            return;
         }
         ExitEdit();
     }
