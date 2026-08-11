@@ -1,7 +1,7 @@
 name: Windows CI (frontend)
 
-# Builds the native Windows frontend: the Rust daemon (librepodsd) + tray
-# (librepods-tray) and the WinUI 3 app (librepods-winui). The two kernel drivers
+# Builds the native Windows frontend: the Rust daemon (librepodsd) and the WinUI 3
+# app (librepods-winui, which carries its own tray). The two kernel drivers
 # (AAP L2CAP + hi-res mic) are NOT built here — they need the WDK and test/EV
 # signing, which is a separate, manual pipeline.
 
@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ---- Rust: daemon + tray (native msvc target) --------------------------
+      # ---- Rust: daemon (native msvc target) ---------------------------------
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -34,7 +34,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             windows/daemon/target
-            windows/tray/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('windows/**/Cargo.lock') }}
 
       - name: Fetch FFmpeg (AAC-ELD decode libs — not vendored in git)
@@ -43,10 +42,6 @@ jobs:
 
       - name: Build daemon (librepodsd)
         working-directory: windows/daemon
-        run: cargo build --release
-
-      - name: Build tray (librepods-tray)
-        working-directory: windows/tray
         run: cargo build --release
 
       # ---- WinUI 3 app (unpackaged, self-contained) --------------------------
@@ -78,7 +73,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item windows/daemon/target/release/librepodsd.exe dist/
-          Copy-Item windows/tray/target/release/librepods-tray.exe dist/
           # FFmpeg runtime DLLs the daemon loads for AAC-ELD decode (fetched, not
           # vendored) — must sit next to librepodsd.exe.
           Copy-Item windows/daemon/vendor/ffmpeg/bin/*.dll dist/

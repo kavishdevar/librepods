@@ -5,14 +5,14 @@
     (%LOCALAPPDATA%\LibrePods) and drops a shortcut in the Startup folder, so it
     survives even if the WSL build target is cleaned.
 
-    Install (default = the tray app):
+    Install (default = the WinUI app):
         .\startup.ps1
-        .\startup.ps1 -Exe "C:\path\to\librepods-tray.exe"
+        .\startup.ps1 -Exe "C:\path\to\librepods-winui.exe"
     Remove:
         .\startup.ps1 -Remove
 #>
 param(
-    [string]$Exe    = "$env:LOCALAPPDATA\LibrePods\librepods-tray.exe",
+    [string]$Exe    = "$env:LOCALAPPDATA\LibrePods\librepods-winui.exe",
     [string]$Name   = 'LibrePods',
     [switch]$Remove
 )

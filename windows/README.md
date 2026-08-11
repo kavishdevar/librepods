@@ -3,13 +3,18 @@
 Open-source AirPods control for Windows: read battery and switch noise-control
 modes (Off / Noise Cancellation / Transparency / Adaptive) from the system tray.
 
-It has two parts:
+It has these parts:
 
-1. **`LibrePodsAAP` kernel driver** ([`../windows/drivers/aap`](../windows/drivers/aap)) —
-   opens the Apple Accessory Protocol (AAP) L2CAP channel to the AirPods in
-   kernel mode, which normal Windows apps cannot do, and exposes it via IOCTLs.
-2. **`librepods-tray` app** (this folder) — a tiny background app that talks to
-   the driver and puts battery + noise-control in the system tray.
+1. **`LibrePodsAAP` kernel driver** ([`drivers/aap`](drivers/aap)) — opens the Apple
+   Accessory Protocol (AAP) L2CAP channel to the AirPods in kernel mode, which
+   normal Windows apps cannot do, and exposes it via IOCTLs. A second driver
+   ([`drivers/mic`](drivers/mic)) exposes the AirPods hi-res mic as a Windows input.
+2. **`librepodsd` daemon** ([`daemon`](daemon)) — owns the driver + AAP session and
+   serves UI clients over named-pipe IPC (battery, noise control, ear-detection,
+   hearing aid, hi-res mic …).
+3. **`librepods-winui` app** ([`winui`](winui)) — the native **WinUI 3** client; it
+   lives in the system tray (closing hides it there) and is an IPC client of the
+   daemon. It's what you run day-to-day.
 
 Works with any AirPods (2/3, Pro 1/2/3, Max) and Apple Beats — the driver binds
 to the AAP service every AirPod advertises, not to a specific model. Features
@@ -57,20 +62,21 @@ bcdedit /set testsigning off                    # then re-enable Secure Boot in 
 
 ---
 
-## 2. Run the tray app
+## 2. Run the app
 
-Build (from WSL/Linux, cross-compiled): `cargo build --release --target x86_64-pc-windows-gnu`
-(binary at `target/x86_64-pc-windows-gnu/release/librepods-tray.exe`), or build
-natively on Windows. Just run `librepods-tray.exe` — a teal icon appears in the
-tray. To start it with Windows, drop a shortcut in
-`shell:startup` (Win+R → `shell:startup`).
+Two pieces run: the **daemon** (`librepodsd.exe`, headless) and the **WinUI app**
+(`librepods-winui.exe`). Build the daemon from WSL/Linux (cross-compiled):
+`cargo build --release --target x86_64-pc-windows-gnu` in `daemon/`, or natively on
+Windows. Build the WinUI app with `dotnet build`. The CI's release artifact bundles
+both plus the FFmpeg DLLs and the prebuilt drivers. Launch `librepods-winui.exe`; it
+auto-starts the daemon, shows a tray icon, and its window hides to the tray on close.
+To start it at login, use [`startup.ps1`](startup.ps1).
 
 ### How it works
-- On start it finds your paired AirPods, opens the driver, and starts an **AAP
-  session** (connect → handshake → request notifications).
-- A background thread reads the packets the AirPods push and keeps battery +
-  noise-mode state up to date.
-- **Left-click / right-click the tray icon** for the menu:
+- The daemon finds your paired AirPods, opens the driver, and holds an **AAP
+  session** (connect → handshake → request notifications), keeping battery +
+  noise-mode state up to date and serving the app over IPC.
+- **Left-click / right-click the WinUI tray icon** for the menu:
   - a line showing **Left / Right / Case** battery,
   - **Noise Control**: Off · Noise Cancellation · Transparency · Adaptive
     (the current one is checked; click to switch — sends the AAP command),
