@@ -836,7 +836,18 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
                 ctx.overlay(&format!("Renamed to “{name}”"));
             }
         }
-        Command::Shutdown => std::process::exit(0),
+        Command::Shutdown => {
+            // Release the exclusive AAP driver handle BEFORE exiting so the kernel
+            // devnode doesn't stick in Code 38 (CM_PROB_DRIVER_FAILED_PRIOR_UNLOAD)
+            // for the next daemon. `exit(0)` skips destructors, so close it
+            // explicitly here — this runs the driver's channel teardown, which the
+            // OS-on-exit handle close does not do reliably.
+            if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
+                log("shutdown: releasing AAP driver handle");
+                drv.close_now();
+            }
+            std::process::exit(0);
+        }
     }
 }
 

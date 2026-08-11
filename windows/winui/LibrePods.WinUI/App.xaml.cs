@@ -79,6 +79,12 @@ public partial class App : Application
                 _podsConnected = now;
             });
 
+        // If a previous daemon is still running (an orphan from a crashed or
+        // force-killed session), shut it down GRACEFULLY first so THIS app owns a
+        // single clean instance — the new daemon then opens the driver fresh,
+        // instead of hitting "driver open FAILED" against a leaked handle.
+        DaemonClient.ShutdownExistingDaemon();
+
         // Begin talking to the daemon (background reader + writer loops).
         Daemon.Start();
 

@@ -205,6 +205,47 @@ public sealed class DaemonClient : IDisposable
 
     // ---- Daemon launch -----------------------------------------------------
 
+    /// If a `librepodsd` is already running when this app starts (e.g. an orphan
+    /// from a crashed or force-killed session), ask it to exit GRACEFULLY over the
+    /// commands pipe and wait for it to go — so this app owns a single clean
+    /// instance and the freshly-spawned daemon can open the driver. The daemon
+    /// releases the exclusive AAP driver handle on Shutdown; we deliberately do
+    /// NOT hard-kill a stuck one — a kill leaks that handle and sticks the devnode
+    /// in Code 38 (CM_PROB_DRIVER_FAILED_PRIOR_UNLOAD), i.e. worse than leaving it
+    /// for the single-instance mutex + a reboot to resolve. Best-effort and fully
+    /// guarded: any failure just falls through to the normal connect/spawn path.
+    public static void ShutdownExistingDaemon()
+    {
+        Process[] existing;
+        try { existing = Process.GetProcessesByName("librepodsd"); }
+        catch { return; }
+        if (existing.Length == 0) return;
+
+        try
+        {
+            using var pipe = new NamedPipeClientStream(".", CommandsPipe,
+                PipeDirection.Out, PipeOptions.None);
+            pipe.Connect(500);
+            // Byte-identical to a normal command (Wire.ToLine carries the newline).
+            var bytes = Encoding.UTF8.GetBytes(Wire.ToLine(new ShutdownCmd()));
+            pipe.Write(bytes, 0, bytes.Length);
+            pipe.Flush();
+        }
+        catch
+        {
+            // Couldn't reach it (stuck daemon) — leave it be; never hard-kill.
+            foreach (var p in existing) p.Dispose();
+            return;
+        }
+
+        // Let it actually exit (releasing the driver) before we spawn a fresh one.
+        foreach (var p in existing)
+        {
+            try { p.WaitForExit(2000); } catch { }
+            p.Dispose();
+        }
+    }
+
     private static void TrySpawnDaemon()
     {
         try

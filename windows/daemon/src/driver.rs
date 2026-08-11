@@ -135,6 +135,18 @@ impl Driver {
             u32::from_le_bytes([out[24], out[25], out[26], out[27]]), // channel open
         ))
     }
+
+    /// Close the underlying device handle NOW, without waiting for the last `Arc`
+    /// clone to drop. Graceful shutdown needs this: `std::process::exit` skips
+    /// destructors, and letting the OS close the handle on process teardown can
+    /// leave the AAP devnode stuck in Code 38 (CM_PROB_DRIVER_FAILED_PRIOR_UNLOAD),
+    /// so the next daemon's `driver open` fails. Closing it explicitly first runs
+    /// the driver's L2CAP channel teardown. All clones share the one handle, so
+    /// this frees it for every clone — call it only on the way out (exit right
+    /// after), never mid-session.
+    pub fn close_now(&self) {
+        unsafe { CloseHandle(self.handle.0) };
+    }
 }
 
 fn open_driver() -> io::Result<HANDLE> {
