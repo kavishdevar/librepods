@@ -84,7 +84,7 @@ the AirPods stop bouncing between the HFP (mono, "static") and A2DP (stereo)
 profiles, because a proper AAP host is talking to them.
 
 ### Notes / limits
-- The driver is **exclusive** — only one app (this one, or `lp-driver-test`) can
+- The driver is **exclusive** — only one app can
   hold the channel at a time.
 - No system-volume control yet (that's a Windows audio API, separate from AAP).
 - Requires the driver installed and Test Mode on.
