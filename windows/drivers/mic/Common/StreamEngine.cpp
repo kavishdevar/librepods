@@ -691,16 +691,12 @@ CCaptureStreamEngine::CCaptureStreamEngine(
     _In_    ACXSTREAM       Stream,
     _In_    ACXDATAFORMAT   StreamFormat
 )
-    : CStreamEngine(Stream, StreamFormat, FALSE, NULL),
-    m_EnableWaveCapture(0)
+    : CStreamEngine(Stream, StreamFormat, FALSE, NULL)
 {
     PAGED_CODE();
 
     m_CurrentPacketStart.QuadPart = 0;
     m_LastPacketStart.QuadPart = 0;
-
-    RtlInitUnicodeString(&m_HostCaptureFileName, NULL);
-    RtlInitUnicodeString(&m_LoopbackCaptureFileName, NULL);
 }
 
 _Use_decl_annotations_
@@ -708,9 +704,6 @@ PAGED_CODE_SEG
 CCaptureStreamEngine::~CCaptureStreamEngine()
 {
     PAGED_CODE();
-
-    RtlFreeUnicodeString(&m_HostCaptureFileName);
-    RtlFreeUnicodeString(&m_LoopbackCaptureFileName);
 }
 
 _Use_decl_annotations_
@@ -718,44 +711,11 @@ PAGED_CODE_SEG
 NTSTATUS
 CCaptureStreamEngine::PrepareHardware()
 {
-    NTSTATUS                status = STATUS_SUCCESS;
-    PWAVEFORMATEXTENSIBLE   pwfext = NULL;
-
     PAGED_CODE();
 
-    status = CStreamEngine::PrepareHardware();
-    if (!NT_SUCCESS(status))
-    {
-        goto exit;
-    }
-
-    (void)ReadRegistrySettings();
-
-    pwfext = (PWAVEFORMATEXTENSIBLE)AcxDataFormatGetWaveFormatExtensible(m_StreamFormat);
-    if (pwfext == NULL)
-    {
-        // Cannot initialize reader or generator with a format that's not understood
-        status = STATUS_NO_MATCH;
-        ASSERT(FALSE);
-        goto exit;
-    }
-
-    if (m_EnableWaveCapture)
-    {
-        status = m_WaveReader.Init(pwfext, &m_HostCaptureFileName);
-        if (!NT_SUCCESS(status))
-        {
-            m_EnableWaveCapture = FALSE;
-        }
-    }
-
-    if (!m_EnableWaveCapture)
-    {
-        status = m_ToneGenerator.Init(m_ToneFrequency, pwfext);
-    }
-
-exit:
-    return status;
+    // LibrePods: capture data comes from the mic pipe (see ProcessPacket), so there
+    // is no wave-file reader or tone generator source to initialize here.
+    return CStreamEngine::PrepareHardware();
 }
 
 _Use_decl_annotations_
@@ -764,11 +724,6 @@ NTSTATUS
 CCaptureStreamEngine::ReleaseHardware()
 {
     PAGED_CODE();
-
-    if (m_EnableWaveCapture)
-    {
-        m_WaveReader.WaitAllWorkItems();
-    }
 
     return CStreamEngine::ReleaseHardware();
 }
@@ -824,58 +779,6 @@ CCaptureStreamEngine::ProcessPacket()
     MicPipeRead(packetBuffer, m_PacketSize);
 }
 
-_Use_decl_annotations_
-PAGED_CODE_SEG
-NTSTATUS
-CCaptureStreamEngine::ReadRegistrySettings()
-{
-    NTSTATUS                    status;
-    PDRIVER_OBJECT              DriverObject;
-    HANDLE                      DriverKey;
-
-    RTL_QUERY_REGISTRY_TABLE    paramTable[] = {
-        // QueryRoutine     Flags                                           Name                        EntryContext                  DefaultType                                                     DefaultData                   DefaultLength
-        { NULL,   RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK, L"EnableWaveCapture",       &m_EnableWaveCapture,         (REG_DWORD << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_DWORD,  &m_EnableWaveCapture,         sizeof(DWORD) },
-        { NULL,   RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK, L"HostCaptureFileName",     &m_HostCaptureFileName,       (REG_SZ << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_SZ,        &m_HostCaptureFileName,       sizeof(UNICODE_STRING) },
-        { NULL,   RTL_QUERY_REGISTRY_DIRECT | RTL_QUERY_REGISTRY_TYPECHECK, L"LoopbackCaptureFileName", &m_LoopbackCaptureFileName,   (REG_SZ << RTL_QUERY_REGISTRY_TYPECHECK_SHIFT) | REG_SZ,        &m_LoopbackCaptureFileName,   sizeof(UNICODE_STRING) },
-        { NULL,   0,                                                        NULL,                       NULL,                         0,                                                              NULL,                         0 }
-    };
-
-    PAGED_CODE();
-
-    DriverObject = WdfDriverWdmGetDriverObject(WdfGetDriver());
-    DriverKey = NULL;
-    status = IoOpenDriverRegistryKey(DriverObject, 
-                                 DriverRegKeyParameters,
-                                 KEY_READ,
-                                 0,
-                                 &DriverKey);
-
-    if (!NT_SUCCESS(status))
-    {
-        ASSERT(FALSE);
-        goto exit;
-    }
-
-    status = RtlQueryRegistryValues(RTL_REGISTRY_HANDLE,
-                                  (PCWSTR) DriverKey,
-                                  &paramTable[0],
-                                  NULL,
-                                  NULL);
-
-    if (DriverKey)
-    {
-        ZwClose(DriverKey);
-    }
-
-exit:
-    if (!NT_SUCCESS(status))
-    {
-        m_EnableWaveCapture = FALSE;
-    }
-
-    return status;
-}
 
 //Streamengine callbacks
 

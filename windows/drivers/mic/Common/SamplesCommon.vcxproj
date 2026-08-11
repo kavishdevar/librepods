@@ -155,10 +155,8 @@
     <ClInclude Include="Public.h" />
     <ClInclude Include="SimPeakMeter.h" />
     <ClInclude Include="StreamEngine.h" />
-    <ClInclude Include="ToneGenerator.h" />
     <ClInclude Include="Trace.h" />
     <ClInclude Include="Trace_macros.h" />
-    <ClInclude Include="WaveReader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="NewDelete.cpp" />
@@ -167,8 +165,6 @@
     <ClCompile Include="MicPipe.cpp" />
     <ClCompile Include="SimPeakMeter.cpp" />
     <ClCompile Include="StreamEngine.cpp" />
-    <ClCompile Include="ToneGenerator.cpp" />
-    <ClCompile Include="WaveReader.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

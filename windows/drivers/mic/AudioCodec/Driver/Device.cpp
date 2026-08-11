@@ -241,12 +241,6 @@ Return Value:
     RETURN_NTSTATUS_IF_FAILED(Codec_SetPowerPolicy(Device));
 
     //
-    // Set up the wave file reader (CWaveReader) utility used by the virtual
-    // streaming engine.
-    //
-    RETURN_NTSTATUS_IF_FAILED(CWaveReader::InitializeWorkItems(WdfDeviceWdmGetDeviceObject(Device)));
-
-    //
     // The driver uses this DDI to associate a circuit to a device. After
     // this call the circuit is not visible until the device goes in D0.
     // For a real driver there should be a check here to make sure the
@@ -301,8 +295,6 @@ Return Value:
     RETURN_NTSTATUS_IF_FAILED(AcxDeviceRemoveCircuit(Device, devCtx->Capture));
 
     // NOTE: Release streaming h/w resources here.
-
-    CWaveReader::DestroyWorkItems();
 
     status = STATUS_SUCCESS;
 

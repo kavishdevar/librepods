@@ -1,7 +1,5 @@
 #pragma once
 
-#include "tonegenerator.h"
-#include "WaveReader.h"
 #include "SimPeakMeter.h"
 
 #define HNSTIME_PER_MILLISECOND 10000
@@ -320,21 +318,10 @@ public:
         );
 
 protected:
-    ToneGenerator   m_ToneGenerator;
-    CWaveReader     m_WaveReader;
-    DWORD           m_EnableWaveCapture;
-    UNICODE_STRING  m_HostCaptureFileName;
-    UNICODE_STRING  m_LoopbackCaptureFileName;
-
     virtual
     __drv_maxIRQL(DISPATCH_LEVEL)
     VOID
     ProcessPacket();
-
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    ReadRegistrySettings();
 };
 
 // Define circuit/stream pin context.
