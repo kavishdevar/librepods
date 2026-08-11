@@ -5,3 +5,6 @@ winui/**/obj/
 .vs/
 *.user
 DvlErrLog.txt
+
+# Prebuilt/release output — produced by CI, never committed
+dist/

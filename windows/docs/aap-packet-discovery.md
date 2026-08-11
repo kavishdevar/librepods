@@ -92,7 +92,7 @@ Workout flow does. So HR must be captured on the **iPhone**:
 ## 4. Part C — read & filter
 
 AAP rides L2CAP SDUs on **PSM `0x1001`**. Framing cheatsheet (from our code —
-`crossplatform/windows/daemon/src/aap.rs`):
+`windows/daemon/src/aap.rs`):
 
 | Direction | Looks like | Meaning |
 |---|---|---|
@@ -118,13 +118,13 @@ AAP rides L2CAP SDUs on **PSM `0x1001`**. Framing cheatsheet (from our code —
 
 ## 5. Part D — the helper parser
 
-`crossplatform/docs/aap_extract.py` — feed it a text/hex export (from tshark, a
+`windows/docs/aap_extract.py` — feed it a text/hex export (from tshark, a
 Wireshark "Export as plain text", or a copy-paste hex dump) and it pulls out the
 AAP-looking packets and annotates the opcode:
 
 ```bash
 tshark -r airpods-macos.pklg -Y btl2cap -T fields -e frame.time_relative -e data \
-  | python3 crossplatform/docs/aap_extract.py
+  | python3 windows/docs/aap_extract.py
 ```
 
 It's deliberately simple/forgiving about input format — adapt it on the Mac with
@@ -176,7 +176,7 @@ whether the case battery is being reported.
 ## 7. Part F — bring it back
 
 - Protocol findings → append to **`AAP Definitions.md`** (the protocol doc).
-- HR frames → **`crossplatform/windows/daemon/src/aap.rs`** (the `HR_*` consts).
+- HR frames → **`windows/daemon/src/aap.rs`** (the `HR_*` consts).
 - **Keep the per-action diff notes** — "these bytes changed when I did X" is the
   most valuable artifact; paste them into the PR / commit message so the
   provenance is clear.

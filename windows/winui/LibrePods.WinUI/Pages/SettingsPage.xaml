@@ -63,24 +63,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- Front-end preference -->
-            <Border Style="{StaticResource Card}">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="{Binding [SettingsDefaultFrontend_Text], Source={StaticResource Loc}}"
-                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
-                    <TextBlock Text="{Binding [SettingsDefaultFrontendHint_Text], Source={StaticResource Loc}}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               Style="{ThemeResource CaptionTextBlockStyle}"
-                               TextWrapping="Wrap" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="{Binding [SettingsRefreshBtn_Content], Source={StaticResource Loc}}" Click="Refresh_Click" />
-                        <Button x:Name="SwitchUiButton"
-                                Content="{Binding [SettingsSwitchUiBtn_Content], Source={StaticResource Loc}}"
-                                Click="SwitchUi_Click" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
             <!-- Experimental — heart-rate opt-in. Off by default because AirPods gate
                  the HR stream to Apple hosts; on Windows it does not work. -->
             <Border Style="{StaticResource Card}">

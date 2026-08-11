@@ -1,6 +1,6 @@
 //! BLE advertisement watcher: detect the AirPods nearby (their Apple
 //! proximity-pairing advertisement) so the daemon can prompt "connect?" before
-//! it opens the AAP session. Ported/trimmed from crossplatform-rust's le_scan.rs.
+//! it opens the AAP session. Reads Apple manufacturer data from LE advertisements to detect the AirPods.
 //!
 //! Scanning is PASSIVE (listen only, no scan requests) and only runs while
 //! `should_scan` is true — i.e. while disconnected — so the 2.4 GHz radio never

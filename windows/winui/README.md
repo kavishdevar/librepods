@@ -14,9 +14,8 @@ A native **C# / WinUI 3 (Windows App SDK)** front-end for LibrePods.
 | Settings (theme, default front-end) | Tray menu (battery + Noise Control + Mute) |
 | ![Toast notification](docs/screenshot-toast.png) | ![Connection island](docs/screenshot-island.png) |
 | Native Windows toast (ANC change) | iOS-style connection island |
- It is an
-alternative to the cross-platform iced app (`librepods.exe`) and the Rust tray
-(`librepods-tray.exe`). All three are thin IPC clients of the same Rust daemon,
+ It is the native Windows client, alongside a lightweight Rust tray
+(`librepods-tray.exe`). Both are thin IPC clients of the same Rust daemon,
 **`librepodsd.exe`**, which owns the driver, the AAP session and the hi-res mic.
 
 This app is **primarily a tray app**:

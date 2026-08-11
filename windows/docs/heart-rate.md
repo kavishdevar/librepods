@@ -92,8 +92,8 @@ can actually be bypassed on Windows.
 
 ## References
 
-- `crossplatform/windows/drivers/aap/L2cap.c` — the driver runs the AAP channel
+- `windows/drivers/aap/L2cap.c` — the driver runs the AAP channel
   in L2CAP **Basic** mode (the ERTM/encryption experiments are documented in the
   comments there).
-- `crossplatform/windows/daemon/src/main.rs` — `hr_retry_campaign` / the HR
+- `windows/daemon/src/main.rs` — `hr_retry_campaign` / the HR
   enable + start sequence and constants (`HR_START_SEQ`, `HR_INIT_QUIET_MS`, …).

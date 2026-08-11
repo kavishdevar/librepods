@@ -420,7 +420,7 @@ Once tracking is active, the AirPods stream sensor packets with the following co
 # Starting and Stopping Sensor Streams
 
 Captured from **iOS 26.5.2 ↔ AirPods Pro 3 (firmware 8B41)** with `idevicebtlogger`,
-across three sessions. See `crossplatform/docs/aap-packet-discovery.md` for the method.
+across three sessions. See `windows/docs/aap-packet-discovery.md` for the method.
 
 Sensor streams are started and stopped with the **same `0x17` … `42 0B` frame family as Head
 Tracking above** — not with a different mechanism. The frame carries a stream id and a
@@ -483,7 +483,7 @@ t=472.02  ←  heart-rate frames still arriving
 34 s before the last heart-rate frame, and iOS had not yet sent the heart-rate stop. A client
 must not assume the stream ends when the user ends the activity.
 
-## Notes for `crossplatform/windows/daemon/src/aap.rs`
+## Notes for `windows/daemon/src/aap.rs`
 
 The original `HR_START` / `HR_STOP` constants were **form A and structurally correct** — same
 length, same absent `10 02`, same bare `08 13`, same period. Only the sequence varint differed,
@@ -558,7 +558,7 @@ Sensor 3, protobuf field `0x3a`, inner type `19` (`0x13`), one packet per second
 
 `1a 12` introduces an **18-byte payload**. Offsets below are relative to that payload,
 matching `HEART_RATE_BPM_OFFSET` / `HEART_RATE_STATUS_TAIL_OFFSET` in
-`crossplatform/windows/daemon/src/hr.rs`:
+`windows/daemon/src/hr.rs`:
 
 | Field | Offset | Length | Meaning |
 |---|---|---|---|

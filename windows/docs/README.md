@@ -1,6 +1,6 @@
-# LibrePods — cross-platform docs
+# LibrePods — Windows docs
 
-Docs are grouped **by operating system**, because the cross-platform port shares
+Docs are grouped **by operating system**, because the Windows stack shares
 one codebase but each OS has its own integration story, drivers, and gotchas.
 
 ## [`windows/`](windows/) 🪟

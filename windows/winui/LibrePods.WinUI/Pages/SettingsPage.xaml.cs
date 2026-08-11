@@ -118,14 +118,4 @@ public sealed partial class SettingsPage : UserControl
             InfoBlur.Visibility = RevealInfo.IsChecked == true ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    private void Refresh_Click(object sender, RoutedEventArgs e) => Client?.RequestState();
-
-    private void SwitchUi_Click(object sender, RoutedEventArgs e)
-    {
-        UiPreference.Set(UiPreference.Iced);
-        SettingsInfoBar.Title = Localize.Get("Settings_DefaultUiChanged_Title");
-        SettingsInfoBar.Message = Localize.Get("Settings_DefaultUiChanged_Message");
-        SettingsInfoBar.Severity = InfoBarSeverity.Success;
-        SettingsInfoBar.IsOpen = true;
-    }
 }
