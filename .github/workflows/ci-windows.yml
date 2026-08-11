@@ -79,6 +79,13 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item windows/daemon/target/release/librepodsd.exe dist/
           Copy-Item windows/tray/target/release/librepods-tray.exe dist/
+          # FFmpeg runtime DLLs the daemon loads for AAC-ELD decode (fetched, not
+          # vendored) — must sit next to librepodsd.exe.
+          Copy-Item windows/daemon/vendor/ffmpeg/bin/*.dll dist/
+          # Prebuilt, test-signed kernel drivers (install with pnputil /add-driver).
+          New-Item -ItemType Directory -Force dist/drivers | Out-Null
+          Copy-Item -Recurse windows/drivers/aap/prebuilt dist/drivers/aap
+          Copy-Item -Recurse windows/drivers/mic/prebuilt dist/drivers/mic
           # Find the WinUI output dir by locating the exe (path varies with TFM/RID).
           $exe = Get-ChildItem -Recurse -Filter librepods-winui.exe `
             windows/winui/LibrePods.WinUI/bin | Select-Object -First 1
