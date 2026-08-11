@@ -6,13 +6,14 @@
 #
 # We copy BOTH import-lib formats: .lib (MSVC — what CI's default target uses)
 # and .dll.a (MinGW — the x86_64-pc-windows-gnu cross-build), so build.rs links
-# under either toolchain. Pinned by URL + SHA256; if BtbN rebuilds the n7.1
-# "latest" asset the checksum will mismatch and the build fails loudly — bump
-# URL_SHA256 below to the new value then.
+# under either toolchain. Pinned to an IMMUTABLE dated BtbN autobuild tag + SHA256
+# (NOT the rolling "latest" tag, which gets rebuilt and breaks the checksum). To
+# move versions: pick a new dated tag, keep the av*-NN.dll SONAMEs in sync with
+# what the app loads, and update URL + URL_SHA256.
 set -euo pipefail
 
-URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-lgpl-shared-7.1.zip"
-URL_SHA256="a5243d934aec40825e3a80c8beaa4f713fadd0c943b2034add8e170905021c2b"
+URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-11-13-11/ffmpeg-n7.1.5-12-g1fdbca85aa-win64-lgpl-shared-7.1.zip"
+URL_SHA256="2e970208067a30ce6d4c5d89ba50ff7bea110ab7406414d0735b6ced89c53cf8"
 
 here="$(cd "$(dirname "$0")" && pwd)"
 dest="$here/vendor/ffmpeg"
