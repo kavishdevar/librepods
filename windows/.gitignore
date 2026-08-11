@@ -1,0 +1,7 @@
+# Windows stack build output. Vendored deps (daemon/vendor/**) stay tracked.
+**/target/
+winui/**/bin/
+winui/**/obj/
+.vs/
+*.user
+DvlErrLog.txt
