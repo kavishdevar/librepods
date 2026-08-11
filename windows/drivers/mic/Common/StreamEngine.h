@@ -1,10 +1,8 @@
 #pragma once
 
-#include "savedata.h"
 #include "tonegenerator.h"
 #include "WaveReader.h"
 #include "SimPeakMeter.h"
-#include "keyworddetector.h"
 
 #define HNSTIME_PER_MILLISECOND 10000
 
@@ -286,62 +284,6 @@ protected:
     ProcessPacket() = 0;
 };
 
-class CRenderStreamEngine : public CStreamEngine
-{
-public:
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    CRenderStreamEngine(
-        _In_    ACXSTREAM       Stream,
-        _In_    ACXDATAFORMAT   StreamFormat,
-        _In_    BOOL            Offload,
-        _In_    CSimPeakMeter   *CircuitPeakmeter
-        );
-
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    ~CRenderStreamEngine();
-
-    virtual
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    PrepareHardware();
-
-    virtual
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    ReleaseHardware();
-
-    virtual
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    AssignDrmContentId(
-        _In_ ULONG          DrmContentId,
-        _In_ PACXDRMRIGHTS  DrmRights
-        );
-
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    SetRenderPacket(
-        _In_    ULONG           Packet,
-        _In_    ULONG           Flags,
-        _In_    ULONG           EosPacketLength
-        );
-
-protected:
-    CSaveData m_SaveData;
-
-    virtual
-    __drv_maxIRQL(DISPATCH_LEVEL)
-    VOID
-    ProcessPacket();
-
-};
-
 class CCaptureStreamEngine : public CStreamEngine
 {
 public:
@@ -393,51 +335,6 @@ protected:
     PAGED_CODE_SEG
     NTSTATUS
     ReadRegistrySettings();
-};
-
-class CBufferedCaptureStreamEngine : public CCaptureStreamEngine
-{
-public:
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    CBufferedCaptureStreamEngine(
-        _In_ ACXSTREAM          Stream,
-        _In_ ACXDATAFORMAT      StreamFormat,
-        _In_ CKeywordDetector * KeywordDetector
-        );
-
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    ~CBufferedCaptureStreamEngine();
-
-    virtual
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    Run();
-
-    virtual
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    Pause();
-
-    __drv_maxIRQL(PASSIVE_LEVEL)
-    PAGED_CODE_SEG
-    NTSTATUS
-    GetCapturePacket(
-        _Out_   ULONG         * LastCapturePacket,
-        _Out_   ULONGLONG     * QPCPacketStart,
-        _Out_   BOOLEAN       * MoreData
-        );
-
-protected:
-    virtual
-    __drv_maxIRQL(DISPATCH_LEVEL)
-    VOID
-    ProcessPacket();
-
-    CKeywordDetector * m_KeywordDetector;
 };
 
 // Define circuit/stream pin context.

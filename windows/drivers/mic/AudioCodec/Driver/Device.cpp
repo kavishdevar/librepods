@@ -241,13 +241,9 @@ Return Value:
     RETURN_NTSTATUS_IF_FAILED(Codec_SetPowerPolicy(Device));
 
     //
-    // Setting up the data saving (CSaveData) and wave file reader (CWaveReader)
-    // utility classes which will be used by the virtual streaming engine.
+    // Set up the wave file reader (CWaveReader) utility used by the virtual
+    // streaming engine.
     //
-    RETURN_NTSTATUS_IF_FAILED(CSaveData::SetDeviceObject(WdfDeviceWdmGetDeviceObject(Device)));
-
-    RETURN_NTSTATUS_IF_FAILED(CSaveData::InitializeWorkItems(WdfDeviceWdmGetDeviceObject(Device)));
-
     RETURN_NTSTATUS_IF_FAILED(CWaveReader::InitializeWorkItems(WdfDeviceWdmGetDeviceObject(Device)));
 
     //
@@ -306,7 +302,6 @@ Return Value:
 
     // NOTE: Release streaming h/w resources here.
 
-    CSaveData::DestroyWorkItems();
     CWaveReader::DestroyWorkItems();
 
     status = STATUS_SUCCESS;
