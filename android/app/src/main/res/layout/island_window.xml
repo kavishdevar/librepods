@@ -5,7 +5,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_margin="16dp"
-    android:background="@drawable/island_background"
+    android:background="@drawable/bg_island"
     android:elevation="4dp"
     android:gravity="center"
     android:minHeight="115dp"
@@ -37,7 +37,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_margin="0dp"
-            android:fontFamily="@font/sf_pro"
+            android:fontFamily="@font/inter"
             android:gravity="bottom"
             android:includeFontPadding="false"
             android:lineSpacingExtra="0dp"
@@ -52,7 +52,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_margin="0dp"
-            android:fontFamily="@font/sf_pro"
+            android:fontFamily="@font/inter"
             android:gravity="bottom"
             android:includeFontPadding="false"
             android:lineSpacingExtra="0dp"
@@ -80,7 +80,7 @@
             android:indeterminate="false"
             android:max="100"
             android:progress="100"
-            android:progressDrawable="@drawable/island_battery_background" />
+            android:progressDrawable="@drawable/bg_island_battery" />
 
         <ProgressBar
             android:id="@+id/island_battery_progress"
@@ -98,7 +98,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:fontFamily="@font/sf_pro"
+            android:fontFamily="@font/inter"
             android:gravity="center"
             android:text="50%"
             android:textColor="#1ceb72"

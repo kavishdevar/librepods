@@ -10,8 +10,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="16sp"
-        android:textColor="?android:attr/textColorPrimary"
-        android:fontFamily="@font/sf_pro" />
+        android:textColor="?android:attr/textColorPrimary" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -23,7 +22,6 @@
             android:id="@+id/left_battery_notification"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:fontFamily="@font/sf_pro"
             android:textSize="15sp"
             android:paddingEnd="16dp"
             android:layout_weight="1"
@@ -32,7 +30,6 @@
             android:id="@+id/right_battery_notification"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:fontFamily="@font/sf_pro"
             android:textSize="15sp"
             android:layout_weight="1"
             android:paddingEnd="16dp"
@@ -41,7 +38,6 @@
             android:id="@+id/case_battery_notification"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:fontFamily="@font/sf_pro"
             android:layout_weight="1"
             android:textSize="15sp" />
     </LinearLayout>

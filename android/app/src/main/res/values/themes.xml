@@ -11,7 +11,7 @@
          <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
-    <!-- Theme for the transparent dialog activity -->
+    <!-- Theme for the transparent dialog me.kavishdevar.librepods.presentation.activity -->
     <style name="Theme.TransparentDialog" parent="Theme.AppCompat.Dialog">
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>

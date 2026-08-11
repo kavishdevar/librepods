@@ -1,0 +1,466 @@
+package me.kavishdevar.librepods.presentation.screens
+
+import android.util.Log
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.contentColorFor
+import androidx.compose.material3.toPath
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.center
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.Morph
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.bluetooth.MacAddress
+import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
+import me.kavishdevar.librepods.devices.AirPodsSpecs
+import me.kavishdevar.librepods.devices.AppleDevice
+import me.kavishdevar.librepods.devices.AppleMetadata
+import me.kavishdevar.librepods.devices.AppleState
+import me.kavishdevar.librepods.devices.BaseCapability
+import me.kavishdevar.librepods.devices.ConnectionState
+import me.kavishdevar.librepods.devices.Device
+import me.kavishdevar.librepods.presentation.components.NoiseControlSettings
+import me.kavishdevar.librepods.presentation.components.StyledList
+import me.kavishdevar.librepods.presentation.components.StyledListItem
+import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.icons.LocalIcons
+import me.kavishdevar.librepods.presentation.theme.DesignSystem
+import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.presentation.utils.createAirPodsBatteryRichText
+import kotlin.math.min
+import kotlin.time.Duration.Companion.milliseconds
+
+@Composable
+fun DeviceListRoute(
+    devices: Map<MacAddress, Device<*, *, *>>,
+    navigateToDevice: (MacAddress) -> Unit,
+) {
+    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
+    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
+    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+
+    Box (
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+    ) {
+        DeviceListScreen(
+            devices = devices,
+            navigateToDevice = navigateToDevice,
+            topPadding = topPadding,
+            bottomPadding = bottomPadding
+        )
+    }
+}
+
+@Composable
+fun DeviceListScreen(
+    devices: Map<MacAddress, Device<*, *, *>>,
+    navigateToDevice: (MacAddress) -> Unit,
+    topPadding: Dp = 16.dp,
+    bottomPadding: Dp = 16.dp
+) {
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Spacer(modifier = Modifier.padding(top = topPadding))
+
+        Log.d("DeviceListScreen", "Rendering device list with ${devices.size} devices")
+
+        StyledList(title = stringResource(R.string.devices), key = devices) {
+            devices.forEach { (macAddress, device) ->
+                val connectionState by device.connectionState.collectAsState()
+                val deviceState by device.state.collectAsState()
+                val deviceMetadata by device.metadata.collectAsState()
+
+                fun ConnectionState.shape() = when (this) {
+                    ConnectionState.DISCONNECTED -> MaterialShapes.Circle.normalized()
+                    ConnectionState.CONNECTING -> MaterialShapes.SoftBurst.normalized()
+                    ConnectionState.CONNECTED -> MaterialShapes.SoftBurst.normalized()
+                    ConnectionState.DISCONNECTING -> MaterialShapes.Cookie4Sided.normalized()
+                    ConnectionState.AVAILABLE -> MaterialShapes.Circle.normalized()
+                }
+
+                val connectingShapes = remember {
+                    listOf(
+                        MaterialShapes.Cookie4Sided.normalized(),
+                        MaterialShapes.SoftBurst.normalized(),
+                        MaterialShapes.Cookie9Sided.normalized(),
+                        MaterialShapes.Pentagon.normalized(),
+                        MaterialShapes.Pill.normalized(),
+                        MaterialShapes.Sunny.normalized(),
+                        MaterialShapes.Cookie4Sided.normalized(),
+                        MaterialShapes.Oval.normalized(),
+                    )
+                }
+
+                val connectingMorphs = remember {
+                    buildList {
+                        connectingShapes.zipWithNext { a, b ->
+                            add(Morph(a, b))
+                        }
+                        add(Morph(connectingShapes.last(), connectingShapes.first()))
+                    }
+                }
+
+                var previousState by remember { mutableStateOf(connectionState) }
+
+                var pressed by remember { mutableStateOf(false) }
+
+                val touchMorph = remember {
+                    Morph(
+                        if (connectionState == ConnectionState.CONNECTED) MaterialShapes.SoftBurst.normalized() else MaterialShapes.Circle.normalized(),
+                        MaterialShapes.Cookie4Sided.normalized()
+                    )
+                }
+
+                val touchProgress = remember { Animatable(0f) }
+
+                LaunchedEffect(pressed) {
+                    touchProgress.animateTo(
+                        targetValue = if (pressed) 1f else 0f,
+                        animationSpec = spring(
+                            dampingRatio = 0.6f,
+                            stiffness = 200f,
+                            visibilityThreshold = 0.1f
+                        )
+                    )
+                }
+
+                var currentMorphIndex by remember { mutableIntStateOf(0) }
+                var morphRotationTarget by remember { mutableFloatStateOf(90f) }
+
+                val morphProgress = remember { Animatable(0f) }
+                val globalRotation = remember { Animatable(0f) }
+
+                LaunchedEffect(connectionState) {
+                    if (connectionState == ConnectionState.CONNECTING) {
+                        pressed = false
+                        currentMorphIndex = 0
+                        morphRotationTarget = 90f
+
+                        morphProgress.stop()
+                        morphProgress.snapTo(0f)
+
+                        globalRotation.stop()
+                        globalRotation.snapTo(0f)
+
+                        coroutineScope {
+                            launch {
+                                while (isActive) {
+                                    val deferred = async {
+                                        morphProgress.animateTo(
+                                            1f,
+                                            spring(
+                                                dampingRatio = 0.6f,
+                                                stiffness = 200f,
+                                                visibilityThreshold = 0.1f
+                                            )
+                                        )
+
+                                        currentMorphIndex =
+                                            (currentMorphIndex + 1) % connectingMorphs.size
+
+                                        morphProgress.snapTo(0f)
+
+                                        morphRotationTarget =
+                                            (morphRotationTarget + 90f) % 360f
+                                    }
+
+                                    delay(650.milliseconds)
+                                    deferred.await()
+                                }
+                            }
+
+                            launch {
+                                globalRotation.animateTo(
+                                    targetValue = 360f,
+                                    animationSpec = infiniteRepeatable(
+                                        tween(4666, easing = LinearEasing),
+                                        repeatMode = RepeatMode.Restart
+                                    )
+                                )
+                            }
+                        }
+                    } else {
+                        globalRotation.stop()
+                        morphProgress.stop()
+
+                        morphProgress.snapTo(0f)
+
+                        morphProgress.animateTo(
+                            1f,
+                            spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
+                        )
+
+                        previousState = connectionState
+                    }
+                }
+
+                val morph = remember(
+                    connectionState,
+                    previousState,
+                    currentMorphIndex
+                ) {
+                    if (connectionState == ConnectionState.CONNECTING) {
+                        connectingMorphs[currentMorphIndex]
+                    } else {
+                        Morph(previousState.shape(), connectionState.shape())
+                    }
+                }
+
+                val iconBackgroundColor by animateColorAsState(
+                    targetValue = when (connectionState) {
+                        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.secondaryContainer
+                        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primaryContainer
+                        ConnectionState.DISCONNECTING -> MaterialTheme.colorScheme.surfaceContainer
+                        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.surfaceDim
+                        ConnectionState.AVAILABLE -> MaterialTheme.colorScheme.surfaceBright
+                    },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "iconBackgroundColor"
+                )
+
+                val iconColor by animateColorAsState(
+                    targetValue = when (connectionState) {
+                        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.onSecondaryContainer
+                        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.onPrimaryContainer
+                        ConnectionState.DISCONNECTING -> MaterialTheme.colorScheme.onSurface
+                        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.contentColorFor(MaterialTheme.colorScheme.surfaceDim)
+                        ConnectionState.AVAILABLE -> MaterialTheme.colorScheme.contentColorFor(MaterialTheme.colorScheme.surfaceBright)
+                    },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "iconColor"
+                )
+
+                val path = remember { Path() }
+                val matrix = remember { Matrix() }
+
+                StyledListItem(
+                    onClick = if (device.connectionState.collectAsState().value == ConnectionState.CONNECTED) { { navigateToDevice(macAddress) } } else null,
+                    contentText = deviceMetadata.name,
+                    leadingContent = {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onPress = {
+                                            pressed = true
+                                            tryAwaitRelease()
+                                            pressed = false
+                                        },
+                                        onTap = {
+                                            CoroutineScope(Dispatchers.IO).launch {
+                                                when (connectionState) {
+                                                    ConnectionState.CONNECTED -> device.disconnect()
+                                                    ConnectionState.DISCONNECTED -> device.connect()
+                                                    else -> {}
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                                .drawBehind {
+                                    val activeMorph: Morph
+                                    val activeProgress: Float
+
+                                    if (connectionState != ConnectionState.CONNECTING && touchProgress.value > 0f) {
+                                        activeMorph = touchMorph
+                                        activeProgress = touchProgress.value
+                                    } else {
+                                        activeMorph = morph
+                                        activeProgress = morphProgress.value
+                                    }
+
+                                    val shapePath = activeMorph.toPath(
+                                        progress = activeProgress,
+                                        path = path
+                                    )
+
+                                    val bounds = shapePath.getBounds()
+
+                                    val scale = min(
+                                        size.width / bounds.width,
+                                        size.height / bounds.height
+                                    ) * 0.9f
+
+                                    matrix.reset()
+                                    matrix.scale(scale, scale)
+
+                                    shapePath.transform(matrix)
+
+                                    shapePath.translate(
+                                        size.center - shapePath.getBounds().center
+                                    )
+
+                                    val rotation =
+                                        if (connectionState == ConnectionState.CONNECTING) {
+                                            morphProgress.value * 90f +
+                                                morphRotationTarget +
+                                                globalRotation.value
+                                        } else {
+                                            0f
+                                        }
+
+                                    rotate(rotation) {
+                                        drawPath(
+                                            path = shapePath,
+                                            color = iconBackgroundColor
+                                        )
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = LocalIcons.current.fromName(deviceMetadata.iconName)?: LocalIcons.current.Headphones,
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = iconColor
+                            )
+                        }
+                    },
+                    supportingContent = {
+                        when (connectionState) {
+                            ConnectionState.AVAILABLE -> {
+                                when (deviceState) {
+                                    is AppleState -> {
+//                                        battery from BLE
+                                    }
+                                    else -> Text(
+                                        text = "????",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            ConnectionState.DISCONNECTING, ConnectionState.DISCONNECTED -> {
+                                Text(
+                                    text = macAddress.value,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            ConnectionState.CONNECTING -> {
+                                Text(
+                                    text = stringResource(R.string.connecting),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            ConnectionState.CONNECTED -> {
+                                when (deviceState) {
+                                    is AppleState -> {
+                                        Column (
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            val deviceState = deviceState as AppleState
+                                            val deviceMetadata = deviceMetadata as AppleMetadata
+
+                                            val batteryRichText = createAirPodsBatteryRichText(
+                                                battery = deviceState.battery,
+                                                airPodsSpec = AirPodsSpecs.getSpec(deviceMetadata.model)
+                                            )
+
+                                            Text(
+                                                text = batteryRichText.text,
+                                                inlineContent = batteryRichText.inlineContent,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+
+                                            if (AirPodsSpecs.getSpec(deviceMetadata.model).baseCapabilities.contains(BaseCapability.LISTENING_MODE)) {
+                                                NoiseControlSettings(
+                                                    showOffListeningMode = deviceState.controlStates[ControlCommandIdentifier.LISTENING_MODE]?.get(0) == 1.toByte(),
+                                                    noiseControlModeValue = deviceState.controlStates[ControlCommandIdentifier.LISTENING_MODE]?.get(0)?.toInt() ?: 2,
+                                                    onNoiseControlModeChanged = { newMode ->
+                                                        CoroutineScope(Dispatchers.IO).launch {
+                                                            (device as AppleDevice).setControlCommand(
+                                                                ControlCommandIdentifier.LISTENING_MODE,
+                                                                newMode.toByte()
+                                                            )
+                                                        }
+                                                    },
+                                                    showLabels = false
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    orientation = StyledListItemOrientation.Vertical
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.padding(top = bottomPadding))
+    }
+}

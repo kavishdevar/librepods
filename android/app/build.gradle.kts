@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.aboutLibraries)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.room3)
 //    alias(libs.plugins.hilt)
     id("kotlin-parcelize")
 }
@@ -24,10 +27,17 @@ val releaseSigningAvailable = listOf(
     "RELEASE_KEY_PASSWORD"
 ).all { props[it]?.toString()?.isNotBlank() == true }
 
+room3 {
+    schemaDirectory("$projectDir/schemas")
+}
+
 kotlin {
     compilerOptions {
-        optIn.add(
-            "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi"
+        optIn.addAll(
+            "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+            "kotlin.uuid.ExperimentalUuidApi",
+            "kotlinx.coroutines.FlowPreview",
+            "kotlinx.serialization.ExperimentalSerializationApi"
         )
     }
 }
@@ -49,7 +59,7 @@ android {
     defaultConfig {
         applicationId = "me.kavishdevar.librepods"
         targetSdk = 37
-        versionCode = 63
+        versionCode = 65
         versionName = appVersionName
     }
     buildTypes {
@@ -125,7 +135,6 @@ android {
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.accompanist.permissions)
-    implementation(libs.androidx.compose.ui.text.google.fonts)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -140,12 +149,11 @@ dependencies {
     implementation(libs.haze)
     implementation(libs.haze.materials)
     implementation(libs.androidx.dynamicanimation)
-    implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.billing)
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.compose.foundation.layout)
-    implementation(libs.aboutlibraries)
+    implementation(libs.aboutlibraries.compose)
     implementation(libs.aboutlibraries.compose.m3)
     implementation(libs.backdrop)
 //    implementation(libs.hilt)
@@ -158,6 +166,11 @@ dependencies {
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.androidx.navigationevent)
+    implementation(libs.androidx.room3.runtime)
+    ksp(libs.androidx.room3.compiler)
+    implementation(libs.kotlinx.serialization.cbor)
+
+//    compileOnly(files("../../../framework-classes.jar"))
 }
 
 aboutLibraries {
@@ -178,6 +191,7 @@ fun registerRootModuleZipTask(
     flavor: String,
     buildType: String
 ) = tasks.register<Zip>(name) {
+    description = "Zips the root module for the $flavor-$buildType variant."
 
     val variantTask = "assemble${cap(flavor)}${cap(buildType)}"
     dependsOn(variantTask)
@@ -213,6 +227,7 @@ val zipDebug = registerRootModuleZipTask(
 
 val collect = tasks.register<Copy>("collectReleaseArtifacts") {
 
+    description = "Collects release artifacts (APK, AAB, and root module ZIP) into a single directory for easier distribution."
     dependsOn(
         zipRelease,
         zipDebug,
@@ -241,5 +256,6 @@ val collect = tasks.register<Copy>("collectReleaseArtifacts") {
 }
 
 tasks.register("packageReleaseArtifacts") {
+    description = "Packages release artifacts (APK, AAB, and root module ZIP) into a single directory for easier distribution."
     dependsOn(collect)
 }

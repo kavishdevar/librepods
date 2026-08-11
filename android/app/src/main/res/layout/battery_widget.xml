@@ -7,7 +7,7 @@
     android:padding="0dp"
     android:id="@+id/battery_widget"
     android:theme="@style/Theme.LibrePods.AppWidgetContainer"
-    android:background="@drawable/widget_background">
+    android:background="@drawable/bg_widget">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -62,7 +62,7 @@
                 <ImageView
                     android:layout_width="28dp"
                     android:layout_height="28dp"
-                    android:src="@drawable/smartphone"
+                    android:src="@drawable/ic_smartphone"
                     android:tint="@color/white"
                     android:layout_gravity="center"
                     android:importantForAccessibility="no"
@@ -74,7 +74,7 @@
                 android:layout_height="wrap_content"
                 android:textSize="24sp"
                 android:textColor="@color/white"
-                android:fontFamily="@font/sf_pro"
+                android:fontFamily="@font/inter"
                 android:gravity="center"
                 android:textFontWeight="300"
                 android:text="Phone"
@@ -136,7 +136,7 @@
                 android:layout_height="wrap_content"
                 android:textSize="24sp"
                 android:textColor="@color/white"
-                android:fontFamily="@font/sf_pro"
+                android:fontFamily="@font/inter"
                 android:gravity="center"
                 android:textFontWeight="300"
                 android:text="Left"
@@ -198,7 +198,7 @@
                 android:textSize="24sp"
                 android:textFontWeight="300"
                 android:textColor="@color/white"
-                android:fontFamily="@font/sf_pro"
+                android:fontFamily="@font/inter"
                 android:gravity="center"
                 android:text="Right"
                 tools:ignore="HardcodedText" />
@@ -259,7 +259,7 @@
                 android:textSize="24sp"
                 android:textColor="@color/white"
                 android:gravity="center"
-                android:fontFamily="@font/sf_pro"
+                android:fontFamily="@font/inter"
                 android:textFontWeight="300"
                 android:text="Case"
                 tools:ignore="HardcodedText" />

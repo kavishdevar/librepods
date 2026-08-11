@@ -13,4 +13,6 @@
     android:targetCellHeight="1"
     android:updatePeriodMillis="30000"
     android:widgetCategory="home_screen|keyguard"
-    tools:ignore="UnusedAttribute" />
+    tools:ignore="UnusedAttribute"
+    android:configure="me.kavishdevar.librepods.presentation.activities.NoiseControlWidgetConfigurationActivity"
+    android:widgetFeatures="reconfigurable" />

@@ -22,7 +22,7 @@
             android:layout_marginStart="12dp"
             android:layout_marginEnd="2dp"
             android:layout_weight="1"
-            android:background="@drawable/widget_button_shape_start"
+            android:background="@drawable/shape_widget_button_start"
             android:clickable="true"
             android:gravity="center"
             android:orientation="vertical">
@@ -30,7 +30,7 @@
             <ImageView
                 android:layout_width="52dp"
                 android:layout_height="52dp"
-                android:src="@drawable/noise_cancellation"
+                android:src="@drawable/ic_noise_cancellation"
                 android:tint="@color/white" />
 
             <TextView
@@ -52,7 +52,7 @@
             android:layout_marginVertical="12dp"
             android:layout_marginEnd="2dp"
             android:layout_weight="1"
-            android:background="@drawable/widget_button_shape_middle"
+            android:background="@drawable/shape_widget_button_middle"
             android:clickable="true"
             android:gravity="center"
             android:orientation="vertical">
@@ -60,7 +60,7 @@
             <ImageView
                 android:layout_width="52dp"
                 android:layout_height="52dp"
-                android:src="@drawable/transparency"
+                android:src="@drawable/ic_transparency"
                 android:tint="@color/white" />
 
             <TextView
@@ -84,7 +84,7 @@
             android:layout_marginStart="2dp"
             android:layout_marginEnd="2dp"
             android:layout_weight="1"
-            android:background="@drawable/widget_button_shape_middle"
+            android:background="@drawable/shape_widget_button_middle"
             android:clickable="true"
             android:gravity="center"
             android:orientation="vertical">
@@ -92,7 +92,7 @@
             <ImageView
                 android:layout_width="52dp"
                 android:layout_height="52dp"
-                android:src="@drawable/adaptive"
+                android:src="@drawable/ic_adaptive"
                 android:textSize="12sp"
                 android:tint="@color/white" />
 
@@ -117,7 +117,7 @@
             android:layout_marginStart="2dp"
             android:layout_marginEnd="12dp"
             android:layout_weight="1"
-            android:background="@drawable/widget_button_shape_end"
+            android:background="@drawable/shape_widget_button_end"
             android:clickable="true"
             android:gravity="center"
             android:orientation="vertical">
@@ -125,7 +125,7 @@
             <ImageView
                 android:layout_width="52dp"
                 android:layout_height="52dp"
-                android:src="@drawable/noise_cancellation"
+                android:src="@drawable/ic_noise_cancellation"
                 android:tint="@color/white" />
 
             <TextView

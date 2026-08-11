@@ -26,15 +26,21 @@
     <uses-permission
         android:name="android.permission.INTERACT_ACROSS_USERS"
         tools:ignore="ProtectedPermissions" />
+    <uses-permission
+        android:name="android.permission.MODIFY_AUDIO_ROUTING"/>
+
     <uses-permission android:name="android.permission.BLUETOOTH" />
+
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
         tools:ignore="UnusedAttribute" />
+
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
 <!--    <uses-permission android:name="android.permission.INTERNET" />-->
 <!--    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"-->
 <!--        android:maxSdkVersion="30" />-->
@@ -80,7 +86,7 @@
         </receiver>
 
         <activity
-            android:name=".MainActivity"
+            android:name=".presentation.activities.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.LibrePods">
             <intent-filter>
@@ -98,16 +104,11 @@
         </activity>
 
         <activity
-            android:name=".QuickSettingsDialogActivity"
-            android:exported="false"
-            android:theme="@style/Theme.TransparentDialog"
-            android:launchMode="singleTask"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-             />
+            android:name=".presentation.activities.NoiseControlWidgetConfigurationActivity"
+            android:exported="false" />
 
         <service
-            android:name=".services.AirPodsService"
+            android:name=".services.LibrePodsService"
             android:enabled="true"
             android:exported="true"
             android:foregroundServiceType="connectedDevice"
@@ -115,7 +116,7 @@
         <service
             android:name=".services.AirPodsQSService"
             android:exported="true"
-            android:icon="@drawable/airpods"
+            android:icon="@drawable/ic_airpods"
             android:label="ANC Mode"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
