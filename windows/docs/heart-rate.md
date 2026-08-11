@@ -58,30 +58,66 @@ Every plausible transport/host cause was investigated and eliminated:
 
 Even the LibrePods author gets no data from his unit on a non-Apple host.
 
-## Why it's a host gate (and why Android can bypass it)
+## Why it's a host gate — identity ruled out, privilege is the real line
 
-AirPods restrict biometric (heart-rate) data to **Apple hosts**. The working
-Android setups don't beat this with a better protocol — they use an **Xposed
-module that spoofs the Bluetooth vendor ID inside `com.android.bluetooth`**
-(Fluoride). Because Android's Bluetooth stack is open, a hook *inside* the stack
-can make the phone present itself as an Apple host, and the AirPods then stream
-HR.
+AirPods restrict biometric (heart-rate) data, but the restriction is **not on the
+host's *identity*** — it's on being the buds' **primary, privileged host**. Two
+independent lines of evidence settle this.
 
-Windows can't do the equivalent:
+**All three possible Device-ID records were tested — none unlock HR.** The one
+vendor knob Windows exposes is the local **Device ID (PnP/SDP `0x1200`)** record
+under `BTHPORT\Parameters`. We set each value, rebooted to republish, and re-tested
+with the iPhone off and both buds in-ear:
 
-- The Microsoft Bluetooth stack (`bthport`) is **closed**; there's no in-stack
-  hook point like Fluoride's.
-- The one vendor knob Windows exposes — the local **Device ID (PnP/SDP 0x1200)**
-  record under `BTHPORT\Parameters` — was set to the **complete** Apple record a
-  real AirPod advertises (`DIDVendorIDSource=1` SIG, `DIDVendorID=0x4C`,
-  `DIDProductID=0x2027`, `DIDVersion=0x100`) and republished with a reboot. It
-  changed **nothing**: the channel connects identically with or without it, and HR
-  stays blocked. The AirPods gate on the host being a real Apple device, which
-  this record alone does not establish.
+| Host DID | Identity it presents | Result |
+|---|---|---|
+| `004C:2027:0100` | a real AirPod's own record | ACK, no readings |
+| `004C:0000:0000` | Android's spoof (vendor only) | ACK, no readings |
+| `004C:7805:1A50` | **an iPhone's exact record** | ACK, no readings |
 
-So on Windows the request goes through, the AirPods acknowledge it, and — because
-the host isn't (and can't easily be made to look like) an Apple device — they
-return no readings.
+The channel connects identically in all three, and HR stays blocked in all three.
+`0x7805` means "Apple host", not specifically "iPhone".
+
+**macOS — whose DID is byte-identical to an iPhone's — behaves the same.** A Mac
+presents the exact `004C:7805:1A50` record (all 54 Host-Identification bytes match
+an iPhone). Opening the AAP channel from a Mac (user-space IOBluetooth, no driver)
+and replaying the same enable gets the same `4a 02 08 13` ACK and **zero** readings
+(see `extras/macos-hr-probe/` on the `macos-hr-probe` branch). So a host already
+carrying the iPhone DID, on a completely different OS, is blocked too — identity is
+not the gate.
+
+**What actually separates the working hosts from us is privilege / owning the host
+session:**
+
+- **iPhone** — is the buds' real primary host *and* runs Apple's own on-device
+  software (the iPhone computes BPM from the raw PPG + motion stream; see Apple
+  support HT `123184`). It works because it is the privileged system host, not
+  merely because it "is an iPhone".
+- **Android (the working LibrePods)** — is *not* an ordinary app. It ships a Magisk
+  module (a privileged system app) and reaches the channel by reflection *inside*
+  the open Bluetooth stack (Fluoride). It effectively **becomes the host** from
+  within the stack.
+- **Windows / macOS (us)** — open a **second, unprivileged AAP session** while the
+  OS stays the buds' real host. The buds ACK, then withhold the biometric stream.
+
+Seen this way the gate is **consistent on every platform: the raw AAP biometric
+stream goes only to the privileged, primary-host system software.** On iOS that is
+Apple's own stack — it receives the raw PPG, computes the BPM, and exposes the
+*result* through **HealthKit**, a permission-gated system API. Third-party iOS apps
+(Strava, etc.) read that already-computed value **from HealthKit**; they never open
+the AAP biometric channel themselves. So iOS apps aren't "beating" the gate — they
+consume the value over the sanctioned, system-mediated path, one step removed from
+the buds.
+
+What LibrePods does on Windows/macOS is the **direct** path — a secondary AAP
+session asking the buds for the stream — and that is exactly what the buds withhold
+from a non-primary host. Windows has **neither** option Apple's platform offers: it
+can't be the primary-host system (`bthport` is closed — no in-stack hook point like
+Fluoride's, so LibrePods can only run a secondary AAP session via our profile driver
+alongside the OS's real host relationship, never inside it), and there is no
+HealthKit-equivalent system component ingesting the AAP biometric stream for us to
+read a computed value from. So the request goes through, the AirPods acknowledge it,
+and they return no readings.
 
 ## What the toggle does
 
@@ -97,3 +133,6 @@ can actually be bypassed on Windows.
   comments there).
 - `windows/daemon/src/main.rs` — `hr_retry_campaign` / the HR
   enable + start sequence and constants (`HR_START_SEQ`, `HR_INIT_QUIET_MS`, …).
+- `extras/macos-hr-probe/` (branch `macos-hr-probe`) — the independent macOS
+  user-space probe that reaches the same conclusion from a host whose Device ID is
+  byte-identical to an iPhone's (buds ACK `4a 02 08 13`, then send nothing).
