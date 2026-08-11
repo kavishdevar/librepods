@@ -1,14 +1,19 @@
-# Vendored FFmpeg (LGPL, minimal) — AAC-ELD decoder for the hi-res mic
+# Vendored FFmpeg (fetched, not committed)
 
-A **minimal** FFmpeg 7.1 build (LGPL v2.1), configured with only the AAC decoder:
+The daemon links a tiny slice of **FFmpeg 7.1** (`avcodec` / `avutil` /
+`swresample`) to decode the AirPods' hi-res **AAC-ELD** microphone stream.
 
-    ./configure --cross-prefix=x86_64-w64-mingw32- --arch=x86_64 --target-os=mingw32 \
-      --enable-shared --disable-static --disable-everything --disable-programs \
-      --disable-avdevice --disable-avformat --disable-swscale --disable-postproc \
-      --disable-avfilter --disable-network --disable-x86asm \
-      --enable-decoder=aac --enable-decoder=aac_fixed --enable-decoder=aac_latm
+These libraries are **fetched at build time**, not committed — the FFmpeg headers
+alone are ~28k lines, which is pure noise in the repo/PR. Only this note and the
+license live here.
 
-That shrinks avcodec from ~69 MB (BtbN full build) to ~0.7 MB. Committed:
-`include/` (libavcodec, libavutil, libswresample), `lib/*.dll.a` (mingw import
-libs), and `bin/*.dll` (avcodec-61, avutil-59, swresample-5 — ~1.6 MB total,
-shipped next to librepods-tray.exe). See `LICENSE-ffmpeg.txt`.
+- **Fetch:** run `../fetch-ffmpeg.sh` (CI does it automatically before building the
+  daemon). It downloads a pinned FFmpeg 7.1 LGPL **shared** build from
+  [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), verifies its
+  SHA256, and drops the headers + import libs (both MSVC `.lib` and MinGW
+  `.dll.a`) + DLLs into `include/`, `lib/`, `bin/` here.
+- **License:** FFmpeg is used under the **LGPL v2.1+** — see `LICENSE-ffmpeg.txt`.
+  The `-lgpl-shared` build ships the runtime DLLs (`avcodec-61.dll`,
+  `avutil-59.dll`, `swresample-5.dll`) alongside the app.
+- **Updating:** bump `URL` / `URL_SHA256` in `fetch-ffmpeg.sh` when moving versions
+  (keep the `av*-NN.dll` SONAMEs in sync with what the app loads).

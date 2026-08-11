@@ -37,6 +37,10 @@ jobs:
             windows/tray/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('windows/**/Cargo.lock') }}
 
+      - name: Fetch FFmpeg (AAC-ELD decode libs — not vendored in git)
+        shell: bash
+        run: windows/daemon/fetch-ffmpeg.sh
+
       - name: Build daemon (librepodsd)
         working-directory: windows/daemon
         run: cargo build --release
