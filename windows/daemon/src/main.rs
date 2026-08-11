@@ -936,10 +936,6 @@ fn run_receiver(ctx: Ctx) {
         let mut last_status = Instant::now();
         let mut last_audio = Instant::now(); // last time hi-res mic SDUs arrived
         let mut status_fails = 0u32;
-        // When the driver first started reporting a non-connected state (cleared on
-        // every clean Ok(2)). On a call we ride out silence and only release if this
-        // stays bad for a long backstop — silence is not a dead link.
-        let mut st_bad_since: Option<Instant> = None;
         let mut low_warned = false; // low-battery overlay fired (hysteresis)
         let mut case_low_warned = false; // case low-battery overlay fired
         // Per-bud ear status, to notify on the transition into the case.
@@ -1303,33 +1299,38 @@ fn run_receiver(ctx: Ctx) {
                 }
                 if matches!(st, Ok(2)) {
                     status_fails = 0;
-                    st_bad_since = None;
                 } else {
-                    // The driver State is not "connected". That happens both on a
-                    // transient channel re-negotiation (e.g. both buds just left the
-                    // ears) and on a real loss (cased / handed to the phone). status
-                    // can't tell them apart on its own.
-                    let bad_for = st_bad_since.get_or_insert_with(Instant::now).elapsed();
-                    let release = if ctx.mic_on.load(Ordering::Relaxed) {
-                        // On a call: you may be muted or just listening, so the mic —
-                        // and AAP — can be silent for minutes. Silence is NOT a dead
-                        // link, so ignore data flow entirely here and only give up if
-                        // the driver has reported a bad state *continuously* for a long
-                        // backstop (a genuinely gone link), never on quiet alone.
-                        bad_for >= Duration::from_secs(45)
-                    } else {
-                        // Off a call, use data flow as the tie-breaker: while AAP
-                        // packets still arrive the link is alive; 3 s of silence with a
-                        // bad state means really gone.
-                        if last_data.elapsed() < Duration::from_secs(3) {
-                            status_fails = 0;
-                        } else {
-                            status_fails += 1;
+                    // The driver State reads not-connected far more often than a real
+                    // loss: whenever the buds play audio, the A2DP stream contends for the
+                    // radio and the AAP channel goes quiet, and an idle channel reads the
+                    // same. Tearing down on it churns a reconnect that toggles the OS
+                    // audio link and kicks calls / playback. So don't trust the driver
+                    // State — trust Windows' own BT status: hold the session as long as
+                    // the OS still sees the AirPods connected, and give up only once it
+                    // has lost them for a few seconds (really cased / handed to the phone).
+                    let release = if bt::find_airpods().is_some() {
+                        status_fails = 0; // still connected to Windows — keep the session
+                        // Connected, but the AAP channel may have stalled (not just idle).
+                        // If the hi-res mic is engaged and the channel has been silent for
+                        // a while, the mic uplink has died — rebuild the channel IN PLACE
+                        // (drop + reopen, which re-arms START_AUDIO on the handshake) to
+                        // recover it, WITHOUT toggling the OS audio, so the mic comes back
+                        // and the call isn't kicked. connect_requested stays set → the
+                        // outer loop reopens the L2CAP channel, no set_audio_connected.
+                        if ctx.mic_on.load(Ordering::Relaxed)
+                            && last_data.elapsed() >= Duration::from_secs(8)
+                        {
+                            log("run_receiver: mic uplink stalled (buds still connected) — rebuilding AAP channel");
+                            *ctx.driver_cell.lock().unwrap() = None;
+                            break;
                         }
+                        false
+                    } else {
+                        status_fails += 1;
                         status_fails >= 3
                     };
                     if release {
-                        log(&format!("run_receiver: status lost (st={st:?}) — releasing"));
+                        log("run_receiver: AirPods no longer connected (OS) — releasing");
                         ctx.overlay("Disconnected");
                         {
                             let mut s = ctx.state.lock().unwrap();
