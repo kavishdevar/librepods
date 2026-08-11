@@ -2,3 +2,4 @@ daemon/vendor/** linguist-vendored
 drivers/**/prebuilt/** linguist-vendored
 drivers/mic/** linguist-vendored
 drivers/aap/** linguist-vendored
+installer/tools/** linguist-vendored

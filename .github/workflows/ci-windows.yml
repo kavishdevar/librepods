@@ -8,6 +8,7 @@ name: Windows CI (frontend)
 on:
   push:
     branches: [main, windows-native]
+    tags: ['windows-v*']
     paths:
       - 'windows/**'
       - '.github/workflows/ci-windows.yml'
@@ -71,15 +72,19 @@ jobs:
       - name: Collect artifacts
         shell: pwsh
         run: |
+          # Lay out dist/ exactly how windows/installer/install.ps1 expects it, so
+          # the zip is a ready-to-run installer bundle.
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item windows/daemon/target/release/librepodsd.exe dist/
           # FFmpeg runtime DLLs the daemon loads for AAC-ELD decode (fetched, not
           # vendored) — must sit next to librepodsd.exe.
           Copy-Item windows/daemon/vendor/ffmpeg/bin/*.dll dist/
-          # Prebuilt, test-signed kernel drivers (install with pnputil /add-driver).
-          New-Item -ItemType Directory -Force dist/drivers | Out-Null
-          Copy-Item -Recurse windows/drivers/aap/prebuilt dist/drivers/aap
-          Copy-Item -Recurse windows/drivers/mic/prebuilt dist/drivers/mic
+          # Prebuilt, test-signed kernel drivers, in the installer's layout.
+          Copy-Item -Recurse windows/drivers/aap/prebuilt dist/driver
+          Copy-Item -Recurse windows/drivers/mic/prebuilt dist/driver-mic
+          # The one-shot installer + its bundled devcon.
+          Copy-Item windows/installer/install.ps1 dist/
+          Copy-Item -Recurse windows/installer/tools dist/tools
           # Find the WinUI output dir by locating the exe (path varies with TFM/RID).
           $exe = Get-ChildItem -Recurse -Filter librepods-winui.exe `
             windows/winui/LibrePods.WinUI/bin | Select-Object -First 1
@@ -92,3 +97,20 @@ jobs:
           name: librepods-windows-frontend
           path: dist
           if-no-files-found: error
+
+      # ---- Release (only on a windows-v* tag) --------------------------------
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/windows-v')
+        shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath "librepods-windows-${{ github.ref_name }}.zip"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/windows-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: LibrePods for Windows ${{ github.ref_name }}
+          files: librepods-windows-${{ github.ref_name }}.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
