@@ -36,6 +36,13 @@ struct Args {
         help = "Disable system tray, useful if your environment doesn't support AppIndicator or StatusNotifier"
     )]
     no_tray: bool,
+    #[arg(
+        long,
+        help = "Hide the tray icon but keep the GUI running, so the window can \
+                still be opened. Unlike --no-tray, which disables the GUI \
+                entirely and leaves nothing able to open a window."
+    )]
+    no_tray_icon: bool,
     #[arg(long, help = "Start the application minimized to tray")]
     start_minimized: bool,
     #[arg(
@@ -126,7 +133,7 @@ async fn async_main(
         }
     }
 
-    let tray_handle = if args.no_tray {
+    let tray_handle = if args.no_tray || args.no_tray_icon {
         None
     } else {
         let tray = MyTray {
