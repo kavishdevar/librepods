@@ -82,9 +82,14 @@ public partial class App : Application
         // Begin talking to the daemon (background reader + writer loops).
         Daemon.Start();
 
-        // Show the window on launch (closing it hides back to the tray). Autostart
-        // can later pass a "--tray"/"--minimized" arg to start hidden instead.
-        _window.Activate();
+        // Show the window on launch — unless started hidden. Autostart (startup.ps1)
+        // passes "--tray", so at login only the tray icon appears and the window
+        // opens on demand (double-click the tray, or "Open"); closing it hides it
+        // back to the tray.
+        var argv = Environment.GetCommandLineArgs();
+        bool startHidden = Array.IndexOf(argv, "--tray") >= 0
+                        || Array.IndexOf(argv, "--minimized") >= 0;
+        if (!startHidden) _window.Activate();
     }
 
     /// Create (or reuse) the single island window and play the connect popup.

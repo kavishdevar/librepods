@@ -12,8 +12,9 @@
         .\startup.ps1 -Remove
 #>
 param(
-    [string]$Exe    = "$env:LOCALAPPDATA\LibrePods\librepods-winui.exe",
-    [string]$Name   = 'LibrePods',
+    [string]$Exe       = "$env:LOCALAPPDATA\LibrePods\librepods-winui.exe",
+    [string]$Arguments = '--tray',   # WinUI starts hidden to the tray at login
+    [string]$Name      = 'LibrePods',
     [switch]$Remove
 )
 
@@ -32,6 +33,7 @@ if (-not (Test-Path $Exe)) { throw "Exe not found: $Exe (copy it there first, or
 $ws       = New-Object -ComObject WScript.Shell
 $s        = $ws.CreateShortcut($lnk)
 $s.TargetPath       = $Exe
+$s.Arguments        = $Arguments
 $s.WorkingDirectory = Split-Path $Exe
 $s.Description      = 'LibrePods AirPods control'
 $s.Save()
