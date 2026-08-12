@@ -63,12 +63,18 @@
                 </StackPanel>
             </Border>
 
-            <!-- Experimental — heart-rate opt-in. Off by default because AirPods gate
-                 the HR stream to Apple hosts; on Windows it does not work. -->
-            <Border Style="{StaticResource Card}">
-                <StackPanel Spacing="8">
+            <!-- Experimental — collapsed by default so it isn't immediately visible;
+                 the user must expand it to reach the opt-ins. Heart rate is off by
+                 default because AirPods gate the HR stream to Apple hosts; on Windows
+                 it does not work. -->
+            <Expander HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch"
+                      IsExpanded="False">
+                <Expander.Header>
                     <TextBlock Text="{Binding [SettingsExperimental_Text], Source={StaticResource Loc}}"
                                Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                </Expander.Header>
+                <StackPanel Spacing="8">
                     <InfoBar Severity="Warning" IsOpen="True" IsClosable="False"
                              Title="{Binding [SettingsHrWarning_Title], Source={StaticResource Loc}}"
                              Message="{Binding [SettingsHrWarning_Message], Source={StaticResource Loc}}" />
@@ -76,7 +82,7 @@
                                   Header="{Binding [SettingsHrToggle_Header], Source={StaticResource Loc}}"
                                   Toggled="HeartRateSetting_Toggled" />
                 </StackPanel>
-            </Border>
+            </Expander>
 
             <!-- Device info — hidden behind an eye toggle + frosted blur (it carries
                  the serial number). Populated from the 0x1D metadata packet. -->
