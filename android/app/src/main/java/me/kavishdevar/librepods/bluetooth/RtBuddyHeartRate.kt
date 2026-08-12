@@ -37,20 +37,66 @@ internal data class HeartRateDecodeResult(
         get() = rejectionReasons.values.sum()
 }
 
+internal data class HeartRateServiceResolution(
+    val serviceId: Int?,
+    val discoveredFromMetadata: Boolean
+)
+
+internal suspend fun waitForHeartRateServiceResolution(
+    decoder: RtBuddyHeartRateDecoder,
+    timeoutMillis: Long,
+    elapsedRealtimeMillis: () -> Long,
+    pause: suspend (Long) -> Unit
+): Boolean {
+    val deadline = elapsedRealtimeMillis() + timeoutMillis.coerceAtLeast(0L)
+    while (true) {
+        val resolution = decoder.heartRateServiceResolution()
+        if (resolution.discoveredFromMetadata) return true
+        if (elapsedRealtimeMillis() >= deadline) return resolution.serviceId != null
+        pause(25L)
+    }
+}
+
 /**
  * Reassembles RTBuddy frames and extracts the verified HEARTRATE SensorDataWX payload.
  *
  * The parser deliberately keeps the protocol checks that prevent control/startup frames from being
- * interpreted as BPM: live log type, service 19, exact 18-byte payload, known status trailer, and
- * the validated physiological range. Length-delimited wrappers are traversed only to the same
- * bounded depth as the observed firmware variants.
+ * interpreted as BPM: live log type, the metadata-advertised HeartRateService, exact 18-byte
+ * payload, known status trailer, and the validated physiological range. Service 19 remains a
+ * legacy fallback only when metadata has not assigned it to another accessory service.
  */
-internal class RtBuddyHeartRateDecoder {
+internal class RtBuddyHeartRateDecoder(
+    private val wallClockMillis: () -> Long = System::currentTimeMillis,
+    private val elapsedRealtimeMillis: () -> Long = SystemClock::elapsedRealtime
+) {
     private var carry = ByteArray(0)
+    private var discoveredHeartRateServiceId: Int? = null
+    private val explicitlyNonHeartRateServiceIds = mutableSetOf<Int>()
 
     @Synchronized
     fun reset() {
         carry = ByteArray(0)
+        discoveredHeartRateServiceId = null
+        explicitlyNonHeartRateServiceIds.clear()
+    }
+
+    /** The service to target for this connection, or null when metadata rules out the fallback. */
+    @Synchronized
+    fun heartRateServiceIdForControl(): Int? =
+        discoveredHeartRateServiceId
+            ?: LEGACY_HEART_RATE_SERVICE.takeUnless(explicitlyNonHeartRateServiceIds::contains)
+
+    @Synchronized
+    fun discoveredHeartRateServiceId(): Int? = discoveredHeartRateServiceId
+
+    @Synchronized
+    fun heartRateServiceResolution(): HeartRateServiceResolution {
+        val discovered = discoveredHeartRateServiceId
+        return HeartRateServiceResolution(
+            serviceId = discovered
+                ?: LEGACY_HEART_RATE_SERVICE.takeUnless(explicitlyNonHeartRateServiceIds::contains),
+            discoveredFromMetadata = discovered != null
+        )
     }
 
     @Synchronized
@@ -113,10 +159,12 @@ internal class RtBuddyHeartRateDecoder {
 
             val frame = data.copyOfRange(frameOffset, frameOffset + frameLength)
             val classification = classifyFrame(frame)
-            if (classification.related) {
-                relatedFrameCount++
-                classification.rejectionReason?.let { rejectionReasons.increment(it) }
-                classification.sample?.let(samples::add)
+            if (classification.related || classification.consumed) {
+                if (classification.related) {
+                    relatedFrameCount++
+                    classification.rejectionReason?.let { rejectionReasons.increment(it) }
+                    classification.sample?.let(samples::add)
+                }
                 suppressRawLogging = true
             } else {
                 passthroughPackets += frame
@@ -141,6 +189,8 @@ internal class RtBuddyHeartRateDecoder {
             frame.size
         ) ?: return FrameClassification()
 
+        val metadataRecords = updateServiceMetadata(frame, topLevel)
+
         val sequence = topLevel.firstVarint(FIELD_SEQUENCE)?.toInt() ?: -1
         val logType = topLevel.firstVarint(FIELD_LOG_TYPE)?.toInt() ?: -1
         val commands = mutableListOf<HeartRateCommand>()
@@ -148,6 +198,7 @@ internal class RtBuddyHeartRateDecoder {
         topLevel.fields.forEach { field ->
             if (field.wireType == WIRE_LENGTH_DELIMITED &&
                 field.number in SENSOR_DATA_COMMAND_FIELDS &&
+                MetadataRecord(field.valueStart, field.valueEnd) !in metadataRecords &&
                 commands.size < MAX_COMMANDS_PER_FRAME
             ) {
                 collectHeartRateCommands(
@@ -160,7 +211,9 @@ internal class RtBuddyHeartRateDecoder {
             }
         }
 
-        if (commands.isEmpty()) return FrameClassification()
+        if (commands.isEmpty()) {
+            return FrameClassification(consumed = metadataRecords.isNotEmpty())
+        }
         if (logType !in LIVE_SENSOR_DATA_LOG_TYPES) {
             return FrameClassification(
                 related = true,
@@ -184,10 +237,61 @@ internal class RtBuddyHeartRateDecoder {
             sample = HeartRateSample(
                 bpm = acceptedPayload.unsignedByteAt(HEART_RATE_BPM_OFFSET),
                 sequence = sequence,
-                receivedAtMillis = System.currentTimeMillis(),
-                receivedAtElapsedRealtime = SystemClock.elapsedRealtime()
+                receivedAtMillis = wallClockMillis(),
+                receivedAtElapsedRealtime = elapsedRealtimeMillis()
             )
         )
+    }
+
+    private fun updateServiceMetadata(
+        data: ByteArray,
+        topLevel: ProtoMessage
+    ): Set<MetadataRecord> {
+        val metadataRecords = mutableSetOf<MetadataRecord>()
+        topLevel.fields.forEach { field ->
+            if (field.wireType != WIRE_LENGTH_DELIMITED) return@forEach
+            val serviceRecord = parseProtoMessage(data, field.valueStart, field.valueEnd)
+                ?: return@forEach
+            val serviceId = serviceRecord.firstVarint(FIELD_SERVICE)?.toInt()
+                ?: return@forEach
+            val metadataFields = serviceRecord.fields.filter {
+                it.number == FIELD_SERVICE_METADATA && it.wireType == WIRE_LENGTH_DELIMITED
+            }
+            if (metadataFields.isEmpty()) return@forEach
+
+            val identifiesHeartRate = metadataFields.any { metadata ->
+                data.containsBytes(
+                    needle = HEART_RATE_SERVICE_MARKER,
+                    start = metadata.valueStart,
+                    end = metadata.valueEnd
+                )
+            }
+            val identifiesHostLibHid = metadataFields.any { metadata ->
+                data.containsBytes(
+                    needle = HOST_LIB_HID_MARKER,
+                    start = metadata.valueStart,
+                    end = metadata.valueEnd
+                )
+            }
+
+            if (identifiesHeartRate || identifiesHostLibHid) {
+                metadataRecords += MetadataRecord(field.valueStart, field.valueEnd)
+            }
+            when {
+                // A service explicitly named HostLibHID must never be targeted as heart rate.
+                identifiesHostLibHid -> {
+                    explicitlyNonHeartRateServiceIds += serviceId
+                    if (discoveredHeartRateServiceId == serviceId) {
+                        discoveredHeartRateServiceId = null
+                    }
+                }
+
+                identifiesHeartRate && serviceId !in explicitlyNonHeartRateServiceIds -> {
+                    discoveredHeartRateServiceId = serviceId
+                }
+            }
+        }
+        return metadataRecords
     }
 
     private fun collectHeartRateCommands(
@@ -201,7 +305,7 @@ internal class RtBuddyHeartRateDecoder {
         val message = parseProtoMessage(data, start, end) ?: return
         val service = message.firstVarint(FIELD_SERVICE)?.toInt()
 
-        if (service == HEART_RATE_SERVICE) {
+        if (service != null && isHeartRateService(service)) {
             val payloads = mutableListOf<ByteArray>()
             message.fields.forEach { field ->
                 if (field.number == FIELD_COMMAND_PAYLOAD &&
@@ -233,6 +337,13 @@ internal class RtBuddyHeartRateDecoder {
                 )
             }
         }
+    }
+
+    private fun isHeartRateService(serviceId: Int): Boolean {
+        val discovered = discoveredHeartRateServiceId
+        if (discovered != null) return serviceId == discovered
+        if (serviceId in explicitlyNonHeartRateServiceIds) return false
+        return serviceId == LEGACY_HEART_RATE_SERVICE
     }
 
     private fun collectPayloadCandidates(
@@ -369,6 +480,8 @@ internal class RtBuddyHeartRateDecoder {
 
     private data class HeartRateCommand(val payloadCandidates: List<ByteArray>)
 
+    private data class MetadataRecord(val start: Int, val end: Int)
+
     private data class ProtoMessage(val fields: List<ProtoField>) {
         fun firstVarint(fieldNumber: Int): Long? = fields.firstOrNull {
             it.number == fieldNumber && it.wireType == WIRE_VARINT
@@ -387,6 +500,7 @@ internal class RtBuddyHeartRateDecoder {
 
     private data class FrameClassification(
         val related: Boolean = false,
+        val consumed: Boolean = false,
         val sample: HeartRateSample? = null,
         val rejectionReason: HeartRateRejectionReason? = null
     )
@@ -401,7 +515,9 @@ internal class RtBuddyHeartRateDecoder {
         val LIVE_SENSOR_DATA_LOG_TYPES = setOf(1, 3)
         val KNOWN_HEART_RATE_STATUS_TAILS = arrayOf(
             byteArrayOf(0x10, 0x00, 0x00),
+            byteArrayOf(0x10, 0x00, 0x80.toByte()),
             byteArrayOf(0x20, 0x00, 0x00),
+            byteArrayOf(0x20, 0x80.toByte(), 0x00),
             byteArrayOf(0x20, 0x02, 0x80.toByte()),
             byteArrayOf(0x20, 0x82.toByte(), 0x80.toByte())
         )
@@ -409,8 +525,9 @@ internal class RtBuddyHeartRateDecoder {
         const val FIELD_SEQUENCE = 1
         const val FIELD_LOG_TYPE = 2
         const val FIELD_SERVICE = 1
+        const val FIELD_SERVICE_METADATA = 2
         const val FIELD_COMMAND_PAYLOAD = 3
-        const val HEART_RATE_SERVICE = 19
+        const val LEGACY_HEART_RATE_SERVICE = 19
         const val HEART_RATE_PAYLOAD_LENGTH = 18
         const val HEART_RATE_BPM_OFFSET = 1
         const val HEART_RATE_STATUS_TAIL_OFFSET = 15
@@ -436,6 +553,180 @@ internal class RtBuddyHeartRateDecoder {
             0x04, 0x00, 0x04, 0x00,
             0x17, 0x00,
             0x00, 0x00, 0x10, 0x00
+        )
+
+        val HEART_RATE_SERVICE_MARKER = "HeartRateService".encodeToByteArray()
+        val HOST_LIB_HID_MARKER = "HostLibHID".encodeToByteArray()
+    }
+}
+
+/** Builds RTBuddy heart-rate controls with a per-connection service and monotonic sequence. */
+internal class RtBuddyHeartRateControlFrames(
+    private val initialSequence: Int = LEGACY_INITIAL_SEQUENCE
+) {
+    private var nextSequence = initialSequence
+
+    @Synchronized
+    fun reset() {
+        nextSequence = initialSequence
+    }
+
+    @Synchronized
+    fun start(serviceId: Int): ByteArray =
+        buildFrame(serviceId, takeSequence(), HEART_RATE_INTERVAL_MICROS)
+
+    @Synchronized
+    fun stop(serviceId: Int): ByteArray =
+        buildFrame(serviceId, takeSequence(), 0)
+
+    private fun takeSequence(): Int {
+        val sequence = nextSequence
+        nextSequence = if (sequence == Int.MAX_VALUE) 0 else sequence + 1
+        return sequence
+    }
+
+    companion object {
+        private const val LEGACY_INITIAL_SEQUENCE = 9_059
+        private const val HEART_RATE_INTERVAL_MICROS = 1_000_000
+
+        private val RTBUDDY_CONTROL_PREFIX = byteArrayOf(
+            0x04, 0x00, 0x04, 0x00,
+            0x17, 0x00,
+            0x00, 0x00, 0x10, 0x00
+        )
+
+        internal fun buildFrame(serviceId: Int, sequence: Int, intervalMicros: Int): ByteArray {
+            require(serviceId in 1..4_096) { "Invalid RTBuddy service ID: $serviceId" }
+            require(sequence >= 0) { "RTBuddy sequence must be non-negative" }
+            require(intervalMicros >= 0) { "Heart-rate interval must be non-negative" }
+
+            val setting = byteArrayOf(0x01) + intervalMicros.toLittleEndian32()
+            val command =
+                protoVarintField(1, serviceId) +
+                    protoVarintField(2, 2) +
+                    protoBytesField(3, setting)
+            val body =
+                protoVarintField(1, sequence) +
+                    protoBytesField(8, command)
+            require(body.size <= 0xFFFF) { "RTBuddy control body is too large" }
+
+            return RTBUDDY_CONTROL_PREFIX + body.size.toLittleEndian16() + body
+        }
+
+        internal fun isControlFrame(packet: ByteArray): Boolean {
+            if (packet.size < RTBUDDY_CONTROL_PREFIX.size + 2 + 7) return false
+            if (!RTBUDDY_CONTROL_PREFIX.indices.all {
+                    packet[it] == RTBUDDY_CONTROL_PREFIX[it]
+                }
+            ) return false
+            return packet[packet.lastIndex - 6] == 0x1A.toByte() &&
+                packet[packet.lastIndex - 5] == 0x05.toByte() &&
+                packet[packet.lastIndex - 4] == 0x01.toByte()
+        }
+
+        private fun protoVarintField(fieldNumber: Int, value: Int): ByteArray =
+            encodeVarint((fieldNumber shl 3).toLong()) + encodeVarint(value.toLong())
+
+        private fun protoBytesField(fieldNumber: Int, value: ByteArray): ByteArray =
+            encodeVarint(((fieldNumber shl 3) or 2).toLong()) +
+                encodeVarint(value.size.toLong()) +
+                value
+
+        private fun encodeVarint(value: Long): ByteArray {
+            require(value >= 0) { "Varints must be non-negative" }
+            var remaining = value
+            val result = ArrayList<Byte>(10)
+            do {
+                var byte = (remaining and 0x7F).toInt()
+                remaining = remaining ushr 7
+                if (remaining != 0L) byte = byte or 0x80
+                result += byte.toByte()
+            } while (remaining != 0L)
+            return result.toByteArray()
+        }
+
+        private fun Int.toLittleEndian16(): ByteArray = byteArrayOf(
+            and(0xFF).toByte(),
+            ushr(8).and(0xFF).toByte()
+        )
+
+        private fun Int.toLittleEndian32(): ByteArray = byteArrayOf(
+            and(0xFF).toByte(),
+            ushr(8).and(0xFF).toByte(),
+            ushr(16).and(0xFF).toByte(),
+            ushr(24).and(0xFF).toByte()
+        )
+    }
+}
+
+internal data class HeartRateControlSendResult(
+    val attempted: Boolean,
+    val sent: Boolean,
+    val serviceId: Int? = null,
+    val discoveredFromMetadata: Boolean = false
+)
+
+/**
+ * Owns the heart-rate service pin and control sequence for one AACP connection.
+ *
+ * A stop is only emitted after a start was successfully written. Failed stops retain the pin so a
+ * retry cannot be redirected by metadata that arrived after the stream began.
+ */
+internal class RtBuddyHeartRateControlSession(
+    private val decoder: RtBuddyHeartRateDecoder,
+    private val frames: RtBuddyHeartRateControlFrames = RtBuddyHeartRateControlFrames()
+) {
+    private var activeServiceId: Int? = null
+    private var activeServiceWasDiscovered = false
+
+    @Synchronized
+    fun sendStart(sender: (ByteArray) -> Boolean): HeartRateControlSendResult =
+        sendControl(start = true, sender = sender)
+
+    @Synchronized
+    fun sendStop(sender: (ByteArray) -> Boolean): HeartRateControlSendResult =
+        sendControl(start = false, sender = sender)
+
+    @Synchronized
+    fun reset() {
+        activeServiceId = null
+        activeServiceWasDiscovered = false
+        frames.reset()
+    }
+
+    private fun sendControl(
+        start: Boolean,
+        sender: (ByteArray) -> Boolean
+    ): HeartRateControlSendResult {
+        val resolution = decoder.heartRateServiceResolution()
+        val serviceId = if (start) {
+            activeServiceId ?: resolution.serviceId?.also {
+                activeServiceId = it
+                activeServiceWasDiscovered = resolution.discoveredFromMetadata
+            }
+        } else {
+            activeServiceId
+        } ?: return HeartRateControlSendResult(attempted = false, sent = false)
+
+        val packet = if (start) frames.start(serviceId) else frames.stop(serviceId)
+        val discoveredFromMetadata = activeServiceWasDiscovered
+        val sent = sender(packet)
+        when {
+            start && !sent && activeServiceId == serviceId -> {
+                activeServiceId = null
+                activeServiceWasDiscovered = false
+            }
+
+            !start && sent && activeServiceId == serviceId -> {
+                activeServiceId = null
+                activeServiceWasDiscovered = false
+            }
+        }
+        return HeartRateControlSendResult(
+            attempted = true,
+            sent = sent,
+            serviceId = serviceId,
+            discoveredFromMetadata = discoveredFromMetadata
         )
     }
 }
@@ -465,4 +756,14 @@ private fun ByteArray.longestSuffixMatchingPrefix(
         if ((0 until length).all { this[start + it] == prefix[it] }) return length
     }
     return 0
+}
+
+private fun ByteArray.containsBytes(needle: ByteArray, start: Int, end: Int): Boolean {
+    if (needle.isEmpty()) return true
+    if (start < 0 || end > size || start > end || end - start < needle.size) return false
+    val lastStart = end - needle.size
+    for (candidate in start..lastStart) {
+        if (needle.indices.all { this[candidate + it] == needle[it] }) return true
+    }
+    return false
 }

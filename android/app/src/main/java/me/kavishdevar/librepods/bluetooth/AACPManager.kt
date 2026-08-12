@@ -20,7 +20,9 @@
 
 package me.kavishdevar.librepods.bluetooth
 
+import android.os.SystemClock
 import android.util.Log
+import kotlinx.coroutines.delay
 import me.kavishdevar.librepods.data.Capability
 import me.kavishdevar.librepods.data.CustomEq
 import java.nio.ByteBuffer
@@ -76,22 +78,6 @@ class AACPManager {
         )
         private val HEART_RATE_CAPABILITIES_SERVICE_4 =
             byteArrayOf(0x04, 0x00, 0x04, 0x00, 0x01, 0x00, 0x00)
-
-        // Verified RTBuddy SensorDataWX HEARTRATE(19) service-setting frames from the legacy probe.
-        // These arrays intentionally omit HEADER_BYTES because sendDataPacket() adds it.
-        private val HEART_RATE_START_1S = byteArrayOf(
-            0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
-            0x08, 0xE3.toByte(), 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
-            0x02, 0x1A, 0x05, 0x01, 0x40, 0x42, 0x0F, 0x00
-        )
-
-        private val HEART_RATE_STOP = byteArrayOf(
-            0x17, 0x00, 0x00, 0x00, 0x10, 0x00, 0x10, 0x00,
-            0x08, 0xED.toByte(), 0x46, 0x42, 0x0B, 0x08, 0x13, 0x10,
-            0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00
-        )
-        private val HEART_RATE_START_PACKET = HEADER_BYTES + HEART_RATE_START_1S
-        private val HEART_RATE_STOP_PACKET = HEADER_BYTES + HEART_RATE_STOP
 
         private const val HEART_RATE_DIAGNOSTIC_LOG_INTERVAL_MILLIS = 10_000L
         private const val HEART_RATE_DIAGNOSTIC_REJECTION_THRESHOLD = 10
@@ -317,6 +303,7 @@ class AACPManager {
 
     private var callback: PacketCallback? = null
     private val heartRateDecoder = RtBuddyHeartRateDecoder()
+    private val heartRateControlSession = RtBuddyHeartRateControlSession(heartRateDecoder)
     private val heartRateDiagnosticLock = Any()
     private var heartRateAcceptedSampleLogged = false
     private var heartRateDiagnosticWindowStartedAtMillis = 0L
@@ -350,9 +337,45 @@ class AACPManager {
         return sendPacket(createDataPacket(data))
     }
 
-    fun sendHeartRateStartFrame(): Boolean = sendDataPacket(HEART_RATE_START_1S)
+    fun sendHeartRateStartFrame(): Boolean = sendHeartRateControlFrame(start = true)
 
-    fun sendHeartRateStopFrame(): Boolean = sendDataPacket(HEART_RATE_STOP)
+    fun sendHeartRateStopFrame(): Boolean = sendHeartRateControlFrame(start = false)
+
+    suspend fun awaitHeartRateServiceResolution(timeoutMillis: Long = 1_500L): Boolean {
+        return waitForHeartRateServiceResolution(
+            decoder = heartRateDecoder,
+            timeoutMillis = timeoutMillis,
+            elapsedRealtimeMillis = SystemClock::elapsedRealtime,
+            pause = { delay(it) }
+        )
+    }
+
+    private fun sendHeartRateControlFrame(start: Boolean): Boolean {
+        val result = if (start) {
+            heartRateControlSession.sendStart(::sendPacket)
+        } else {
+            heartRateControlSession.sendStop(::sendPacket)
+        }
+        if (!result.attempted) {
+            Log.w(
+                TAG,
+                if (start) {
+                    "HeartRateService unavailable; refusing to target a non-heart service"
+                } else {
+                    "No active RTBuddy heart-rate stream; skipping stop control"
+                }
+            )
+            return false
+        }
+        Log.d(
+            TAG,
+            "Sending RTBuddy heart-rate ${if (start) "start" else "stop"} " +
+                "service=${result.serviceId} " +
+                "source=${if (result.discoveredFromMetadata) "metadata" else "legacy"} " +
+                "sent=${result.sent}"
+        )
+        return result.sent
+    }
 
     fun sendHeartRateConnectService0(): Boolean = sendPacket(HEART_RATE_CONNECT_SERVICE_0)
 
@@ -1416,12 +1439,12 @@ class AACPManager {
     }
 
     private fun isHeartRateRtBuddyPacket(packet: ByteArray): Boolean =
-        packet.contentEquals(HEART_RATE_START_PACKET) ||
-            packet.contentEquals(HEART_RATE_STOP_PACKET)
+        RtBuddyHeartRateControlFrames.isControlFrame(packet)
 
     fun disconnected() {
         Log.d(TAG, "Disconnected, clearing state")
         heartRateDecoder.reset()
+        heartRateControlSession.reset()
         resetHeartRateDiagnostics()
         controlCommandStatusList.clear()
         controlCommandListeners.clear()

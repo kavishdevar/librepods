@@ -457,6 +457,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             sendCapabilitiesService0 = aacpManager::sendHeartRateCapabilitiesService0,
             sendConnectService4 = aacpManager::sendHeartRateConnectService4,
             sendCapabilitiesService4 = aacpManager::sendHeartRateCapabilitiesService4,
+            awaitHeartRateService = { aacpManager.awaitHeartRateServiceResolution() },
             enableHeartRate = {
                 aacpManager.sendControlCommand(
                     AACPManager.Companion.ControlCommandIdentifiers.HRM_STATE.value,

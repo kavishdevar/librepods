@@ -39,6 +39,7 @@ internal class HeartRateMonitor(
     private val sendCapabilitiesService0: () -> Boolean,
     private val sendConnectService4: () -> Boolean,
     private val sendCapabilitiesService4: () -> Boolean,
+    private val awaitHeartRateService: suspend () -> Boolean,
     private val enableHeartRate: () -> Boolean,
     private val sendStart: () -> Boolean,
     private val sendStop: () -> Unit,
@@ -250,6 +251,7 @@ internal class HeartRateMonitor(
     private suspend fun startStreamAttempt(): Long? {
         drainIncomingSamples()
         if (!initializeAacpSession()) return null
+        if (!awaitHeartRateService()) return null
         val enabled = synchronized(lock) {
             canRun() && enableHeartRate().also { sent ->
                 if (sent) sessionNeedsStop = true
