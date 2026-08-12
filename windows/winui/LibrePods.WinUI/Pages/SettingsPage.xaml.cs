@@ -22,10 +22,16 @@ public sealed partial class SettingsPage : UserControl
     public event Action? ExperimentalVisibilityChanged;
 
     private bool _applyingLang;
+    private bool _applyingStartup;
 
     public SettingsPage()
     {
         InitializeComponent();
+
+        // Reflect the current "run at Windows login" state without firing the toggle.
+        _applyingStartup = true;
+        StartupSetting.IsOn = StartupService.IsEnabled();
+        _applyingStartup = false;
 
         // App version in the About card (for bug reports).
         try
@@ -79,6 +85,12 @@ public sealed partial class SettingsPage : UserControl
     {
         AppSettings.SetEnableExperimental(ExperimentalSetting.IsOn); // persist across restarts
         ExperimentalVisibilityChanged?.Invoke();
+    }
+
+    private void StartupSetting_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_applyingStartup) return;
+        StartupService.SetEnabled(StartupSetting.IsOn);
     }
 
     private void Theme_SelectionChanged(object sender, SelectionChangedEventArgs e)

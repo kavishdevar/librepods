@@ -154,6 +154,8 @@
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Refresh state</value></data>
   <data name="SettingsSwitchUiBtn.Content" xml:space="preserve"><value>Switch default UI to iced</value></data>
   <data name="SettingsExperimental.Text" xml:space="preserve"><value>Experimental</value></data>
+  <data name="SettingsStartup.Text" xml:space="preserve"><value>Startup</value></data>
+  <data name="SettingsStartupToggle.Header" xml:space="preserve"><value>Start LibrePods when Windows starts</value></data>
   <data name="SettingsHrWarning.Title" xml:space="preserve"><value>Experimental features</value></data>
   <data name="SettingsHrWarning.Message" xml:space="preserve"><value>These features are experimental and may be unstable. Heart-rate monitoring in particular does not work on Windows — AirPods restrict it to Apple hosts (the buds acknowledge the request but never send readings).</value></data>
   <data name="SettingsHrToggle.Header" xml:space="preserve"><value>Show experimental features</value></data>

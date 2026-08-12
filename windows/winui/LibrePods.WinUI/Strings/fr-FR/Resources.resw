@@ -145,6 +145,8 @@
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Actualiser l'état</value></data>
   <data name="SettingsSwitchUiBtn.Content" xml:space="preserve"><value>Passer à l'interface iced</value></data>
   <data name="SettingsExperimental.Text" xml:space="preserve"><value>Expérimental</value></data>
+  <data name="SettingsStartup.Text" xml:space="preserve"><value>Démarrage</value></data>
+  <data name="SettingsStartupToggle.Header" xml:space="preserve"><value>Lancer LibrePods au démarrage de Windows</value></data>
   <data name="SettingsHrWarning.Title" xml:space="preserve"><value>Fonctionnalités expérimentales</value></data>
   <data name="SettingsHrWarning.Message" xml:space="preserve"><value>Ces fonctionnalités sont expérimentales et peuvent être instables. Le suivi de la fréquence cardiaque, en particulier, ne fonctionne pas sous Windows — les AirPods le réservent aux hôtes Apple (les écouteurs accusent réception de la demande mais n'envoient jamais de mesures).</value></data>
   <data name="SettingsHrToggle.Header" xml:space="preserve"><value>Afficher les fonctionnalités expérimentales</value></data>

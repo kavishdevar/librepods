@@ -63,6 +63,19 @@
                 </StackPanel>
             </Border>
 
+            <!-- Startup — run LibrePods (daemon + tray app) at Windows login. -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{Binding [SettingsStartup_Text], Source={StaticResource Loc}}"
+                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                    <ToggleSwitch x:Name="StartupSetting"
+                                  OnContent="{Binding [Toggle_On], Source={StaticResource Loc}}"
+                                  OffContent="{Binding [Toggle_Off], Source={StaticResource Loc}}"
+                                  Header="{Binding [SettingsStartupToggle_Header], Source={StaticResource Loc}}"
+                                  Toggled="StartupSetting_Toggled" />
+                </StackPanel>
+            </Border>
+
             <!-- Experimental — collapsed by default so it isn't immediately visible;
                  the user must expand it to reach the opt-ins. Heart rate is off by
                  default because AirPods gate the HR stream to Apple hosts; on Windows
