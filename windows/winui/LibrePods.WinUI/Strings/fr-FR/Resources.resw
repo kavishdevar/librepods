@@ -145,9 +145,9 @@
   <data name="SettingsRefreshBtn.Content" xml:space="preserve"><value>Actualiser l'état</value></data>
   <data name="SettingsSwitchUiBtn.Content" xml:space="preserve"><value>Passer à l'interface iced</value></data>
   <data name="SettingsExperimental.Text" xml:space="preserve"><value>Expérimental</value></data>
-  <data name="SettingsHrWarning.Title" xml:space="preserve"><value>La fréquence cardiaque ne fonctionnera très probablement pas sous Windows</value></data>
-  <data name="SettingsHrWarning.Message" xml:space="preserve"><value>Les AirPods Pro 3 réservent le flux de fréquence cardiaque aux hôtes Apple (iPhone/iPad). Sous Windows, les écouteurs acceptent la demande et l'accusent réception, mais n'envoient jamais aucune mesure — il s'agit d'une restriction volontaire de l'écosystème Apple, pas d'un bug de LibrePods. Activer cette option ne fait qu'afficher la carte ; elle restera presque certainement vide. Elle est conservée pour le jour où le verrou « hôte Apple » pourra être contourné.</value></data>
-  <data name="SettingsHrToggle.Header" xml:space="preserve"><value>Afficher le suivi de la fréquence cardiaque (expérimental)</value></data>
+  <data name="SettingsHrWarning.Title" xml:space="preserve"><value>Fonctionnalités expérimentales</value></data>
+  <data name="SettingsHrWarning.Message" xml:space="preserve"><value>Ces fonctionnalités sont expérimentales et peuvent être instables. Le suivi de la fréquence cardiaque, en particulier, ne fonctionne pas sous Windows — les AirPods le réservent aux hôtes Apple (les écouteurs accusent réception de la demande mais n'envoient jamais de mesures).</value></data>
+  <data name="SettingsHrToggle.Header" xml:space="preserve"><value>Afficher les fonctionnalités expérimentales</value></data>
   <data name="SettingsDeviceInfo.Text" xml:space="preserve"><value>Infos de l'appareil</value></data>
   <data name="DeviceInfoModel.Text" xml:space="preserve"><value>Modèle</value></data>
   <data name="DeviceInfoFirmware.Text" xml:space="preserve"><value>Firmware</value></data>

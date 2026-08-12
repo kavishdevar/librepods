@@ -78,9 +78,9 @@
                     <InfoBar Severity="Warning" IsOpen="True" IsClosable="False"
                              Title="{Binding [SettingsHrWarning_Title], Source={StaticResource Loc}}"
                              Message="{Binding [SettingsHrWarning_Message], Source={StaticResource Loc}}" />
-                    <ToggleSwitch OnContent="{Binding [Toggle_On], Source={StaticResource Loc}}" OffContent="{Binding [Toggle_Off], Source={StaticResource Loc}}" x:Name="HeartRateSetting"
+                    <ToggleSwitch OnContent="{Binding [Toggle_On], Source={StaticResource Loc}}" OffContent="{Binding [Toggle_Off], Source={StaticResource Loc}}" x:Name="ExperimentalSetting"
                                   Header="{Binding [SettingsHrToggle_Header], Source={StaticResource Loc}}"
-                                  Toggled="HeartRateSetting_Toggled" />
+                                  Toggled="ExperimentalSetting_Toggled" />
                 </StackPanel>
             </Expander>
 

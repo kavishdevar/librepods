@@ -43,8 +43,8 @@ public sealed partial class MainWindow : Window
 
         // The experimental heart-rate opt-in lives in Settings; the DevicePage owns
         // the card. Refresh its visibility live when the toggle flips.
-        SettingsPageView.HeartRateVisibilityChanged += () => DevicePageView.RefreshHeartRateVisibility();
-        SettingsPageView.InitHeartRateSetting();
+        SettingsPageView.ExperimentalVisibilityChanged += () => DevicePageView.RefreshExperimentalVisibility();
+        SettingsPageView.InitExperimentalSetting();
 
         // Wider default so the responsive 2-column device layout shows at launch.
         AppWindow.Resize(new SizeInt32(1000, 800));

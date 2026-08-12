@@ -33,10 +33,9 @@ public sealed partial class DevicePage : UserControl
     public DevicePage()
     {
         InitializeComponent();
-        // Heart-rate is off by default — it doesn't work on Windows (Apple-host gate).
-        // Show the card only when the user opts in via Settings ▸ Experimental.
-        HeartRateCard.Visibility =
-            AppSettings.EnableHeartRate ? Visibility.Visible : Visibility.Collapsed;
+        // Experimental cards (heart-rate + hearing-aid) are hidden by default. Show
+        // them only when the user opts in via Settings ▸ Experimental.
+        ApplyExperimentalVisibility();
 
         // Daemon overlays are one-shot strings resolved when they arrive, so one
         // shown before a language change stays in the old language. Dismiss it on a
@@ -45,11 +44,17 @@ public sealed partial class DevicePage : UserControl
             DispatcherQueue.TryEnqueue(() => OverlayBar.IsOpen = false);
     }
 
-    /// Re-read the heart-rate opt-in (call after the Settings toggle changes so the
-    /// card appears/disappears without an app restart).
-    public void RefreshHeartRateVisibility() =>
-        HeartRateCard.Visibility =
-            AppSettings.EnableHeartRate ? Visibility.Visible : Visibility.Collapsed;
+    /// Re-read the experimental opt-in (call after the Settings toggle changes so the
+    /// cards appear/disappear without an app restart).
+    public void RefreshExperimentalVisibility() => ApplyExperimentalVisibility();
+
+    /// Show/hide every experimental card from the single experimental opt-in.
+    private void ApplyExperimentalVisibility()
+    {
+        var vis = AppSettings.EnableExperimental ? Visibility.Visible : Visibility.Collapsed;
+        HeartRateCard.Visibility = vis;
+        HearingAidCard.Visibility = vis;
+    }
 
     /// Fan a fresh Snapshot out to the header and every card that renders state.
     /// (AdaptiveNoiseCard is stateless — send-only — so it is skipped.)

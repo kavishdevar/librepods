@@ -68,7 +68,7 @@
                          Settings ▸ Experimental; visibility is set from AppSettings in the
                          DevicePage code-behind. -->
                     <controls:HeartRateCard x:Name="HeartRateCard" Visibility="Collapsed" />
-                    <controls:HearingAidCard x:Name="HearingAidCard" />
+                    <controls:HearingAidCard x:Name="HearingAidCard" Visibility="Collapsed" />
                 </StackPanel>
 
                 <!-- Right column: Noise Control, Features, Hi-res Mic -->

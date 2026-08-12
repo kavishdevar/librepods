@@ -17,9 +17,9 @@ public sealed partial class SettingsPage : UserControl
     /// Raised when the user picks a theme. The host applies it to the window root.
     public event Action<ElementTheme>? ThemeChanged;
 
-    /// Raised when the experimental heart-rate opt-in changes, so the host can
-    /// refresh the DevicePage card visibility live.
-    public event Action? HeartRateVisibilityChanged;
+    /// Raised when the experimental opt-in changes, so the host can refresh the
+    /// DevicePage experimental-card visibility live.
+    public event Action? ExperimentalVisibilityChanged;
 
     private bool _applyingLang;
 
@@ -71,14 +71,14 @@ public sealed partial class SettingsPage : UserControl
         if (index >= 0 && index <= 2) ThemeButtons.SelectedIndex = index;
     }
 
-    /// Set the experimental heart-rate toggle to the persisted value on startup
-    /// (without re-firing the change event).
-    public void InitHeartRateSetting() => HeartRateSetting.IsOn = AppSettings.EnableHeartRate;
+    /// Set the experimental toggle to the persisted value on startup (without
+    /// re-firing the change event).
+    public void InitExperimentalSetting() => ExperimentalSetting.IsOn = AppSettings.EnableExperimental;
 
-    private void HeartRateSetting_Toggled(object sender, RoutedEventArgs e)
+    private void ExperimentalSetting_Toggled(object sender, RoutedEventArgs e)
     {
-        AppSettings.SetEnableHeartRate(HeartRateSetting.IsOn); // persist across restarts
-        HeartRateVisibilityChanged?.Invoke();
+        AppSettings.SetEnableExperimental(ExperimentalSetting.IsOn); // persist across restarts
+        ExperimentalVisibilityChanged?.Invoke();
     }
 
     private void Theme_SelectionChanged(object sender, SelectionChangedEventArgs e)
