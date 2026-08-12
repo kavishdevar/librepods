@@ -3,6 +3,7 @@
 
 use std::ffi::c_void;
 use std::ptr;
+use std::sync::Mutex;
 
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
@@ -53,12 +54,13 @@ impl MicPipe {
         }
     }
 
-    /// Capture-activity counter — advances while an app is recording from the
-    /// virtual mic. The tray polls it to auto-enable/disable the hi-res stream.
-    pub fn status(&self) -> i32 {
+    /// Capture-activity counter — advances while an app is recording from the virtual
+    /// mic. `None` = the DeviceIoControl failed (handle dead / device gone), so the
+    /// caller can reopen.
+    pub fn status(&self) -> Option<i32> {
         let mut out = [0u8; 4];
         let mut returned = 0u32;
-        unsafe {
+        let ok = unsafe {
             DeviceIoControl(
                 self.handle,
                 IOCTL_LIBREPODS_MIC_STATUS,
@@ -68,19 +70,24 @@ impl MicPipe {
                 4,
                 &mut returned,
                 ptr::null_mut(),
-            );
+            )
+        };
+        if ok != 0 {
+            Some(i32::from_le_bytes(out))
+        } else {
+            None
         }
-        i32::from_le_bytes(out)
     }
 
-    /// Push mono 16-bit PCM samples into the mic ring.
-    pub fn write(&self, samples: &[i16]) {
+    /// Push mono 16-bit PCM samples into the mic ring. Returns false if the write
+    /// failed (handle dead) so the caller can reopen.
+    pub fn write(&self, samples: &[i16]) -> bool {
         if samples.is_empty() {
-            return;
+            return true;
         }
         let bytes = std::mem::size_of_val(samples);
         let mut returned = 0u32;
-        unsafe {
+        let ok = unsafe {
             DeviceIoControl(
                 self.handle,
                 IOCTL_LIBREPODS_MIC_WRITE_PCM,
@@ -90,7 +97,71 @@ impl MicPipe {
                 0,
                 &mut returned,
                 ptr::null_mut(),
-            );
+            )
+        };
+        ok != 0
+    }
+}
+
+/// Self-healing holder for the virtual-mic pipe. The device may not be enumerated yet
+/// when the daemon starts at boot, and the handle can later break (mic driver
+/// reinstalled / device re-plugged) — either used to leave the mic dead until a daemon
+/// restart. All mic access goes through this cell, which (re)opens the pipe on demand
+/// so audio + mic recover on their own. Cheap Mutex; the write path is uncontended.
+pub struct MicPipeCell {
+    inner: Mutex<Option<MicPipe>>,
+}
+
+impl MicPipeCell {
+    /// Try to open once up front; a failure here is fine — it reopens on first use.
+    pub fn new() -> MicPipeCell {
+        MicPipeCell {
+            inner: Mutex::new(MicPipe::open()),
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Option<MicPipe>> {
+        self.inner.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Whether a pipe is currently open (reopening if it was closed).
+    pub fn is_open(&self) -> bool {
+        let mut g = self.lock();
+        if g.is_none() {
+            *g = MicPipe::open();
+        }
+        g.is_some()
+    }
+
+    /// Push PCM; reopen + retry once if the handle broke.
+    pub fn write(&self, samples: &[i16]) {
+        let mut g = self.lock();
+        if g.is_none() {
+            *g = MicPipe::open();
+        }
+        if let Some(p) = g.as_ref() {
+            if !p.write(samples) {
+                *g = MicPipe::open(); // handle broke — reopen and retry once
+                if let Some(p2) = g.as_ref() {
+                    let _ = p2.write(samples);
+                }
+            }
+        }
+    }
+
+    /// Capture-activity counter (0 when unavailable); a dead handle is dropped so the
+    /// next call reopens it.
+    pub fn status(&self) -> i32 {
+        let mut g = self.lock();
+        if g.is_none() {
+            *g = MicPipe::open();
+        }
+        match g.as_ref().and_then(|p| p.status()) {
+            Some(v) => v,
+            None => {
+                *g = None;
+                0
+            }
         }
     }
 }

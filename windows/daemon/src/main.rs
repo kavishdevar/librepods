@@ -146,7 +146,7 @@ struct Ctx {
     /// the driver (fresh AAP session + ATT channel) to recover a wedged / desynced
     /// link. run_receiver clears it.
     wants_reconnect: Arc<AtomicBool>,
-    pipe: Option<Arc<micpipe::MicPipe>>,
+    pipe: Arc<micpipe::MicPipeCell>,
     /// Conversational Awareness volume duck — shared so `apply_command` can
     /// restore the volume if the user turns CA off mid-duck (no end event comes).
     conv_duck: Arc<Mutex<volume::ConvDuck>>,
@@ -828,6 +828,9 @@ fn run_receiver(ctx: Ctx) {
     log("run_receiver: entered");
     let mut buf = [0u8; 8192];
     let mut decoder: Option<eld::Decoder> = None;
+    // Whether we've announced "mic fully operational" for the current capture session
+    // (fires when the buds actually start streaming audio, not just when it's requested).
+    let mut mic_announced = false;
     // RTBuddy heart-rate decoder (inert unless `hr_on`). Carry is reset per
     // connection so a partial frame never straddles a reconnect.
     let mut hr_decoder = hr::RtBuddyHeartRateDecoder::new();
@@ -920,6 +923,7 @@ fn run_receiver(ctx: Ctx) {
         // input, churns the audio device connecting/disconnecting). Drop the decoder
         // so the first packet after the resume lays a fresh silence cushion.
         decoder = None;
+        mic_announced = false; // re-announce "operational" once audio resumes
         if ctx.mic_on.load(Ordering::Relaxed) {
             let _ = driver.send(&aap::START_AUDIO);
             log("run_receiver: re-armed hi-res mic uplink (mic was on before reconnect)");
@@ -1059,20 +1063,25 @@ fn run_receiver(ctx: Ctx) {
                             last_audio = Instant::now(); // watchdog: stream alive
                             if decoder.is_none() {
                                 decoder = eld::Decoder::new();
-                                if let Some(pp) = ctx.pipe.as_ref() {
-                                    pp.write(&[0i16; 3840]); // ~80 ms cushion
-                                }
+                                ctx.pipe.write(&[0i16; 3840]); // ~80 ms cushion
                             }
-                            if let (Some(dec), Some(pp)) = (decoder.as_mut(), ctx.pipe.as_ref()) {
+                            if let Some(dec) = decoder.as_mut() {
                                 let mut out: Vec<i16> = Vec::new();
                                 aap::for_each_au(data, |au| out.extend_from_slice(dec.decode(au)));
                                 if !out.is_empty() {
-                                    pp.write(&out);
+                                    ctx.pipe.write(&out);
+                                    // First real PCM reached the virtual mic — the hi-res
+                                    // uplink is fully operational end-to-end. Announce once.
+                                    if !mic_announced {
+                                        mic_announced = true;
+                                        ctx.overlay("Microphone ready — hi-res active");
+                                    }
                                 }
                             }
                         }
                     } else if decoder.is_some() {
                         decoder = None;
+                        mic_announced = false; // mic released — next session re-announces
                     }
                     if let Some(b) = aap::parse_battery(data) {
                         ctx.cache_replay(0, data); // replay to a newly-attached app
@@ -1271,6 +1280,7 @@ fn run_receiver(ctx: Ctx) {
                 last_audio = Instant::now();
                 if decoder.is_some() {
                     decoder = None;
+                    mic_announced = false;
                 }
             }
             if last_status.elapsed() >= Duration::from_secs(1) {
@@ -1355,15 +1365,14 @@ fn run_receiver(ctx: Ctx) {
 /// mic, disable it (debounced) when it stops, and restore A2DP stereo.
 fn poll_mic(ctx: Ctx) {
     const MIC_IDLE_STOP_POLLS: u32 = 20; // 20 × 500 ms = 10 s (bridges VAD/probe gaps)
-    let mut prev = ctx.pipe.as_ref().map(|p| p.status()).unwrap_or(0);
+    let mut prev = ctx.pipe.status();
     let mut idle = 0u32;
     let mut on = false;
     loop {
         thread::sleep(Duration::from_millis(500));
-        let cur = match ctx.pipe.as_ref() {
-            Some(p) => p.status(),
-            None => break,
-        };
+        // Self-healing: `status()` reopens the pipe if it wasn't ready at boot or the
+        // handle broke, so mic auto-detection never dies silently.
+        let cur = ctx.pipe.status();
         let capturing = cur != prev;
         prev = cur;
         if !ctx.auto_mode.load(Ordering::Relaxed) {
@@ -1415,8 +1424,8 @@ fn main() {
     };
     log(&format!("find_airpods: mac={mac:#x} name='{dev_name}'"));
 
-    let pipe = micpipe::MicPipe::open().map(Arc::new);
-    log(&format!("mic pipe opened: {}", pipe.is_some()));
+    let pipe = Arc::new(micpipe::MicPipeCell::new());
+    log(&format!("mic pipe opened: {}", pipe.is_open()));
     let ctx = Ctx {
         state: Arc::new(Mutex::new(Snapshot {
             dev_name: dev_name.clone(),
