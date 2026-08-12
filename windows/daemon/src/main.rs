@@ -11,6 +11,7 @@ mod aap;
 mod bt;
 mod driver;
 mod eld;
+mod gatt;
 mod hearing;
 mod hr;
 mod le;
@@ -20,7 +21,7 @@ mod rename;
 mod volume;
 
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -139,21 +140,11 @@ struct Ctx {
     /// True while an HR retry thread is live. A one-thread guard so rapid on/off
     /// never stacks two retry campaigns over the one driver.
     hr_retrying: Arc<AtomicBool>,
-    /// Set by the HR retry campaign after it exhausts a batch of enable attempts
-    /// with no sample, asking `run_receiver` to rebuild the AACP L2CAP channel
-    /// (drop + reopen the driver) before retrying — the Android client's
-    /// `requestTransportRecovery`. run_receiver clears it and re-arms HR on the
-    /// fresh channel. A last-resort session reset for the "ACKs but no data" case.
-    hr_wants_rebuild: Arc<AtomicBool>,
-    /// Count of AACP channel rebuilds spent on the current HR session, so we stop
-    /// reconnecting forever once it's clear the unit won't stream (ACKs only). Reset
-    /// when the user (re)enables HR or (re)connects — a fresh chance each time.
-    hr_rebuilds: Arc<AtomicU32>,
     /// The user accepted the "connect?" prompt — the session may start.
     connect_requested: Arc<AtomicBool>,
     /// Set by the "Repair connection" command: asks `run_receiver` to drop + reopen
     /// the driver (fresh AAP session + ATT channel) to recover a wedged / desynced
-    /// link. run_receiver clears it. Distinct from `hr_wants_rebuild` (HR-specific).
+    /// link. run_receiver clears it.
     wants_reconnect: Arc<AtomicBool>,
     pipe: Option<Arc<micpipe::MicPipe>>,
     /// Conversational Awareness volume duck — shared so `apply_command` can
@@ -503,14 +494,12 @@ fn next_hr_seq() -> u16 {
 const HR_START_SEQ: u16 = 9059; // 0x2363 → varint e3 46
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
-/// Consecutive enable attempts (each an ~8 s sample wait) with no reading before
-/// we ask run_receiver to rebuild the AACP channel — mirrors the Android client
-/// escalating to `requestTransportRecovery` after the plain re-enable retries.
-const HR_ATTEMPTS_BEFORE_REBUILD: u32 = 4;
-/// Max AACP channel rebuilds per HR session before giving up (the unit only ever
-/// ACKs, never streams). Stops the daemon reconnecting the channel forever; the user
-/// re-toggles HR (or reconnects) to try again. ~3 rebuilds ≈ 3 min of effort.
-const HR_MAX_REBUILDS: u32 = 3;
+/// Consecutive enable attempts (each an ~8 s sample wait) with no reading before we
+/// give up. We do NOT rebuild / reconnect the L2CAP channel to "try again": on this
+/// firmware the buds only ever ACK service 19 and never stream, so reconnecting is
+/// pointless churn (it just re-opens the audio link). The user toggles HR off/on to
+/// retry.
+const HR_MAX_ATTEMPTS: u32 = 4;
 
 /// How one retry campaign ended.
 enum HrOutcome {
@@ -518,11 +507,9 @@ enum HrOutcome {
     Live,
     /// The user turned HR off mid-campaign (`hr_on` went false).
     Stopped,
-    /// The transport was lost (no driver) — give up; re-arms on the next connect.
+    /// The transport was lost (no driver), or the enable retries were exhausted with
+    /// only ACKs — give up; re-arms on the next connect / HR re-toggle.
     GiveUp,
-    /// Enable retries were exhausted with only ACKs (no reading). We asked
-    /// run_receiver to rebuild the L2CAP channel; it will re-arm HR afterwards.
-    Rebuild,
 }
 
 /// Enable/disable AirPods Pro 3 heart-rate monitoring. On → spawn a retry thread
@@ -538,7 +525,6 @@ fn set_heart_rate(ctx: &Ctx, on: bool) {
         if has_driver { "connected" } else { "NONE(no session yet)" }
     ));
     if on && !was {
-        ctx.hr_rebuilds.store(0, Ordering::Relaxed); // fresh budget for this session
         spawn_hr_retry(ctx);
         ctx.overlay("Heart rate monitoring on");
     } else if !on && was {
@@ -567,9 +553,7 @@ fn spawn_hr_retry(ctx: &Ctx) {
         // campaign that Stopped (user off) re-runs iff hr_on is true again.
         loop {
             match hr_retry_campaign(&ctx) {
-                // Rebuild: the campaign asked run_receiver to rebuild the L2CAP
-                // channel; exit so it can, then it re-arms HR on the fresh channel.
-                HrOutcome::Live | HrOutcome::GiveUp | HrOutcome::Rebuild => break,
+                HrOutcome::Live | HrOutcome::GiveUp => break,
                 HrOutcome::Stopped => {
                     if !ctx.hr_on.load(Ordering::Relaxed) {
                         break;
@@ -585,11 +569,11 @@ fn spawn_hr_retry(ctx: &Ctx) {
 /// mirroring the Android HeartRateMonitor loop. One attempt = full enable + up to
 /// FIRST_SAMPLE_TIMEOUT waiting for a *decoded reading*. Crucially, mere ACKs / a
 /// live-but-empty stream do NOT end the campaign: the whole failure mode is that the
-/// AirPods ACK service 19 yet never stream data, so we must keep retrying. Plain
-/// re-enable retries repeat over the same channel; after HR_ATTEMPTS_BEFORE_REBUILD
-/// with only ACKs, escalate to a transport rebuild (run_receiver drops + reopens the
-/// L2CAP channel and re-arms HR) — the Android client's `requestTransportRecovery`.
-/// Runs until a reading lands or the user turns HR off.
+/// AirPods ACK service 19 yet never stream data. Plain re-enable retries repeat over
+/// the SAME channel, up to HR_MAX_ATTEMPTS, then give up — we never rebuild/reconnect
+/// the L2CAP channel, because the audio + mic links ride it and must never be
+/// collapsed for a feature that (on this firmware) never yields data. Runs until a
+/// reading lands, the user turns HR off, or the attempts are spent.
 fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
     let mut attempt: u32 = 0;
     while ctx.hr_on.load(Ordering::Relaxed) {
@@ -655,26 +639,15 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
         log(&format!(
             "HR retry: attempt={attempt} — no reading in 8s (stream_frames={streaming})"
         ));
-        // Escalate to a transport rebuild once the plain re-enable retries are spent:
-        // ask run_receiver to drop + reopen the L2CAP channel and re-arm HR on it —
-        // but only up to HR_MAX_REBUILDS, then give up so we don't reconnect forever.
-        if attempt >= HR_ATTEMPTS_BEFORE_REBUILD {
-            let done = ctx.hr_rebuilds.load(Ordering::Relaxed);
-            if done >= HR_MAX_REBUILDS {
-                log(&format!(
-                    "HR: no reading after {done} channel rebuilds (ACKs only) — giving up; \
-                     toggle HR off/on to retry"
-                ));
-                ctx.overlay("Heart rate unavailable");
-                return HrOutcome::GiveUp;
-            }
-            ctx.hr_rebuilds.store(done + 1, Ordering::Relaxed);
-            log(&format!(
-                "HR: enable retries exhausted (ACKs only) — AACP channel rebuild #{}",
-                done + 1
-            ));
-            ctx.hr_wants_rebuild.store(true, Ordering::Relaxed);
-            return HrOutcome::Rebuild;
+        // No reading after this attempt. Do NOT rebuild / reconnect the L2CAP channel:
+        // on this firmware the buds only ever ACK service 19 and never stream, so
+        // reconnecting to "try again" is pointless churn (it just re-opens the audio
+        // link). Give up after HR_MAX_ATTEMPTS; the user toggles HR off/on to retry.
+        if attempt >= HR_MAX_ATTEMPTS {
+            log("HR: no reading after the enable retries (ACKs only) — giving up; \
+                 toggle HR off/on to retry");
+            ctx.overlay("Heart rate unavailable");
+            return HrOutcome::GiveUp;
         }
         let backoff = HR_RETRY_BACKOFF_MS[(attempt as usize - 1).min(HR_RETRY_BACKOFF_MS.len() - 1)];
         let nap_until = Instant::now() + Duration::from_millis(backoff);
@@ -786,8 +759,6 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             // The user accepted the prompt — let the session start, and ask the OS
             // to (re)connect the audio in case the device was BT-disconnected.
             ctx.connect_requested.store(true, Ordering::Relaxed);
-            ctx.hr_rebuilds.store(0, Ordering::Relaxed); // fresh HR budget on a new connect
-            ctx.hr_wants_rebuild.store(false, Ordering::Relaxed);
             let mac = ctx.mac;
             thread::spawn(move || {
                 let ok = bt::set_audio_connected(mac, true);
@@ -802,7 +773,6 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             log("cmd: repair connection — forcing a clean reconnect");
             ctx.connect_requested.store(true, Ordering::Relaxed);
             ctx.wants_reconnect.store(true, Ordering::Relaxed);
-            ctx.hr_rebuilds.store(0, Ordering::Relaxed);
             let mac = ctx.mac;
             thread::spawn(move || {
                 let ok = bt::set_audio_connected(mac, true);
@@ -924,6 +894,19 @@ fn run_receiver(ctx: Ctx) {
         pending_card = true;
         ctx.push_state();
         log("run_receiver: handshake done, connected=true");
+        // EXPERIMENT (opt-in): one-shot GATT discovery — walk the buds' GATT server as
+        // a CLIENT to find any heart-rate characteristic we never enumerated. It wakes
+        // hearing-assist and blocks the AAP loop while it listens, so it must NOT run in
+        // normal use — it's gated behind the LIBREPODS_GATT_PROBE env flag (start the
+        // daemon with that var set to enable it). Runs once per session.
+        if std::env::var_os("LIBREPODS_GATT_PROBE").is_some() {
+            static GATT_PROBED: AtomicBool = AtomicBool::new(false);
+            if !GATT_PROBED.swap(true, Ordering::Relaxed) {
+                for line in gatt::probe(&driver) {
+                    log(&line);
+                }
+            }
+        }
         hr_decoder.reset(); // fresh connection — drop any stale HR carry
         // Re-arm the HR stream if the user had it on before the (re)connect —
         // through the same retry path (the stream rarely starts first try).
@@ -991,15 +974,6 @@ fn run_receiver(ctx: Ctx) {
             // The user pressed Disconnect (connect_requested cleared) — release.
             if !ctx.connect_requested.load(Ordering::Relaxed) {
                 log("run_receiver: disconnect requested — releasing");
-                *ctx.driver_cell.lock().unwrap() = None;
-                break;
-            }
-            // The HR campaign asked for a transport rebuild (ACKs but no data): drop
-            // the driver so the outer loop reopens the L2CAP channel fresh, then the
-            // handshake path re-arms HR on it. Keep connect_requested set so we
-            // reconnect rather than release.
-            if ctx.hr_wants_rebuild.swap(false, Ordering::Relaxed) {
-                log("run_receiver: HR transport rebuild — reopening AACP channel");
                 *ctx.driver_cell.lock().unwrap() = None;
                 break;
             }
@@ -1459,8 +1433,6 @@ fn main() {
         hr_got_sample: Arc::new(AtomicBool::new(false)),
         hr_stream_live: Arc::new(AtomicBool::new(false)),
         hr_retrying: Arc::new(AtomicBool::new(false)),
-        hr_wants_rebuild: Arc::new(AtomicBool::new(false)),
-        hr_rebuilds: Arc::new(AtomicU32::new(0)),
         connect_requested: Arc::new(AtomicBool::new(false)),
         wants_reconnect: Arc::new(AtomicBool::new(false)),
         pipe,
@@ -1530,8 +1502,6 @@ fn main() {
                     // connect_requested; also nudge the OS audio up in case the
                     // classic link is down.
                     c.connect_requested.store(true, Ordering::Relaxed);
-                    c.hr_rebuilds.store(0, Ordering::Relaxed);
-                    c.hr_wants_rebuild.store(false, Ordering::Relaxed);
                     let mac = c.mac;
                     thread::spawn(move || {
                         let ok = bt::set_audio_connected(mac, true);
