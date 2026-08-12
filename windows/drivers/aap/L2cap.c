@@ -133,6 +133,12 @@ LpConnect(
         // hearing-assist is enabled, so opening a second L2CAP channel to it on every
         // connect only churns the shared ACL and destabilises the AAP channel / A2DP
         // (it opened, idled, and dropped ~30 s later on every session).
+        //
+        // NB: we deliberately do NOT register an ATT *server* here to accept the
+        // buds' inbound PSM-0x001F connection. bthport rejects registering a server
+        // on the reserved ATT PSM with STATUS_INVALID_PARAMETER (0xC000000D) — a
+        // profile driver may be an ATT client but not a server (tested 2026-08-12).
+        // So the AirPods' inbound GATT connection is unavoidably refused on Windows.
     } else {
         WdfSpinLockAcquire(Ctx->Lock);
         Ctx->State         = LpDisconnected;
