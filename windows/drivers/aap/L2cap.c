@@ -128,11 +128,11 @@ LpConnect(
         Ctx->State         = LpConnected;
         WdfSpinLockRelease(Ctx->Lock);
         KdPrint(("LibrePodsAAP: L2CAP connected (handle=%p)\n", brb->ChannelHandle));
-        // Open the ATT (PSM 0x001F) channel to the AirPods as a client (like
-        // Android's ATTManager) for the hearing-aid config. Best-effort; if the
-        // buds' ATT server isn't up yet (may need hearing-assist enabled first) the
-        // open just fails and we retry later. The AAP channel works regardless.
-        (VOID)LpConnectAtt(Ctx);
+        // NB: the ATT (PSM 0x001F) channel is opened LAZILY — on the first hearing-aid
+        // ATT write (see LpAttSend), NOT here. The buds' ATT server is dormant until
+        // hearing-assist is enabled, so opening a second L2CAP channel to it on every
+        // connect only churns the shared ACL and destabilises the AAP channel / A2DP
+        // (it opened, idled, and dropped ~30 s later on every session).
     } else {
         WdfSpinLockAcquire(Ctx->Lock);
         Ctx->State         = LpDisconnected;
@@ -216,6 +216,15 @@ LpAttSend(
     NTSTATUS                       status;
     struct _BRB_L2CA_ACL_TRANSFER* brb;
 
+    // Lazily open the ATT (PSM 0x001F) client channel on first use, instead of on
+    // every AAP connect: the buds' ATT server is dormant until hearing-assist is
+    // enabled (the AAP 0x2C/0x33 enable wakes it just before the first write), and
+    // opening it eagerly churns the shared ACL and destabilises the AAP channel /
+    // A2DP. Reconnects transparently after an idle close — the remote-disconnect
+    // indication clears AttConnected.
+    if (!Ctx->AttConnected) {
+        (VOID)LpConnectAtt(Ctx);
+    }
     if (!Ctx->AttConnected || Ctx->AttChannelHandle == NULL) {
         return STATUS_DEVICE_NOT_CONNECTED;
     }
