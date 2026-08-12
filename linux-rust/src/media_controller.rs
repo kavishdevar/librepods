@@ -617,22 +617,45 @@ impl MediaController {
         if mac.is_empty() {
             return None;
         }
-        let mac_clone = mac.to_string();
 
-        tokio::task::spawn_blocking(move || {
-            for card in get_card_info_list_sync() {
-                if let Some(device_string) = card.proplist.get_str("device.string")
-                    && device_string.contains(&mac_clone)
-                {
-                    info!("Found audio device index for MAC {}: {}", mac_clone, card.index);
-                    return Some(card.index);
-                }
-            }
-            error!("No matching Bluetooth card found for MAC address: {}", mac_clone);
-            None
-        })
+        // Taking the connection back from another device makes the earbuds
+        // renegotiate, and the card briefly disappears from the sound server
+        // while that happens. A single lookup can land in that window and give
+        // up, leaving the audio nowhere: ownership already taken from the other
+        // device, but no local profile to play through. So poll for a moment.
+        const ATTEMPTS: u32 = 12;
+        const INTERVAL: Duration = Duration::from_millis(250);
+
+        for attempt in 1..=ATTEMPTS {
+            let mac_clone = mac.to_string();
+            let found = tokio::task::spawn_blocking(move || {
+                get_card_info_list_sync().into_iter().find_map(|card| {
+                    let device_string = card.proplist.get_str("device.string")?;
+                    device_string.contains(&mac_clone).then_some(card.index)
+                })
+            })
             .await
-            .unwrap_or(None)
+            .unwrap_or(None);
+
+            if let Some(index) = found {
+                if attempt > 1 {
+                    debug!("Found audio device for {mac} after {attempt} attempts");
+                }
+                info!("Found audio device index for MAC {}: {}", mac, index);
+                return Some(index);
+            }
+
+            if attempt < ATTEMPTS {
+                tokio::time::sleep(INTERVAL).await;
+            }
+        }
+
+        error!(
+            "No matching Bluetooth card found for MAC address: {} after {:?}",
+            mac,
+            INTERVAL * ATTEMPTS
+        );
+        None
     }
 
     pub async fn deactivate_a2dp_profile(&self) {
