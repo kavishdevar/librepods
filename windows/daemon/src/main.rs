@@ -967,6 +967,8 @@ fn run_receiver(ctx: Ctx) {
         // ears) and on a real disconnect (cased / on the phone) — status alone
         // can't tell them apart, so data flow is the tie-breaker.
         let mut last_data = Instant::now();
+        // Rate-limit the in-place mic-uplink re-arm (see the stall handler below).
+        let mut last_mic_rearm = Instant::now();
         // ATT (PSM 0x001F) hearing-aid server diagnostics, polled from the driver
         // and logged on change (DebugView never showed the driver's KdPrint).
         let mut att_poll = Instant::now();
@@ -1328,12 +1330,22 @@ fn run_receiver(ctx: Ctx) {
                         // recover it, WITHOUT toggling the OS audio, so the mic comes back
                         // and the call isn't kicked. connect_requested stays set → the
                         // outer loop reopens the L2CAP channel, no set_audio_connected.
+                        // Mic engaged but the AAP channel has gone silent — the uplink
+                        // may have stalled. NEVER drop the channel here: the user is on a
+                        // call, so a reconnect kicks it, and repeated drop+reopen churn
+                        // bricks the driver into Code 38 (a self-feeding "driver open
+                        // FAILED" loop). Instead re-arm the uplink IN PLACE by re-sending
+                        // START_AUDIO on the still-open channel, at most once every few
+                        // seconds. If it was just a silence (you not speaking), this is a
+                        // harmless no-op; if the stream really stopped, it nudges the 0x58
+                        // uplink back WITHOUT touching the L2CAP link.
                         if ctx.mic_on.load(Ordering::Relaxed)
                             && last_data.elapsed() >= Duration::from_secs(8)
+                            && last_mic_rearm.elapsed() >= Duration::from_secs(5)
                         {
-                            log("run_receiver: mic uplink stalled (buds still connected) — rebuilding AAP channel");
-                            *ctx.driver_cell.lock().unwrap() = None;
-                            break;
+                            log("run_receiver: mic uplink silent — re-arming START_AUDIO in place");
+                            let _ = driver.send(&aap::START_AUDIO);
+                            last_mic_rearm = Instant::now();
                         }
                         false
                     } else {
