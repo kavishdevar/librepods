@@ -124,6 +124,12 @@ impl MediaController {
         )>,
     ) {
         info!("Starting playback listener loop");
+        // `is_playing` starts false, which is a placeholder rather than an
+        // observation. Whatever is already playing when this loop starts would
+        // otherwise read as playback that just began — and on a reconnect, with
+        // another device holding the audio, that escalates into taking it away
+        // from a device the user was happily listening on.
+        let mut baseline_taken = false;
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -136,6 +142,26 @@ impl MediaController {
             state.is_playing = is_playing;
             let local_mac = state.local_mac.clone();
             drop(state);
+
+            if !baseline_taken {
+                baseline_taken = true;
+                debug!("Recorded initial playback state ({is_playing}); not a transition");
+                continue;
+            }
+
+            // Losing ownership pauses local players and drops the audio
+            // profile. Players tend to resume on their own once the profile
+            // comes back, and that resume is not the user asking for the audio
+            // — treating it as one starts a tug of war with the device that
+            // just took over, ending with neither side playing.
+            if is_playing && !was_playing {
+                let mut state = self.state.lock().await;
+                if state.i_paused_the_media {
+                    state.i_paused_the_media = false;
+                    debug!("Playback resumed after our own pause; not taking ownership");
+                    continue;
+                }
+            }
 
             if !was_playing && is_playing {
                 let aacp_state = aacp_manager.state.lock().await;
@@ -234,6 +260,19 @@ impl MediaController {
                 debug!("Ear detection disabled, skipping");
                 return;
             }
+        }
+
+        // No previous reading means this is the first report after connecting,
+        // not a change the wearer made. It matters because `old_all_out` is
+        // vacuously true for an empty list, so an already-worn pair looks like
+        // it was just put in: playback resumes, and with a second device
+        // connected the resume escalates into taking the audio away from it.
+        // Record the baseline and wait for a real transition instead.
+        if old_statuses.is_empty() {
+            debug!("First ear reading after connecting: recording baseline, not acting");
+            let mut state = self.state.lock().await;
+            state.old_in_ear_data = new_in_ear_data;
+            return;
         }
 
         if new_has_at_least_one_in && old_all_out {
@@ -428,6 +467,10 @@ impl MediaController {
 
     pub async fn pause_all_media(&self) {
         debug!("Pausing all media (without tracking for resume)");
+
+        // Remember that the pause came from us, so the playback listener does
+        // not mistake the players coming back for the user starting something.
+        self.state.lock().await.i_paused_the_media = true;
 
         let paused_count = tokio::task::spawn_blocking(|| {
             let conn = match Connection::new_session() {
