@@ -31,6 +31,7 @@ import me.kavishdevar.librepods.presentation.screens.HearingProtectionScreen
 import me.kavishdevar.librepods.presentation.screens.LoadingScreen
 import me.kavishdevar.librepods.presentation.screens.LongPress
 import me.kavishdevar.librepods.presentation.screens.MicrophoneSettingsRoute
+import me.kavishdevar.librepods.presentation.screens.NearbyAirPodsFinderScreen
 import me.kavishdevar.librepods.presentation.screens.OpenSourceLicensesScreen
 import me.kavishdevar.librepods.presentation.screens.PurchaseScreen
 import me.kavishdevar.librepods.presentation.screens.ReleaseNotesScreen
@@ -39,6 +40,10 @@ import me.kavishdevar.librepods.presentation.screens.TransparencySettingsScreen
 import me.kavishdevar.librepods.presentation.screens.TroubleshootingScreen
 import me.kavishdevar.librepods.presentation.screens.UpdateHearingTestRoute
 import me.kavishdevar.librepods.presentation.screens.VersionScreen
+import me.kavishdevar.librepods.presentation.screens.WorkoutDetailScreen
+import me.kavishdevar.librepods.presentation.screens.WorkoutHistoryScreen
+import me.kavishdevar.librepods.presentation.screens.WorkoutScreen
+import me.kavishdevar.librepods.presentation.screens.WorkoutSettingsScreen
 import me.kavishdevar.librepods.presentation.screens.onboarding.OnboardingScreen
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
@@ -113,6 +118,7 @@ fun AppNavGraph(
                                 navigateToCallControlScreen = { navigate(Screen.CallControl(it)) },
                                 navigateToMicrophoneSettings = { navigate(Screen.MicrophoneSettings) },
                                 navigateToHeartRateTest = { navigate(Screen.HeartRateTest) },
+                                navigateToNearbyFinder = { navigate(Screen.NearbyFinder) },
                             )
                         }
 
@@ -130,7 +136,7 @@ fun AppNavGraph(
                                 navigateToPurchase = ::navigateToPurchase,
                                 navigateToTroubleshooting = { navigate(Screen.Troubleshooting) },
                                 navigateToOpenSourceLicenses = { navigate(Screen.OpenSourceLicenses) },
-                                navigateToReleaseNotesScreen = { navigate(Screen.ReleaseNotes) }
+                                navigateToReleaseNotesScreen = { navigate(Screen.ReleaseNotes) },
                             )
                         }
 
@@ -148,7 +154,48 @@ fun AppNavGraph(
                     Screen.HeartRateTest ->
                         NavEntry(screen) {
                             if (!airPodsViewModel.isReady) LoadingScreen()
-                            HeartRateTestScreen(airPodsViewModel)
+                            HeartRateTestScreen(
+                                viewModel = airPodsViewModel,
+                                navigateToWorkout = { navigate(Screen.Workout) },
+                            )
+                        }
+
+                    Screen.Workout ->
+                        NavEntry(screen) {
+                            if (!airPodsViewModel.isReady) LoadingScreen()
+                            WorkoutScreen(
+                                viewModel = airPodsViewModel,
+                                navigateToHistory = { navigate(Screen.WorkoutHistory) },
+                                navigateToSettings = { navigate(Screen.WorkoutSettings) },
+                            )
+                        }
+
+                    Screen.WorkoutHistory ->
+                        NavEntry(screen) {
+                            WorkoutHistoryScreen { sessionId ->
+                                navigate(Screen.WorkoutDetail(sessionId))
+                            }
+                        }
+
+                    is Screen.WorkoutDetail ->
+                        NavEntry(screen) {
+                            WorkoutDetailScreen(
+                                sessionId = screen.sessionId,
+                                onDeleted = {
+                                    if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+                                },
+                            )
+                        }
+
+                    Screen.WorkoutSettings ->
+                        NavEntry(screen) {
+                            WorkoutSettingsScreen()
+                        }
+
+                    Screen.NearbyFinder ->
+                        NavEntry(screen) {
+                            if (!airPodsViewModel.isReady) LoadingScreen()
+                            NearbyAirPodsFinderScreen(airPodsViewModel)
                         }
 
                     Screen.Accessibility ->

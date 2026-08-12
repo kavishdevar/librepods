@@ -146,7 +146,8 @@ fun AirPodsSettingsRoute(
     navigateToTroubleshooting: () -> Unit,
     navigateToCallControlScreen: (action: String) -> Unit,
     navigateToMicrophoneSettings: () -> Unit,
-    navigateToHeartRateTest: () -> Unit
+    navigateToHeartRateTest: () -> Unit,
+    navigateToNearbyFinder: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -193,6 +194,7 @@ fun AirPodsSettingsRoute(
             navigateToCallControlScreen = navigateToCallControlScreen,
             navigateToMicrophoneSettings = navigateToMicrophoneSettings,
             navigateToHeartRateTest = navigateToHeartRateTest,
+            navigateToNearbyFinder = navigateToNearbyFinder,
 
             setHeartRateMonitoringEnabled = viewModel::setHeartRateMonitoringEnabled,
             reconnectAacpForHeartRate = viewModel::reconnectAacpForHeartRate,
@@ -239,6 +241,7 @@ fun AirPodsSettingsScreen(
         navigateToCallControlScreen: (action: String) -> Unit,
         navigateToMicrophoneSettings: () -> Unit,
         navigateToHeartRateTest: () -> Unit,
+        navigateToNearbyFinder: () -> Unit,
 
         setHeartRateMonitoringEnabled: (Boolean) -> Unit,
         reconnectAacpForHeartRate: () -> Unit,
@@ -334,6 +337,13 @@ fun AirPodsSettingsScreen(
                     name = stringResource(R.string.name),
                     description = deviceName.text,
                     onClick = navigateToRename,
+                )
+            }
+            item(key = "spacer_nearby_finder") { Spacer(modifier = Modifier.height(16.dp)) }
+            item(key = "nearby_finder") {
+                StyledListItem(
+                    name = "Find Nearby",
+                    onClick = navigateToNearbyFinder
                 )
             }
             val hasHeartRateCapability =
@@ -992,6 +1002,7 @@ fun AirPodsSettingsScreenPreviewApple() {
                 navigateToCallControlScreen = {},
                 navigateToMicrophoneSettings = {},
                 navigateToHeartRateTest = {},
+                navigateToNearbyFinder = {},
 
                 setHeartRateMonitoringEnabled = {},
                 reconnectAacpForHeartRate = {},
@@ -1043,6 +1054,7 @@ fun AirPodsSettingsScreenPreviewMaterial() {
                 navigateToCallControlScreen = {},
                 navigateToMicrophoneSettings = {},
                 navigateToHeartRateTest = {},
+                navigateToNearbyFinder = {},
 
                 setHeartRateMonitoringEnabled = {},
                 reconnectAacpForHeartRate = {},

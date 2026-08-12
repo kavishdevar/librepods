@@ -10,9 +10,12 @@
 
 package me.kavishdevar.librepods.presentation.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -34,13 +37,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -49,12 +55,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
+import me.kavishdevar.librepods.bluetooth.HeartRateBlePeripheralState
+import me.kavishdevar.librepods.bluetooth.HeartRateBlePeripheralStatus
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.health.HealthConnectExportState
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
@@ -72,10 +81,13 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlinx.coroutines.delay
 
 @Composable
-fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
+fun HeartRateTestScreen(viewModel: AirPodsViewModel, navigateToWorkout: () -> Unit) {
     val state by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
+    var graphNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val healthConnectPermissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract()
     ) { grantedPermissions: Set<String> ->
@@ -85,9 +97,40 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
             viewModel.markHealthConnectPermissionDenied()
         }
     }
+    val blePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        viewModel.refreshHeartRateBlePeripheral()
+    }
+
+    fun enableOrRetryBlePeripheral() {
+        val permissions = arrayOf(
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.BLUETOOTH_ADVERTISE
+        )
+        viewModel.setHeartRateBlePeripheralEnabled(true)
+        val missing = permissions.filter {
+            context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            blePermissionLauncher.launch(missing.toTypedArray())
+        } else {
+            viewModel.refreshHeartRateBlePeripheral()
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshHealthConnectExportState()
+        viewModel.refreshHeartRateBlePeripheral()
+    }
+
+    // Keep the live chart's right edge moving while the stream is quiet. This makes a
+    // lost signal visible as blank time instead of leaving the last sample at the edge.
+    LaunchedEffect(Unit) {
+        while (true) {
+            graphNowMillis = System.currentTimeMillis()
+            delay(LIVE_HEART_RATE_GRAPH_TICK_MILLIS)
+        }
     }
 
     val materialDesign = LocalDesignSystem.current == DesignSystem.Material
@@ -120,6 +163,15 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
             onMonitoringChanged = viewModel::setHeartRateMonitoringEnabled
         )
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = navigateToWorkout,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Workouts & session history")
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         HealthConnectControls(
@@ -141,6 +193,17 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        BleHeartRatePeripheralControls(
+            state = state.heartRateBlePeripheral,
+            onEnabledChanged = { enabled ->
+                if (enabled) enableOrRetryBlePeripheral()
+                else viewModel.setHeartRateBlePeripheralEnabled(false)
+            },
+            onRetry = ::enableOrRetryBlePeripheral
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         Text(
             text = "Recent samples",
             style = MaterialTheme.typography.titleMedium,
@@ -155,7 +218,7 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel) {
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
         )
 
-        HeartRateGraph(samples = heartRate.samples)
+        HeartRateGraph(samples = heartRate.samples, nowMillis = graphNowMillis)
 
         Spacer(modifier = Modifier.height(bottomPadding))
     }
@@ -169,6 +232,10 @@ private fun HeartRateSummaryCard(
     onMonitoringChanged: (Boolean) -> Unit
 ) {
     val materialDesign = LocalDesignSystem.current == DesignSystem.Material
+    val displayBpm = state.latestSample?.takeIf { sampleIsDisplayable }?.bpm?.toString() ?: EM_DASH
+    val reconnectAction = onReconnectAacp.takeIf {
+        state.status == HeartRateMonitoringStatus.COULDNT_START
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -188,7 +255,7 @@ private fun HeartRateSummaryCard(
                     ) {
                         Column {
                             Text(
-                                text = state.latestSample?.takeIf { sampleIsDisplayable }?.bpm?.toString() ?: EM_DASH,
+                                text = displayBpm,
                                 style = MaterialTheme.typography.displayMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -218,9 +285,7 @@ private fun HeartRateSummaryCard(
                         )
                         HeartRateStatusChip(
                             status = state.status,
-                            onRetry = onReconnectAacp.takeIf {
-                                state.status == HeartRateMonitoringStatus.COULDNT_START
-                            },
+                            onRetry = reconnectAction,
                             compact = true
                         )
                     }
@@ -234,7 +299,7 @@ private fun HeartRateSummaryCard(
                     ) {
                         Column {
                             Text(
-                                text = state.latestSample?.takeIf { sampleIsDisplayable }?.bpm?.toString() ?: EM_DASH,
+                                text = displayBpm,
                                 style = MaterialTheme.typography.displayMedium,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -253,9 +318,7 @@ private fun HeartRateSummaryCard(
                             }
                             HeartRateStatusChip(
                                 status = state.status,
-                                onRetry = onReconnectAacp.takeIf {
-                                    state.status == HeartRateMonitoringStatus.COULDNT_START
-                                }
+                                onRetry = reconnectAction
                             )
                         }
                     }
@@ -304,6 +367,52 @@ private fun HealthConnectControls(
     )
 }
 
+@Composable
+private fun BleHeartRatePeripheralControls(
+    state: HeartRateBlePeripheralState,
+    onEnabledChanged: (Boolean) -> Unit,
+    onRetry: () -> Unit
+) {
+    StyledToggle(
+        title = "Bluetooth heart-rate sharing",
+        label = "Share as a BLE heart-rate sensor",
+        description = blePeripheralDescription(state),
+        checked = state.enabled,
+        onCheckedChange = onEnabledChanged
+    )
+
+    if (state.enabled && state.status in setOf(
+            HeartRateBlePeripheralStatus.ERROR,
+            HeartRateBlePeripheralStatus.PERMISSION_REQUIRED,
+            HeartRateBlePeripheralStatus.BLUETOOTH_OFF
+        )
+    ) {
+        OutlinedButton(
+            onClick = onRetry,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (state.status == HeartRateBlePeripheralStatus.PERMISSION_REQUIRED) "Allow & retry" else "Retry")
+        }
+    }
+}
+
+private fun blePeripheralDescription(state: HeartRateBlePeripheralState): String {
+    val privacy = "Off by default. Shares only validated LibrePods heart-rate samples while enabled."
+    return when (state.status) {
+        HeartRateBlePeripheralStatus.DISABLED -> privacy
+        HeartRateBlePeripheralStatus.STARTING -> "Starting the standard Heart Rate Service (0x180D). $privacy"
+        HeartRateBlePeripheralStatus.ADVERTISING ->
+            "Advertising · ${state.connectedDeviceCount} connected · ${state.subscribedDeviceCount} subscribed. $privacy"
+        HeartRateBlePeripheralStatus.PERMISSION_REQUIRED ->
+            "Nearby devices permission is required to advertise and accept GATT connections. $privacy"
+        HeartRateBlePeripheralStatus.BLUETOOTH_OFF -> "Bluetooth is off. $privacy"
+        HeartRateBlePeripheralStatus.UNSUPPORTED ->
+            "BLE peripheral advertising is not supported by this adapter. $privacy"
+        HeartRateBlePeripheralStatus.ERROR ->
+            "${state.lastError ?: "BLE heart-rate sharing failed."} $privacy"
+    }
+}
+
 private val HealthConnectExportStatus.isAvailable: Boolean
     get() = this != HealthConnectExportStatus.UNAVAILABLE &&
         this != HealthConnectExportStatus.UPDATE_REQUIRED
@@ -347,9 +456,23 @@ private fun healthConnectDescription(
 }
 
 @Composable
-private fun HeartRateGraph(samples: List<HeartRateSample>) {
-    val chartScale = remember(samples) {
-        calculateHeartRateChartScale(samples.map { it.bpm.toFloat() })
+private fun HeartRateGraph(samples: List<HeartRateSample>, nowMillis: Long) {
+    val orderedSamples = remember(samples) {
+        samples.sortedBy { it.receivedAtMillis }
+    }
+    val minTime = maxOf(
+        orderedSamples.firstOrNull()?.receivedAtMillis ?: nowMillis,
+        nowMillis - LIVE_HEART_RATE_GRAPH_WINDOW_MILLIS,
+    )
+    val maxTime = maxOf(
+        orderedSamples.lastOrNull()?.receivedAtMillis ?: nowMillis,
+        nowMillis,
+    ).coerceAtLeast(minTime + 1L)
+    val visibleSamples = orderedSamples.filter {
+        it.receivedAtMillis in minTime..maxTime
+    }
+    val chartScale = remember(visibleSamples) {
+        calculateHeartRateChartScale(visibleSamples.map { it.bpm.toFloat() })
     }
     val lineColor = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
@@ -431,23 +554,31 @@ private fun HeartRateGraph(samples: List<HeartRateSample>) {
                     )
                 }
 
-                if (samples.isNotEmpty()) {
+                if (visibleSamples.isNotEmpty()) {
                     val path = Path()
-                    samples.forEachIndexed { index, sample ->
-                        val x = sampleX(
-                            index = index,
-                            sampleCount = samples.size,
-                            plotLeft = plotLeft,
-                            plotWidth = plotWidth
-                        )
+                    var previousTimestamp: Long? = null
+                    visibleSamples.forEachIndexed { index, sample ->
+                        val x = plotLeft +
+                            (sample.receivedAtMillis - minTime).toFloat() /
+                                (maxTime - minTime).toFloat() * plotWidth
                         val y = chartScale.bpmY(
                             bpm = sample.bpm.toFloat(),
                             plotBottom = plotBottom,
                             plotHeight = plotHeight
                         )
 
-                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                        if (index == samples.lastIndex) {
+                        val previous = previousTimestamp
+                        if (
+                            previous == null ||
+                            sample.receivedAtMillis - previous > LIVE_HEART_RATE_GRAPH_GAP_MILLIS
+                        ) {
+                            // Do not invent a slope through a period with no validated data.
+                            path.moveTo(x, y)
+                        } else {
+                            path.lineTo(x, y)
+                        }
+                        previousTimestamp = sample.receivedAtMillis
+                        if (index == visibleSamples.lastIndex) {
                             drawCircle(
                                 color = pointColor,
                                 radius = 4.dp.toPx(),
@@ -455,7 +586,7 @@ private fun HeartRateGraph(samples: List<HeartRateSample>) {
                             )
                         }
                     }
-                    if (samples.size > 1) {
+                    if (visibleSamples.size > 1) {
                         drawPath(
                             path = path,
                             color = lineColor,
@@ -465,9 +596,9 @@ private fun HeartRateGraph(samples: List<HeartRateSample>) {
                 }
             }
 
-            if (samples.isEmpty()) {
+            if (visibleSamples.isEmpty()) {
                 Text(
-                    text = "Waiting for validated heart-rate samples",
+                    text = "Waiting for recent validated heart-rate samples",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -499,17 +630,6 @@ private data class HeartRateChartScale(
         val normalized = ((bpm - minBpm) / spanBpm).coerceIn(0f, 1f)
         return plotBottom - normalized * plotHeight
     }
-}
-
-private fun sampleX(
-    index: Int,
-    sampleCount: Int,
-    plotLeft: Float,
-    plotWidth: Float
-): Float = if (sampleCount == 1) {
-    plotLeft + plotWidth / 2f
-} else {
-    plotLeft + index.toFloat() / (sampleCount - 1).toFloat() * plotWidth
 }
 
 private fun calculateHeartRateChartScale(bpms: List<Float>): HeartRateChartScale {
@@ -571,6 +691,9 @@ private const val CHART_MARGIN_BPM = 5f
 private const val CHART_OUTER_MIN_BPM = 0f
 private const val CHART_OUTER_MAX_BPM = 260f
 private const val CHART_TARGET_GRID_INTERVALS = 5f
+private const val LIVE_HEART_RATE_GRAPH_GAP_MILLIS = 4_000L
+private const val LIVE_HEART_RATE_GRAPH_WINDOW_MILLIS = 60_000L
+private const val LIVE_HEART_RATE_GRAPH_TICK_MILLIS = 1_000L
 private val CHART_TICK_STEPS = listOf(5f, 10f, 20f, 25f, 50f)
 private val CHART_AXIS_WIDTH = 42.dp
 private val CHART_AXIS_LABEL_GAP = 8.dp

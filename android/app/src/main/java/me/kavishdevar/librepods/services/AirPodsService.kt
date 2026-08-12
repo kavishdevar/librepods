@@ -20,6 +20,7 @@
 
 package me.kavishdevar.librepods.services
 
+import me.kavishdevar.librepods.LibrePodsApplication
 //import me.kavishdevar.librepods.utils.CrossDevice
 //import me.kavishdevar.librepods.utils.CrossDevicePackets
 import android.Manifest
@@ -95,6 +96,8 @@ import me.kavishdevar.librepods.bluetooth.ATTManagerv2
 import me.kavishdevar.librepods.bluetooth.BLEManager
 import me.kavishdevar.librepods.bluetooth.BluetoothConnectionManager
 import me.kavishdevar.librepods.bluetooth.HeartRateSample
+import me.kavishdevar.librepods.bluetooth.HeartRateBlePeripheral
+import me.kavishdevar.librepods.bluetooth.HeartRateBlePeripheralState
 import me.kavishdevar.librepods.bluetooth.createBluetoothSocket
 import me.kavishdevar.librepods.data.AirPodsInstance
 import me.kavishdevar.librepods.data.AirPodsModels
@@ -108,6 +111,8 @@ import me.kavishdevar.librepods.data.StemAction
 import me.kavishdevar.librepods.data.XposedRemotePrefProvider
 import me.kavishdevar.librepods.data.isHeadTrackingData
 import me.kavishdevar.librepods.health.HealthConnectExportState
+import me.kavishdevar.librepods.finder.NearbyAirPodsFinder
+import me.kavishdevar.librepods.finder.NearbyFinderState
 import me.kavishdevar.librepods.health.HealthConnectHeartRateExporter
 import me.kavishdevar.librepods.presentation.overlays.IslandType
 import me.kavishdevar.librepods.presentation.overlays.IslandWindow
@@ -264,12 +269,21 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
     val healthConnectState: StateFlow<HealthConnectExportState>
         get() = heartRateExporter.state
 
+    private lateinit var heartRateBlePeripheral: HeartRateBlePeripheral
+    val heartRateBlePeripheralState: StateFlow<HeartRateBlePeripheralState>
+        get() = heartRateBlePeripheral.state
+
+    private lateinit var nearbyFinder: NearbyAirPodsFinder
+    val nearbyFinderState: StateFlow<NearbyFinderState>
+        get() = nearbyFinder.state
+
     private var handleIncomingCallOnceConnected = false
 
     lateinit var bleManager: BLEManager
 
     companion object {
         private const val HEART_RATE_MONITORING_PREFERENCE = "heart_rate_monitoring_enabled"
+        private const val HEART_RATE_BLE_PERIPHERAL_PREFERENCE = "heart_rate_ble_peripheral_enabled"
         private const val HEART_RATE_AACP_RESET_QUIET_PERIOD_MILLIS = 3_000L
         private const val AACP_INITIAL_RESPONSE_TIMEOUT_MILLIS = 12_000L
         private const val AACP_IDLE_PROBE_INTERVAL_MILLIS = 60_000L
@@ -398,6 +412,14 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             Log.d(TAG, "Battery changed")
         }
 
+        override fun onVerifiedRssi(rssi: Int) {
+            if (::nearbyFinder.isInitialized) nearbyFinder.onVerifiedScanRssi(rssi)
+        }
+
+        override fun onScanError(errorCode: Int) {
+            if (::nearbyFinder.isInitialized) nearbyFinder.onScanError(errorCode)
+        }
+
         override fun onDeviceDisappeared() {
             Log.d(TAG, "All disappeared")
             updateNotificationContent(
@@ -438,6 +460,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         heartRateExporter.refresh()
         initializeConfig()
 
+        heartRateBlePeripheral = HeartRateBlePeripheral(applicationContext)
+        nearbyFinder = NearbyAirPodsFinder(
+            context = applicationContext,
+            scope = heartRateScope,
+            hasSelectedDevice = { device != null || macAddress.isNotBlank() }
+        )
+
         aacpManager = AACPManager()
         heartRateMonitor = HeartRateMonitor(
             scope = heartRateScope,
@@ -468,10 +497,12 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             sendStop = { aacpManager.sendHeartRateStopFrame() },
             requestTransportRecovery = ::requestAutomaticAacpRecoveryForHeartRate,
             onPublishedSample = { sample ->
+                heartRateBlePeripheral.onValidatedSample(sample)
                 heartRateExporter.enqueue(
                     sample = sample,
                     deviceModel = config.airpodsModelNumber.ifBlank { config.deviceName }
                 )
+                (application as LibrePodsApplication).workoutRepository.recordValidatedSample(sample)
             }
         )
         initializeAACPManagerCallback()
@@ -905,6 +936,9 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
         CoroutineScope(Dispatchers.IO).launch {
             bleManager.startScanning()
+        }
+        if (sharedPreferences.getBoolean(HEART_RATE_BLE_PERIPHERAL_PREFERENCE, false)) {
+            heartRateBlePeripheral.start()
         }
     }
 
@@ -3696,6 +3730,8 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         if (checkSelfPermission("android.permission.READ_PHONE_STATE") == PackageManager.PERMISSION_GRANTED) {
             telephonyManager.unregisterTelephonyCallback(phoneStateListener)
         }
+        if (::nearbyFinder.isInitialized) nearbyFinder.stop()
+        if (::heartRateBlePeripheral.isInitialized) heartRateBlePeripheral.stop()
         stopHeartRateMonitoring()
         if (::heartRateExporter.isInitialized) {
             runBlocking { heartRateExporter.closeAndFlush() }
@@ -3722,6 +3758,65 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
 
     fun markHealthConnectPermissionDenied() {
         if (::heartRateExporter.isInitialized) heartRateExporter.markPermissionDenied()
+    }
+
+    fun startNearbyFinder() {
+        if (!::nearbyFinder.isInitialized || !nearbyFinder.start()) return
+        prepareNearbyFinderScan()
+        if (!::bleManager.isInitialized ||
+            !bleManager.startScanning(
+                scanAllAdvertisementsForFinder = true,
+                resetFinderWatchdog = true,
+            )
+        ) {
+            nearbyFinder.onScanError(-1)
+        }
+    }
+
+    fun stopNearbyFinder() {
+        if (::nearbyFinder.isInitialized) nearbyFinder.stop()
+        if (::bleManager.isInitialized) bleManager.startScanning()
+        if (::heartRateBlePeripheral.isInitialized &&
+            sharedPreferences.getBoolean(HEART_RATE_BLE_PERIPHERAL_PREFERENCE, false)
+        ) {
+            heartRateBlePeripheral.start()
+        }
+    }
+
+    fun refreshNearbyFinderPrerequisites() {
+        if (!::nearbyFinder.isInitialized || !nearbyFinder.refreshPrerequisites()) return
+        prepareNearbyFinderScan()
+        if (!::bleManager.isInitialized ||
+            !bleManager.startScanning(
+                scanAllAdvertisementsForFinder = true,
+                resetFinderWatchdog = true,
+            )
+        ) {
+            nearbyFinder.onScanError(-1)
+        }
+    }
+
+    private fun prepareNearbyFinderScan() {
+        // A few Android Bluetooth chipsets do not scan reliably while the same app owns a
+        // connectable advertiser. Finder takes priority; restore the opt-in HR peripheral when
+        // the user leaves this screen.
+        if (::heartRateBlePeripheral.isInitialized &&
+            sharedPreferences.getBoolean(HEART_RATE_BLE_PERIPHERAL_PREFERENCE, false)
+        ) {
+            heartRateBlePeripheral.stop()
+        }
+    }
+
+    fun setHeartRateBlePeripheralEnabled(enabled: Boolean) {
+        sharedPreferences.edit { putBoolean(HEART_RATE_BLE_PERIPHERAL_PREFERENCE, enabled) }
+        if (::heartRateBlePeripheral.isInitialized) heartRateBlePeripheral.setEnabled(enabled)
+    }
+
+    fun refreshHeartRateBlePeripheral() {
+        if (!::heartRateBlePeripheral.isInitialized) return
+        heartRateBlePeripheral.setEnabled(
+            sharedPreferences.getBoolean(HEART_RATE_BLE_PERIPHERAL_PREFERENCE, false)
+        )
     }
 
     fun setHeartRateMonitoringEnabled(enabled: Boolean) {
