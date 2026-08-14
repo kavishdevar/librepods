@@ -827,11 +827,18 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         return action != default
     }
 
+    private fun nativeClickHoldMode(action: StemAction): Byte? {
+        return when (action) {
+            StemAction.CYCLE_NOISE_CONTROL_MODES -> 0x05.toByte()
+            StemAction.DIGITAL_ASSISTANT -> 0x01.toByte()
+            else -> null
+        }
+    }
+
     fun setupStemActions(): Boolean {
         val singlePressDefault = StemAction.defaultActions[StemPressType.SINGLE_PRESS]
         val doublePressDefault = StemAction.defaultActions[StemPressType.DOUBLE_PRESS]
         val triplePressDefault = StemAction.defaultActions[StemPressType.TRIPLE_PRESS]
-        val longPressDefault = StemAction.defaultActions[StemPressType.LONG_PRESS]
 
         val singlePressCustomized =
             isCustomAction(config.leftSinglePressAction, singlePressDefault) || isCustomAction(
@@ -845,21 +852,44 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             isCustomAction(config.leftTriplePressAction, triplePressDefault) || isCustomAction(
                 config.rightTriplePressAction, triplePressDefault
             )
-        val longPressCustomized = isCustomAction(
-            config.leftLongPressAction, longPressDefault
-        ) || isCustomAction(
-            config.rightLongPressAction, longPressDefault
-        ) || (cameraActive && config.cameraAction == StemPressType.LONG_PRESS)
+
+        val leftClickHoldMode = nativeClickHoldMode(config.leftLongPressAction)
+        val rightClickHoldMode = nativeClickHoldMode(config.rightLongPressAction)
+        val cameraHandlesLongPress =
+            cameraActive && config.cameraAction == StemPressType.LONG_PRESS
+        val longPressCustomized =
+            leftClickHoldMode == null || rightClickHoldMode == null || cameraHandlesLongPress
+
+        val clickHoldModeSent =
+            if (!longPressCustomized) {
+                aacpManager.sendControlCommand(
+                    AACPManager.Companion.ControlCommandIdentifiers.CLICK_HOLD_MODE.value,
+                    byteArrayOf(rightClickHoldMode, leftClickHoldMode)
+                )
+            } else {
+                Log.d(
+                    TAG,
+                    "Not sending CLICK_HOLD_MODE for host-handled long press actions: " +
+                        "left=${config.leftLongPressAction}, right=${config.rightLongPressAction}, " +
+                        "camera=$cameraHandlesLongPress"
+                )
+                true
+            }
+
         Log.d(
             TAG,
-            "Setting up stem actions: Single Press Customized: $singlePressCustomized, Double Press Customized: $doublePressCustomized, Triple Press Customized: $triplePressCustomized, Long Press Customized: $longPressCustomized"
+            "Setting up stem actions: Single Press Customized: $singlePressCustomized, " +
+                "Double Press Customized: $doublePressCustomized, " +
+                "Triple Press Customized: $triplePressCustomized, " +
+                "Long Press Customized: $longPressCustomized"
         )
-        return aacpManager.sendStemConfigPacket(
+        val stemConfigSent = aacpManager.sendStemConfigPacket(
             singlePressCustomized,
             doublePressCustomized,
             triplePressCustomized,
             longPressCustomized,
         )
+        return clickHoldModeSent && stemConfigSent
     }
 
     @ExperimentalEncodingApi
@@ -1576,8 +1606,11 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                 setupStemActions()
             }
 
-            "camera_action" -> config.cameraAction =
-                preferences.getString(key, null)?.let { StemPressType.valueOf(it) }
+            "camera_action" -> {
+                config.cameraAction =
+                    preferences.getString(key, null)?.let { StemPressType.valueOf(it) }
+                setupStemActions()
+            }
 
             // AirPods device information
             "airpods_name" -> config.airpodsName = preferences.getString(key, "") ?: ""

@@ -94,7 +94,7 @@ Format: Single value (1 byte)
 
 ### 0x16 - ClickHoldMode
 Format: Two values (2 bytes; First byte = right bud, Second byte = left bud).  
-Values: `0x01` = Noise control, `0x05` = Siri.  
+Values observed on the tested firmware: `0x01` = Siri, `0x05` = Noise control.  
 
 ### 0x17 - DoubleClickInterval
 Format: Single value (1 byte)
