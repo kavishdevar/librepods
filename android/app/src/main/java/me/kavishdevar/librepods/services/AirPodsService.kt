@@ -3756,6 +3756,18 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         if (::heartRateExporter.isInitialized) heartRateExporter.setDetailedSamples(detailed)
     }
 
+    fun setHealthConnectBatchDetailedSamples(enabled: Boolean) {
+        if (::heartRateExporter.isInitialized) {
+            heartRateExporter.setBatchDetailedSamples(enabled)
+        }
+    }
+
+    fun setHealthConnectBatchIntervalSeconds(seconds: Int) {
+        if (::heartRateExporter.isInitialized) {
+            heartRateExporter.setBatchIntervalSeconds(seconds)
+        }
+    }
+
     fun markHealthConnectPermissionDenied() {
         if (::heartRateExporter.isInitialized) heartRateExporter.markPermissionDenied()
     }

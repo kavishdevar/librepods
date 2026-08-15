@@ -44,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -68,7 +69,11 @@ import me.kavishdevar.librepods.bluetooth.HeartRateSample
 import me.kavishdevar.librepods.health.HealthConnectExportState
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
 import me.kavishdevar.librepods.health.HealthConnectHeartRateExporter
+import me.kavishdevar.librepods.health.MAX_HEART_RATE_BATCH_INTERVAL_SECONDS
+import me.kavishdevar.librepods.health.MIN_HEART_RATE_BATCH_INTERVAL_SECONDS
+import me.kavishdevar.librepods.health.normalizeHeartRateBatchIntervalSeconds
 import me.kavishdevar.librepods.presentation.components.HeartRateStatusChip
+import me.kavishdevar.librepods.presentation.components.StyledSlider
 import me.kavishdevar.librepods.presentation.components.StyledSwitch
 import me.kavishdevar.librepods.presentation.components.StyledToggle
 import me.kavishdevar.librepods.presentation.components.rememberHeartRateSampleIsDisplayable
@@ -81,6 +86,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 @Composable
@@ -188,7 +194,9 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel, navigateToWorkout: () -> Un
                         )
                 }
             },
-            onDetailedSamplesChanged = viewModel::setHealthConnectDetailedSamples
+            onDetailedSamplesChanged = viewModel::setHealthConnectDetailedSamples,
+            onBatchDetailedSamplesChanged = viewModel::setHealthConnectBatchDetailedSamples,
+            onBatchIntervalChanged = viewModel::setHealthConnectBatchIntervalSeconds
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -338,14 +346,16 @@ private fun HeartRateSummaryCard(
 private fun HealthConnectControls(
     state: HealthConnectExportState,
     onExportChanged: (Boolean) -> Unit,
-    onDetailedSamplesChanged: (Boolean) -> Unit
+    onDetailedSamplesChanged: (Boolean) -> Unit,
+    onBatchDetailedSamplesChanged: (Boolean) -> Unit,
+    onBatchIntervalChanged: (Int) -> Unit
 ) {
     val available = state.status.isAvailable
 
     StyledToggle(
         title = "Health Connect",
         label = "Save heart-rate samples",
-        description = healthConnectDescription(state.status, state.detailedSamples),
+        description = healthConnectDescription(state),
         checked = state.enabled,
         enabled = available,
         onCheckedChange = onExportChanged
@@ -356,14 +366,76 @@ private fun HealthConnectControls(
     StyledToggle(
         title = null,
         label = "Detailed samples",
-        description = if (state.detailedSamples) {
-            "Save one BPM record every second."
-        } else {
-            "Save one average BPM record every minute."
+        description = when {
+            !state.detailedSamples -> "Save one average BPM record every minute."
+            state.batchDetailedSamples -> "Keep every validated one-second BPM sample."
+            else -> "Save one BPM record every second."
         },
         checked = state.detailedSamples,
         enabled = available,
         onCheckedChange = onDetailedSamplesChanged
+    )
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    StyledToggle(
+        title = null,
+        label = "Batch detailed samples",
+        description = when {
+            !state.detailedSamples -> "Enable Detailed samples to use batching."
+            state.batchDetailedSamples ->
+                "Buffer detailed samples and write them together every " +
+                    "${formatBatchInterval(state.batchIntervalSeconds)}."
+
+            else -> "Write detailed samples to Health Connect as they arrive."
+        },
+        checked = state.batchDetailedSamples,
+        enabled = available && state.detailedSamples,
+        onCheckedChange = onBatchDetailedSamplesChanged
+    )
+
+    if (state.detailedSamples && state.batchDetailedSamples) {
+        Spacer(modifier = Modifier.height(8.dp))
+        HealthConnectBatchIntervalControl(
+            intervalSeconds = state.batchIntervalSeconds,
+            enabled = available,
+            onIntervalChanged = onBatchIntervalChanged
+        )
+    }
+}
+
+@Composable
+private fun HealthConnectBatchIntervalControl(
+    intervalSeconds: Int,
+    enabled: Boolean,
+    onIntervalChanged: (Int) -> Unit
+) {
+    var sliderValue by remember(intervalSeconds) {
+        mutableFloatStateOf(intervalSeconds.toFloat())
+    }
+
+    StyledSlider(
+        label = "Batch interval · ${formatBatchInterval(sliderValue.roundToInt())}",
+        value = sliderValue,
+        onValueChange = { value ->
+            sliderValue = normalizeHeartRateBatchIntervalSeconds(value.roundToInt()).toFloat()
+        },
+        onValueChangeFinished = {
+            onIntervalChanged(sliderValue.roundToInt())
+        },
+        valueRange = MIN_HEART_RATE_BATCH_INTERVAL_SECONDS.toFloat()..
+            MAX_HEART_RATE_BATCH_INTERVAL_SECONDS.toFloat(),
+        snapPoints = listOf(
+            MIN_HEART_RATE_BATCH_INTERVAL_SECONDS.toFloat(),
+            5 * 60f,
+            MAX_HEART_RATE_BATCH_INTERVAL_SECONDS.toFloat()
+        ),
+        snapThreshold = 1f,
+        startLabel = "30 sec",
+        endLabel = "15 min",
+        independent = true,
+        description = "How often buffered samples are written to Health Connect.",
+        enabled = enabled
     )
 }
 
@@ -426,10 +498,7 @@ private val HealthConnectExportStatus.requiresPermissionRequest: Boolean
         this == HealthConnectExportStatus.PERMISSION_DENIED ||
         this == HealthConnectExportStatus.ERROR
 
-private fun healthConnectDescription(
-    status: HealthConnectExportStatus,
-    detailedSamples: Boolean
-): String = when (status) {
+private fun healthConnectDescription(state: HealthConnectExportState): String = when (state.status) {
     HealthConnectExportStatus.UNAVAILABLE ->
         "Health Connect is not available on this device."
 
@@ -445,14 +514,29 @@ private fun healthConnectDescription(
     HealthConnectExportStatus.READY ->
         "Available. Enable this to save validated samples on this device."
 
-    HealthConnectExportStatus.ENABLED -> if (detailedSamples) {
-        "Validated heart-rate data is saved every second."
-    } else {
-        "Validated samples are averaged into one Health Connect record per minute."
+    HealthConnectExportStatus.ENABLED -> when {
+        !state.detailedSamples ->
+            "Validated samples are averaged into one Health Connect record per minute."
+
+        state.batchDetailedSamples ->
+            "Validated one-second samples are written together every " +
+                "${formatBatchInterval(state.batchIntervalSeconds)}."
+
+        else -> "Validated heart-rate data is saved every second."
     }
 
     HealthConnectExportStatus.ERROR ->
         "A write failed. Buffered samples will be retried without creating duplicates."
+}
+
+private fun formatBatchInterval(seconds: Int): String {
+    val minutes = seconds / 60
+    val remainingSeconds = seconds % 60
+    return when {
+        minutes == 0 -> "$remainingSeconds seconds"
+        remainingSeconds == 0 -> "$minutes ${if (minutes == 1) "minute" else "minutes"}"
+        else -> "$minutes min $remainingSeconds sec"
+    }
 }
 
 @Composable

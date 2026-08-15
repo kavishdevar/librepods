@@ -34,6 +34,48 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
 
+internal const val MIN_HEART_RATE_BATCH_INTERVAL_SECONDS = 30
+internal const val MAX_HEART_RATE_BATCH_INTERVAL_SECONDS = 15 * 60
+internal const val DEFAULT_HEART_RATE_BATCH_INTERVAL_SECONDS = 5 * 60
+internal const val HEART_RATE_BATCH_INTERVAL_STEP_SECONDS = 30
+
+internal fun normalizeHeartRateBatchIntervalSeconds(seconds: Int): Int {
+    val clamped = seconds.coerceIn(
+        MIN_HEART_RATE_BATCH_INTERVAL_SECONDS,
+        MAX_HEART_RATE_BATCH_INTERVAL_SECONDS
+    )
+    return ((clamped + HEART_RATE_BATCH_INTERVAL_STEP_SECONDS / 2) /
+        HEART_RATE_BATCH_INTERVAL_STEP_SECONDS * HEART_RATE_BATCH_INTERVAL_STEP_SECONDS)
+        .coerceIn(
+            MIN_HEART_RATE_BATCH_INTERVAL_SECONDS,
+            MAX_HEART_RATE_BATCH_INTERVAL_SECONDS
+        )
+}
+
+internal fun buildHeartRateRecordSamples(
+    samples: List<HeartRateSample>,
+    preserveSamples: Boolean,
+    averageSampleTimeMillis: Long
+): List<HeartRateRecord.Sample> {
+    require(samples.isNotEmpty())
+    if (preserveSamples) {
+        return samples.map { sample ->
+            HeartRateRecord.Sample(
+                time = Instant.ofEpochMilli(sample.receivedAtMillis),
+                beatsPerMinute = sample.bpm.toLong()
+            )
+        }
+    }
+
+    val total = samples.sumOf { it.bpm.toLong() }
+    return listOf(
+        HeartRateRecord.Sample(
+            time = Instant.ofEpochMilli(averageSampleTimeMillis),
+            beatsPerMinute = (total + samples.size / 2L) / samples.size
+        )
+    )
+}
+
 /** User-visible Health Connect state for the optional heart-rate export. */
 enum class HealthConnectExportStatus {
     UNAVAILABLE,
@@ -48,7 +90,9 @@ enum class HealthConnectExportStatus {
 data class HealthConnectExportState(
     val enabled: Boolean = false,
     val status: HealthConnectExportStatus = HealthConnectExportStatus.UNAVAILABLE,
-    val detailedSamples: Boolean = false
+    val detailedSamples: Boolean = false,
+    val batchDetailedSamples: Boolean = false,
+    val batchIntervalSeconds: Int = DEFAULT_HEART_RATE_BATCH_INTERVAL_SECONDS
 )
 
 /**
@@ -74,7 +118,14 @@ class HealthConnectHeartRateExporter(
         val clientRecordId: String,
         val startTimeMillis: Long,
         val endTimeMillis: Long,
-        val partialInterval: Boolean
+        val partialInterval: Boolean,
+        val preservesSamples: Boolean
+    )
+
+    private data class ExportOptions(
+        val detailedSamples: Boolean,
+        val batchDetailedSamples: Boolean,
+        val batchIntervalSeconds: Int
     )
 
     private val appContext = context.applicationContext
@@ -82,14 +133,24 @@ class HealthConnectHeartRateExporter(
     private val pendingSamples = linkedMapOf<String, PendingSample>()
     private var pendingRecord: PendingRecord? = null
     private var intervalWindowStartMillis: Long? = null
-    private var requestedDetailedSamples: Boolean? = null
+    private var requestedExportOptions: ExportOptions? = null
     private var healthConnectClient: HealthConnectClient? = null
     private var scheduledFlush: Job? = null
 
     private val _state = MutableStateFlow(
         HealthConnectExportState(
             status = statusForSdk(),
-            detailedSamples = sharedPreferences.getBoolean(DETAILED_SAMPLES_PREFERENCE, false)
+            detailedSamples = sharedPreferences.getBoolean(DETAILED_SAMPLES_PREFERENCE, false),
+            batchDetailedSamples = sharedPreferences.getBoolean(
+                BATCH_DETAILED_SAMPLES_PREFERENCE,
+                false
+            ),
+            batchIntervalSeconds = normalizeHeartRateBatchIntervalSeconds(
+                sharedPreferences.getInt(
+                    BATCH_INTERVAL_SECONDS_PREFERENCE,
+                    DEFAULT_HEART_RATE_BATCH_INTERVAL_SECONDS
+                )
+            )
         )
     )
     val state: StateFlow<HealthConnectExportState> get() = _state
@@ -97,9 +158,17 @@ class HealthConnectHeartRateExporter(
     private fun updateState(
         enabled: Boolean = _state.value.enabled,
         status: HealthConnectExportStatus = _state.value.status,
-        detailedSamples: Boolean = _state.value.detailedSamples
+        detailedSamples: Boolean = _state.value.detailedSamples,
+        batchDetailedSamples: Boolean = _state.value.batchDetailedSamples,
+        batchIntervalSeconds: Int = _state.value.batchIntervalSeconds
     ) {
-        _state.value = HealthConnectExportState(enabled, status, detailedSamples)
+        _state.value = HealthConnectExportState(
+            enabled = enabled,
+            status = status,
+            detailedSamples = detailedSamples,
+            batchDetailedSamples = batchDetailedSamples,
+            batchIntervalSeconds = batchIntervalSeconds
+        )
     }
 
     fun refresh() {
@@ -189,14 +258,29 @@ class HealthConnectHeartRateExporter(
     }
 
     fun setDetailedSamples(detailed: Boolean) {
+        requestExportOptionsChange { it.copy(detailedSamples = detailed) }
+    }
+
+    fun setBatchDetailedSamples(enabled: Boolean) {
+        requestExportOptionsChange { it.copy(batchDetailedSamples = enabled) }
+    }
+
+    fun setBatchIntervalSeconds(seconds: Int) {
+        val normalizedSeconds = normalizeHeartRateBatchIntervalSeconds(seconds)
+        requestExportOptionsChange { it.copy(batchIntervalSeconds = normalizedSeconds) }
+    }
+
+    private fun requestExportOptionsChange(transform: (ExportOptions) -> ExportOptions) {
         scope.launch {
             mutex.withLock {
-                if (_state.value.detailedSamples == detailed) {
-                    requestedDetailedSamples = null
+                val currentOptions = currentExportOptions()
+                val requestedOptions = transform(requestedExportOptions ?: currentOptions)
+                if (requestedOptions == currentOptions) {
+                    requestedExportOptions = null
                     return@withLock
                 }
 
-                requestedDetailedSamples = detailed
+                requestedExportOptions = requestedOptions
                 scheduledFlush?.cancel()
                 scheduledFlush = null
                 if (hasPendingSamplesLocked() &&
@@ -204,7 +288,7 @@ class HealthConnectHeartRateExporter(
                 ) {
                     return@withLock
                 }
-                applyRequestedDetailLocked()
+                applyRequestedExportOptionsLocked()
             }
         }
     }
@@ -271,14 +355,14 @@ class HealthConnectHeartRateExporter(
 
     private suspend fun flushLocked(forcePartialInterval: Boolean = false): Boolean {
         if (!hasPendingSamplesLocked()) {
-            applyRequestedDetailLocked()
+            applyRequestedExportOptionsLocked()
             return true
         }
         if (!_state.value.enabled) return false
 
         while (_state.value.enabled && hasPendingSamplesLocked()) {
             val record = getOrCreatePendingRecordLocked(
-                forcePartialInterval || requestedDetailedSamples != null
+                forcePartialInterval || requestedExportOptions != null
             )
             if (record == null) {
                 scheduleNextFlushLocked()
@@ -320,7 +404,7 @@ class HealthConnectHeartRateExporter(
             }
         }
 
-        applyRequestedDetailLocked()
+        applyRequestedExportOptionsLocked()
         return true
     }
 
@@ -330,14 +414,22 @@ class HealthConnectHeartRateExporter(
         scheduleFlushLocked(RETRY_INTERVAL_MILLIS)
     }
 
-    private fun applyRequestedDetailLocked() {
-        val detailed = requestedDetailedSamples ?: return
+    private fun applyRequestedExportOptionsLocked() {
+        val options = requestedExportOptions ?: return
         if (hasPendingSamplesLocked()) return
 
         intervalWindowStartMillis = null
-        sharedPreferences.edit { putBoolean(DETAILED_SAMPLES_PREFERENCE, detailed) }
-        updateState(detailedSamples = detailed)
-        requestedDetailedSamples = null
+        sharedPreferences.edit {
+            putBoolean(DETAILED_SAMPLES_PREFERENCE, options.detailedSamples)
+            putBoolean(BATCH_DETAILED_SAMPLES_PREFERENCE, options.batchDetailedSamples)
+            putInt(BATCH_INTERVAL_SECONDS_PREFERENCE, options.batchIntervalSeconds)
+        }
+        updateState(
+            detailedSamples = options.detailedSamples,
+            batchDetailedSamples = options.batchDetailedSamples,
+            batchIntervalSeconds = options.batchIntervalSeconds
+        )
+        requestedExportOptions = null
     }
 
     private fun scheduleFlushLocked(delayMillis: Long) {
@@ -405,7 +497,8 @@ class HealthConnectHeartRateExporter(
             ),
             startTimeMillis = recordStartTime,
             endTimeMillis = recordEndTime,
-            partialInterval = partialInterval
+            partialInterval = partialInterval,
+            preservesSamples = usesDetailedBatching()
         ).also { pendingRecord = it }
     }
 
@@ -419,14 +512,11 @@ class HealthConnectHeartRateExporter(
         val startTimestamp = Instant.ofEpochMilli(record.startTimeMillis)
         val endTimestamp = Instant.ofEpochMilli(record.endTimeMillis)
         val zoneRules = ZoneId.systemDefault().rules
-        val samples = listOf(
-            HeartRateRecord.Sample(
-                time = Instant.ofEpochMilli(
-                    record.startTimeMillis +
-                        (record.endTimeMillis - record.startTimeMillis) / 2L
-                ),
-                beatsPerMinute = averageBpm(record.samples)
-            )
+        val samples = buildHeartRateRecordSamples(
+            samples = record.samples.map { it.sample },
+            preserveSamples = record.preservesSamples,
+            averageSampleTimeMillis = record.startTimeMillis +
+                (record.endTimeMillis - record.startTimeMillis) / 2L
         )
 
         return HeartRateRecord(
@@ -470,22 +560,33 @@ class HealthConnectHeartRateExporter(
         }
     }
 
-    private fun exportIntervalMillis(): Long = if (_state.value.detailedSamples) {
-        SECOND_INTERVAL_MILLIS
-    } else {
-        MINUTE_INTERVAL_MILLIS
+    private fun exportIntervalMillis(): Long = when {
+        usesDetailedBatching() -> _state.value.batchIntervalSeconds * SECOND_INTERVAL_MILLIS
+        _state.value.detailedSamples -> SECOND_INTERVAL_MILLIS
+        else -> MINUTE_INTERVAL_MILLIS
     }
 
+    private fun usesDetailedBatching(): Boolean =
+        _state.value.detailedSamples && _state.value.batchDetailedSamples
+
+    private fun currentExportOptions(): ExportOptions = ExportOptions(
+        detailedSamples = _state.value.detailedSamples,
+        batchDetailedSamples = _state.value.batchDetailedSamples,
+        batchIntervalSeconds = _state.value.batchIntervalSeconds
+    )
+
     private fun trimBufferLocked() {
-        while (bufferedSampleCountLocked() > MAX_BUFFERED_SAMPLES) {
+        val maxBufferedSamples = if (
+            usesDetailedBatching() || pendingRecord?.preservesSamples == true
+        ) {
+            MAX_BATCH_BUFFERED_SAMPLES
+        } else {
+            MAX_BUFFERED_SAMPLES
+        }
+        while (bufferedSampleCountLocked() > maxBufferedSamples) {
             val oldestId = pendingSamples.keys.firstOrNull() ?: break
             pendingSamples.remove(oldestId)
         }
-    }
-
-    private fun averageBpm(samples: List<PendingSample>): Long {
-        val total = samples.sumOf { it.sample.bpm.toLong() }
-        return (total + samples.size / 2L) / samples.size
     }
 
     private fun recordClientRecordId(
@@ -541,8 +642,14 @@ class HealthConnectHeartRateExporter(
         private const val EXPORT_PREFERENCE = "heart_rate_health_connect_export_enabled"
         private const val DETAILED_SAMPLES_PREFERENCE =
             "heart_rate_health_connect_detailed_samples"
+        private const val BATCH_DETAILED_SAMPLES_PREFERENCE =
+            "heart_rate_health_connect_batch_detailed_samples"
+        private const val BATCH_INTERVAL_SECONDS_PREFERENCE =
+            "heart_rate_health_connect_batch_interval_seconds"
         private const val RECORD_CLIENT_RECORD_ID_PREFIX = "librepods-heart-rate-record-v1-"
         private const val MAX_BUFFERED_SAMPLES = 300
+        // Retain the record being retried plus another full window at the maximum interval.
+        private const val MAX_BATCH_BUFFERED_SAMPLES = MAX_HEART_RATE_BATCH_INTERVAL_SECONDS * 2
         private const val SECOND_INTERVAL_MILLIS = 1_000L
         private const val MINUTE_INTERVAL_MILLIS = 60_000L
         private const val RETRY_INTERVAL_MILLIS = 30_000L

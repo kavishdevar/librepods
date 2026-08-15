@@ -767,6 +767,32 @@ class AirPodsViewModel(
         service.setHealthConnectDetailedSamples(detailed)
     }
 
+    fun setHealthConnectBatchDetailedSamples(enabled: Boolean) {
+        if (!isReady) return
+        if (isDemoMode) {
+            _uiState.update {
+                it.copy(
+                    healthConnect = it.healthConnect.copy(batchDetailedSamples = enabled)
+                )
+            }
+            return
+        }
+        service.setHealthConnectBatchDetailedSamples(enabled)
+    }
+
+    fun setHealthConnectBatchIntervalSeconds(seconds: Int) {
+        if (!isReady) return
+        if (isDemoMode) {
+            _uiState.update {
+                it.copy(
+                    healthConnect = it.healthConnect.copy(batchIntervalSeconds = seconds)
+                )
+            }
+            return
+        }
+        service.setHealthConnectBatchIntervalSeconds(seconds)
+    }
+
     fun markHealthConnectPermissionDenied() {
         if (!isReady || isDemoMode) return
         service.markHealthConnectPermissionDenied()
