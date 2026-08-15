@@ -114,6 +114,7 @@ import me.kavishdevar.librepods.health.HealthConnectExportState
 import me.kavishdevar.librepods.finder.NearbyAirPodsFinder
 import me.kavishdevar.librepods.finder.NearbyFinderState
 import me.kavishdevar.librepods.health.HealthConnectHeartRateExporter
+import me.kavishdevar.librepods.health.HealthConnectExportMode
 import me.kavishdevar.librepods.presentation.overlays.IslandType
 import me.kavishdevar.librepods.presentation.overlays.IslandWindow
 import me.kavishdevar.librepods.presentation.overlays.PopupWindow
@@ -3752,19 +3753,19 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
         if (::heartRateExporter.isInitialized) heartRateExporter.setEnabled(enabled)
     }
 
-    fun setHealthConnectDetailedSamples(detailed: Boolean) {
-        if (::heartRateExporter.isInitialized) heartRateExporter.setDetailedSamples(detailed)
-    }
-
-    fun setHealthConnectBatchDetailedSamples(enabled: Boolean) {
-        if (::heartRateExporter.isInitialized) {
-            heartRateExporter.setBatchDetailedSamples(enabled)
-        }
+    fun setHealthConnectExportMode(mode: HealthConnectExportMode) {
+        if (::heartRateExporter.isInitialized) heartRateExporter.setMode(mode)
     }
 
     fun setHealthConnectBatchIntervalSeconds(seconds: Int) {
         if (::heartRateExporter.isInitialized) {
             heartRateExporter.setBatchIntervalSeconds(seconds)
+        }
+    }
+
+    fun setHealthConnectAverageIntervalSeconds(seconds: Int) {
+        if (::heartRateExporter.isInitialized) {
+            heartRateExporter.setAverageIntervalSeconds(seconds)
         }
     }
 

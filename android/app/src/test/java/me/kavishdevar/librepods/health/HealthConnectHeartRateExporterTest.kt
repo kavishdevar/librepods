@@ -32,7 +32,7 @@ class HealthConnectHeartRateExporterTest {
     }
 
     @Test
-    fun existingModesStillCreateOneRoundedAverage() {
+    fun averageModeCreatesOneRoundedSample() {
         val recordSamples = buildHeartRateRecordSamples(
             samples = listOf(
                 sample(bpm = 70, sequence = 1, timestamp = 1_000L),
@@ -48,11 +48,57 @@ class HealthConnectHeartRateExporterTest {
     }
 
     @Test
-    fun batchIntervalIsBoundedAndRoundedToThirtySeconds() {
-        assertEquals(30, normalizeHeartRateBatchIntervalSeconds(1))
-        assertEquals(60, normalizeHeartRateBatchIntervalSeconds(46))
-        assertEquals(330, normalizeHeartRateBatchIntervalSeconds(329))
-        assertEquals(15 * 60, normalizeHeartRateBatchIntervalSeconds(60 * 60))
+    fun exportIntervalIsBoundedAndRoundedToThirtySeconds() {
+        assertEquals(30, normalizeHeartRateExportIntervalSeconds(1))
+        assertEquals(60, normalizeHeartRateExportIntervalSeconds(46))
+        assertEquals(330, normalizeHeartRateExportIntervalSeconds(329))
+        assertEquals(15 * 60, normalizeHeartRateExportIntervalSeconds(60 * 60))
+    }
+
+    @Test
+    fun legacyDetailOptionsMapToTheThreeExportModes() {
+        assertEquals(HealthConnectExportMode.AVERAGED, HealthConnectExportState().mode)
+        assertEquals(
+            HealthConnectExportMode.EVERY_SECOND,
+            HealthConnectExportState(detailedSamples = true).mode
+        )
+        assertEquals(
+            HealthConnectExportMode.BATCHED,
+            HealthConnectExportState(
+                detailedSamples = true,
+                batchDetailedSamples = true
+            ).mode
+        )
+    }
+
+    @Test
+    fun eachModeUsesItsConfiguredInterval() {
+        assertEquals(
+            DEFAULT_HEART_RATE_AVERAGE_INTERVAL_SECONDS,
+            HealthConnectExportState().averageIntervalSeconds
+        )
+        assertEquals(
+            1,
+            heartRateExportIntervalSeconds(
+                HealthConnectExportState(detailedSamples = true)
+            )
+        )
+        assertEquals(
+            5 * 60,
+            heartRateExportIntervalSeconds(
+                HealthConnectExportState(
+                    detailedSamples = true,
+                    batchDetailedSamples = true,
+                    batchIntervalSeconds = 5 * 60
+                )
+            )
+        )
+        assertEquals(
+            60,
+            heartRateExportIntervalSeconds(
+                HealthConnectExportState(averageIntervalSeconds = 60)
+            )
+        )
     }
 
     private fun sample(bpm: Int, sequence: Int, timestamp: Long) = HeartRateSample(

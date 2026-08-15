@@ -56,6 +56,7 @@ import me.kavishdevar.librepods.data.StemAction
 import me.kavishdevar.librepods.data.XposedRemotePrefProvider
 import me.kavishdevar.librepods.health.HealthConnectExportState
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
+import me.kavishdevar.librepods.health.HealthConnectExportMode
 import me.kavishdevar.librepods.finder.NearbyFinderState
 import me.kavishdevar.librepods.bluetooth.HeartRateBlePeripheralState
 import me.kavishdevar.librepods.services.AirPodsService
@@ -754,30 +755,20 @@ class AirPodsViewModel(
         service.setHealthConnectExportEnabled(enabled)
     }
 
-    fun setHealthConnectDetailedSamples(detailed: Boolean) {
+    fun setHealthConnectExportMode(mode: HealthConnectExportMode) {
         if (!isReady) return
         if (isDemoMode) {
             _uiState.update {
                 it.copy(
-                    healthConnect = it.healthConnect.copy(detailedSamples = detailed)
+                    healthConnect = it.healthConnect.copy(
+                        detailedSamples = mode != HealthConnectExportMode.AVERAGED,
+                        batchDetailedSamples = mode == HealthConnectExportMode.BATCHED
+                    )
                 )
             }
             return
         }
-        service.setHealthConnectDetailedSamples(detailed)
-    }
-
-    fun setHealthConnectBatchDetailedSamples(enabled: Boolean) {
-        if (!isReady) return
-        if (isDemoMode) {
-            _uiState.update {
-                it.copy(
-                    healthConnect = it.healthConnect.copy(batchDetailedSamples = enabled)
-                )
-            }
-            return
-        }
-        service.setHealthConnectBatchDetailedSamples(enabled)
+        service.setHealthConnectExportMode(mode)
     }
 
     fun setHealthConnectBatchIntervalSeconds(seconds: Int) {
@@ -791,6 +782,19 @@ class AirPodsViewModel(
             return
         }
         service.setHealthConnectBatchIntervalSeconds(seconds)
+    }
+
+    fun setHealthConnectAverageIntervalSeconds(seconds: Int) {
+        if (!isReady) return
+        if (isDemoMode) {
+            _uiState.update {
+                it.copy(
+                    healthConnect = it.healthConnect.copy(averageIntervalSeconds = seconds)
+                )
+            }
+            return
+        }
+        service.setHealthConnectAverageIntervalSeconds(seconds)
     }
 
     fun markHealthConnectPermissionDenied() {
