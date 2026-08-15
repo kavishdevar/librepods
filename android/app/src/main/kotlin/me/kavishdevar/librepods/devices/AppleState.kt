@@ -11,7 +11,10 @@ import me.kavishdevar.librepods.bluetooth.aacp.types.CustomEq
 import me.kavishdevar.librepods.bluetooth.aacp.types.MagicKeyType
 import me.kavishdevar.librepods.data.audio.MicrophoneFrame
 import me.kavishdevar.librepods.data.audio.MicrophoneState
+import me.kavishdevar.librepods.data.heartrate.HeartRateSample
 import me.kavishdevar.librepods.data.recording.RecordingState
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 data class AppleState(
     val isLocallyConnected: Boolean = false,
@@ -50,6 +53,10 @@ data class AppleState(
     val headphoneAccomodation: FloatArray = FloatArray(8),
     val headphoneAccomodationEnabledForMedia: Boolean = false,
     val headphoneAccomodationEnabledForPhone: Boolean = false,
+
+    val currentHeartRate: HeartRateSample? = null,
+    val hrmActive: Boolean = false,
+    val heartRateInterval: Duration = 1.seconds,
 
     val aacpPackets: List<AACPPacket> = emptyList(),
 ): DeviceState

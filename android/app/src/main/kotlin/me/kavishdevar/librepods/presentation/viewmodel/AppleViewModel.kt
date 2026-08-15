@@ -21,35 +21,54 @@ package me.kavishdevar.librepods.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.billing.BillingManager
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.data.StemAction
+import me.kavishdevar.librepods.data.heartrate.HeartRateSample
 import me.kavishdevar.librepods.data.recording.Recording
 import me.kavishdevar.librepods.data.xposed.XposedRemotePrefProvider
+import me.kavishdevar.librepods.database.app.AppSettingsEntity
+import me.kavishdevar.librepods.database.app.AppStateEntity
 import me.kavishdevar.librepods.devices.AppleDevice
 import me.kavishdevar.librepods.devices.AppleMetadata
 import me.kavishdevar.librepods.devices.AppleSettings
 import me.kavishdevar.librepods.devices.AppleState
+import me.kavishdevar.librepods.repository.AppDataRepository
+import me.kavishdevar.librepods.repository.HeartRateRepository
 import me.kavishdevar.librepods.repository.RecordingRepository
+import kotlin.time.Duration
+import kotlin.time.Instant
 
 data class AppleUiState(
     val state: AppleState = AppleState(),
     val settings: AppleSettings = AppleSettings(),
     val metadata: AppleMetadata = AppleMetadata(),
 
+    val appState: AppStateEntity = AppStateEntity(),
+    val appSettings: AppSettingsEntity = AppSettingsEntity(),
+
     val isPremium: Boolean = false,
     val vendorIdHook: Boolean = false,
     val recordings: List<Recording> = emptyList(),
+
+    val heartRateSamples: List<HeartRateSample> = emptyList(),
+
+    val heartRateRange: ClosedRange<Long>? = null,
 )
 
 class AppleViewModel(
     private val device: AppleDevice,
+    private val appDataRepository: AppDataRepository,
     private val recordingRepository: RecordingRepository,
+    private val heartRateRepository: HeartRateRepository
 ) : ViewModel(), DeviceViewModel {
     val billingManager = BillingManager
 
@@ -57,12 +76,42 @@ class AppleViewModel(
 
     private var attObserveJob: Job? = null
 
-    val uiState = combine(
+    private val _heartRateRange = MutableStateFlow<ClosedRange<Long>?>(null)
+
+    private val heartRateSamples: Flow<List<HeartRateSample>> = _heartRateRange
+        .transformLatest { range ->
+            if (range == null) {
+                emit(emptyList())
+            } else {
+                val startInstant = Instant.fromEpochMilliseconds(range.start)
+                val endInstant = Instant.fromEpochMilliseconds(range.endInclusive)
+                val samples = heartRateRepository.get(startInstant, endInstant)
+                emit(samples)
+            }
+        }
+
+    private val deviceDetails = combine(
         device.state,
         device.settings,
-        device.metadata,
+        device.metadata
+    ) { state, settings, metadata ->
+        Triple(state, settings, metadata)
+    }
+
+    private val appData = combine(
+        appDataRepository.state,
+        appDataRepository.settings
+    ) { appState, appSettings ->
+        Pair(appState, appSettings)
+    }
+
+    val uiState = combine(
+        deviceDetails,
+        appData,
         billingManager.provider.isPremium,
-    ) { state, settings, metadata, isPremium ->
+        _heartRateRange,
+        heartRateSamples
+    ) { (state, settings, metadata), (appState, appSettings), isPremium, heartRateRange, heartRateSamples ->
         AppleUiState(
             state = state,
             settings = settings,
@@ -71,7 +120,11 @@ class AppleViewModel(
             vendorIdHook = XposedRemotePrefProvider.create().getBoolean(
                 "vendor_id_hook",
                 false
-            ) // TODO: make this a Flow, even if it means polling every few seconds
+            ), // TODO: make this a Flow (even if it means polling every few seconds?)
+            heartRateRange = heartRateRange,
+            heartRateSamples = heartRateSamples,
+            appState = appState,
+            appSettings = appSettings
         )
     }.stateIn(
         viewModelScope,
@@ -133,7 +186,17 @@ class AppleViewModel(
     fun setCustomEqEnabled(enabled: Boolean) = device.setCustomEqEnabled(enabled)
     fun setCustomEq(low: Int, mid: Int, high: Int) = device.setCustomEq(low, mid, high)
 
-    fun testHeadGestures() = device.testHeadGestures()
+    fun detectHeadGestures(callback: (Boolean) -> Unit) = device.detectHeadGestures(callback)
+
+    fun setHeadGesturesVerticalOffset(offset: Int) = device.setHeadGesturesVerticalOffset(offset)
+    fun setHeadGesturesHorizontalOffset(offset: Int) = device.setHeadGesturesHorizontalOffset(offset)
+    fun setHeadTrackingInterval(interval: Duration) = device.setHeadTrackingInterval(interval)
+
+    fun startHr() = device.startHr()
+    fun stopHr() = device.stopHr()
+    fun setHrRange(range: ClosedRange<Long>) {
+        _heartRateRange.value = range
+    }
 
     fun sendRawPacket(data: ByteArray): Boolean = device.sendRawPacket(data)
 }

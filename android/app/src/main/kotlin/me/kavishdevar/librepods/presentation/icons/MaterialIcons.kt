@@ -1658,4 +1658,69 @@ object MaterialIcons: IconSet {
 
     override val CircleDotted: ImageVector
         get() = CommonIcons.CircleDotted
+
+    override val VitalSigns: ImageVector
+        get() {
+            if (_vital_signs != null) {
+                return _vital_signs!!
+            }
+            _vital_signs =
+                ImageVector.Builder(
+                    name = "vital_signs",
+                    defaultWidth = 24.dp,
+                    defaultHeight = 24.dp,
+                    viewportWidth = 24f,
+                    viewportHeight = 24f,
+                )
+                    .apply {
+                        path(
+                            fill = SolidColor(Color.Black),
+                            fillAlpha = 1f,
+                            stroke = null,
+                            strokeAlpha = 1f,
+                            strokeLineWidth = 1f,
+                            strokeLineCap = StrokeCap.Butt,
+                            strokeLineJoin = StrokeJoin.Bevel,
+                            strokeLineMiter = 1f,
+                            pathFillType = PathFillType.Companion.NonZero,
+                        ) {
+                            moveTo(8.15f, 19.73f)
+                            quadTo(7.78f, 19.45f, 7.6f, 19.02f)
+                            lineTo(5.3f, 13f)
+                            horizontalLineTo(2f)
+                            quadTo(1.58f, 13f, 1.29f, 12.71f)
+                            quadTo(1f, 12.43f, 1f, 12f)
+                            reflectiveQuadTo(1.29f, 11.29f)
+                            reflectiveQuadTo(2f, 11f)
+                            horizontalLineTo(6f)
+                            quadToRelative(0.33f, 0f, 0.56f, 0.17f)
+                            reflectiveQuadToRelative(0.36f, 0.47f)
+                            lineTo(9f, 17.1f)
+                            lineTo(13.6f, 4.97f)
+                            quadToRelative(0.17f, -0.43f, 0.55f, -0.7f)
+                            reflectiveQuadTo(15f, 4f)
+                            reflectiveQuadToRelative(0.85f, 0.27f)
+                            reflectiveQuadToRelative(0.55f, 0.7f)
+                            lineTo(18.7f, 11f)
+                            horizontalLineTo(22f)
+                            quadToRelative(0.43f, 0f, 0.71f, 0.29f)
+                            reflectiveQuadTo(23f, 12f)
+                            reflectiveQuadToRelative(-0.29f, 0.71f)
+                            reflectiveQuadTo(22f, 13f)
+                            horizontalLineTo(18f)
+                            quadToRelative(-0.32f, 0f, -0.56f, -0.18f)
+                            reflectiveQuadTo(17.08f, 12.35f)
+                            lineTo(15f, 6.9f)
+                            lineTo(10.4f, 19.02f)
+                            quadToRelative(-0.17f, 0.43f, -0.55f, 0.7f)
+                            reflectiveQuadTo(9f, 20f)
+                            reflectiveQuadTo(8.15f, 19.73f)
+                            close()
+                        }
+                    }
+                    .build()
+            return _vital_signs!!
+        }
+
+    private var _vital_signs: ImageVector? = null
 }

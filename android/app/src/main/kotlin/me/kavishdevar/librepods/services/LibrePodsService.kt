@@ -18,16 +18,21 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.os.ParcelUuid
+import android.os.ext.SdkExtensions
 import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.HeartRateRecord
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,6 +47,7 @@ import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.aacp.types.MagicKeyType
 import me.kavishdevar.librepods.bluetooth.verifyRPA
+import me.kavishdevar.librepods.data.heartrate.HeartRateSample
 import me.kavishdevar.librepods.database.app.AppSettingsEntity
 import me.kavishdevar.librepods.devices.AppleDevice
 import me.kavishdevar.librepods.devices.AppleSettings
@@ -58,7 +64,10 @@ import me.kavishdevar.librepods.presentation.overlays.IslandWindow
 import me.kavishdevar.librepods.presentation.widgets.BatteryWidget
 import me.kavishdevar.librepods.utils.MediaController
 import me.kavishdevar.librepods.utils.redactMac
+import java.time.ZoneOffset
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaInstant
 
 private const val TAG = "LibrePodsService"
 
@@ -92,6 +101,14 @@ class LibrePodsService : Service() {
 
     private val widgetConfigRepository by lazy {
         (application as LibrePodsApplication).widgetConfigRepository
+    }
+
+    private val heartRateRepository by lazy {
+        (application as LibrePodsApplication).heartRateRepository
+    }
+
+    private val healthConnectClient by lazy {
+        (application as LibrePodsApplication).healthConnectClient
     }
 
     private val hasConnectedToAACP by lazy {
@@ -684,6 +701,24 @@ class LibrePodsService : Service() {
                         6, 8, 9 -> MediaController.stopSpeaking()
                     }
                 }
+
+                state.currentHeartRate?.timestamp != previousState.currentHeartRate?.timestamp -> {
+                    state.currentHeartRate?.let { heartRateSample ->
+                        Log.i(
+                            TAG,
+                            "current heart rate changed from device ${device.macAddress.toRedactedString()}"
+                        )
+                        Log.d(
+                            TAG,
+                            "current heart rate: ${heartRateSample.bpm} bpm, timestamp: ${heartRateSample.timestamp.toJavaInstant()}. processing."
+                        )
+
+                        processHeartRateSample(
+                            heartRateSample = heartRateSample,
+                            interval = state.heartRateInterval
+                        )
+                    }
+                }
             }
             previousState = state
         }
@@ -1066,6 +1101,13 @@ class LibrePodsService : Service() {
                     device.disableAudio(this)
                     device.disconnectAudio(this)
                 }
+
+                // not the right place because the stream doesn't switch to the remaining bud when the active one is removed
+                if (device is AppleDevice && device.state.value.hrmActive) {
+                    device.updateState {
+                        it.copy(hrmActive = false)
+                    }
+                }
             }
         }
 
@@ -1086,6 +1128,44 @@ class LibrePodsService : Service() {
                     MediaController.sendPause()
                 }
             }
+        }
+    }
+
+    private fun processHeartRateSample(heartRateSample: HeartRateSample, interval: Duration) {
+        CoroutineScope(Dispatchers.IO).launch {
+            Log.d(TAG, "inserting to local db")
+            heartRateRepository.insert(heartRateSample)
+        }
+
+        if (SdkExtensions.getExtensionVersion(Build.VERSION_CODES.UPSIDE_DOWN_CAKE) >= 7) {
+            if (checkSelfPermission(HealthPermission.getWritePermission(HeartRateRecord::class)) != PackageManager.PERMISSION_GRANTED) return
+            val healthConnectHeartRateSample = HeartRateRecord.Sample(
+                time = heartRateSample.timestamp.toJavaInstant(),
+                beatsPerMinute = heartRateSample.bpm.toLong()
+            )
+
+            val zoneOffset = ZoneOffset.systemDefault().rules.getOffset(heartRateSample.timestamp.toJavaInstant())
+
+            val heartRateRecord = HeartRateRecord(
+                startTime = (heartRateSample.timestamp - interval).toJavaInstant(),
+                endTime = heartRateSample.timestamp.toJavaInstant(),
+                startZoneOffset = zoneOffset,
+                endZoneOffset = zoneOffset,
+                samples = listOf(healthConnectHeartRateSample),
+                metadata = androidx.health.connect.client.records.metadata.Metadata.autoRecorded(
+                    device = androidx.health.connect.client.records.metadata.Device(type = androidx.health.connect.client.records.metadata.Device.TYPE_HEARABLE)
+                )
+            )
+
+            if (healthConnectClient != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    healthConnectClient!!.insertRecords(listOf(heartRateRecord))
+                }
+            } else {
+                Log.w(TAG, "Health Connect client not available")
+            }
+        } else {
+            Log.d(TAG, "U SDK Extension <7")
         }
     }
 

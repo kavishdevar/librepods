@@ -1248,4 +1248,54 @@ object AppleIcons: IconSet {
 
     override val CircleDotted: ImageVector
         get() = CommonIcons.CircleDotted
+
+    override val VitalSigns: ImageVector
+        get() = WaveFormPathEcg
+    val WaveFormPathEcg: ImageVector
+        get() {
+            val current = _waveformPathEcg
+            if (current != null) return current
+
+            return ImageVector.Builder(
+                name = "WaveformPathEcg",
+                defaultWidth = 62.78099822998047.dp,
+                defaultHeight = 67.31999969482422.dp,
+                viewportWidth = 62.781f,
+                viewportHeight = 67.32f,
+            ).apply {
+                path(
+                    fill = SolidColor(Color(0xFFFFFFFF)),
+                    fillAlpha = 0.85f,
+                ) {
+                    moveTo(x = 2.25f, y = 39.7f)
+                    horizontalLineToRelative(dx = 13.84f)
+                    quadToRelative(dx1 = 2.1f, dy1 = 0.0f, dx2 = 2.57f, dy2 = -1.87f)
+                    lineToRelative(dx = 4.84f, dy = -22.25f)
+                    horizontalLineToRelative(dx = -0.28f)
+                    lineToRelative(dx = 8.34f, dy = 50.06f)
+                    curveToRelative(dx1 = 0.38f, dy1 = 2.25f, dx2 = 3.85f, dy2 = 2.22f, dx3 = 4.28f, dy3 = 0.0f)
+                    lineToRelative(dx = 8.07f, dy = -37.75f)
+                    lineToRelative(dx = -0.25f, dy = -0.03f)
+                    lineToRelative(dx = 2.0f, dy = 9.72f)
+                    curveToRelative(dx1 = 0.28f, dy1 = 1.44f, dx2 = 1.09f, dy2 = 2.13f, dx3 = 2.56f, dy3 = 2.13f)
+                    horizontalLineToRelative(dx = 12.12f)
+                    arcToRelative(a = 2.2f, b = 2.2f, theta = 0.0f, isMoreThanHalf = true, isPositiveArc = false, dx1 = 0.0f, dy1 = -4.4f)
+                    horizontalLineTo(x = 48.66f)
+                    lineToRelative(dx = 0.75f, dy = 0.46f)
+                    lineToRelative(dx = -3.72f, dy = -16.38f)
+                    curveToRelative(dx1 = -0.47f, dy1 = -2.18f, dx2 = -3.69f, dy2 = -2.15f, dx3 = -4.22f, dy3 = 0.1f)
+                    lineTo(x = 33.4f, y = 55.43f)
+                    horizontalLineToRelative(dx = 0.37f)
+                    lineToRelative(dx = -8.37f, dy = -50.7f)
+                    curveToRelative(dx1 = -0.35f, dy1 = -2.18f, dx2 = -3.53f, dy2 = -2.24f, dx3 = -4.03f, dy3 = 0.0f)
+                    lineToRelative(dx = -6.72f, dy = 31.04f)
+                    lineToRelative(dx = 0.4f, dy = -0.47f)
+                    horizontalLineTo(x = 2.25f)
+                    curveToRelative(dx1 = -1.28f, dy1 = 0.0f, dx2 = -2.25f, dy2 = 1.0f, dx3 = -2.25f, dy3 = 2.22f)
+                    arcToRelative(a = 2.2f, b = 2.2f, theta = 0.0f, isMoreThanHalf = false, isPositiveArc = false, dx1 = 2.25f, dy1 = 2.19f)
+                }
+            }.build().also { _waveformPathEcg = it }
+        }
+
+    private var _waveformPathEcg: ImageVector? = null
 }

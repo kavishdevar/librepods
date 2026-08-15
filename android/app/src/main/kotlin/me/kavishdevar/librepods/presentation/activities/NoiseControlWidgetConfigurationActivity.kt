@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -15,6 +14,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -34,9 +34,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.LibrePodsApplication
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.database.widget.WidgetConfigEntity
 import me.kavishdevar.librepods.devices.Device
-import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
@@ -164,13 +164,15 @@ private fun WidgetDevicePickerContent(
 ) {
     StyledScaffold(
         title = stringResource(R.string.configure_widget),
-    ) {
+        navigateBack = null
+    ) { topPadding, bottomPadding ->
         Column(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
         ) {
+            Spacer(modifier = Modifier.size(topPadding))
             if (devices.isEmpty()) {
                 Text(
                     text = "No devices found. Please ensure a compatible device is paired with your phone and try again.",
@@ -231,6 +233,8 @@ private fun WidgetDevicePickerContent(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.size(bottomPadding))
         }
     }
 }

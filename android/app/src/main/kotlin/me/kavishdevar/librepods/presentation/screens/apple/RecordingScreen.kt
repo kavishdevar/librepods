@@ -8,14 +8,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,12 +41,11 @@ import androidx.core.content.FileProvider
 import me.kavishdevar.librepods.BuildConfig
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.data.recording.Recording
-import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.theme.DesignSystem
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.viewmodel.AppleUiState
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 import java.time.Instant
@@ -60,27 +55,17 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun RecordingScreenRoute(
     viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
-
-    Box (
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-    ) {
-        RecordingScreen(
-            uiState = uiState,
-            recordings = viewModel.recordings(),
-            startRecording = viewModel::startRecording,
-            stopRecording = viewModel::stopRecording,
-            topPadding = topPadding,
-            bottomPadding = bottomPadding
-        )
-    }
+    RecordingScreen(
+        uiState = uiState,
+        navigateBack = navigateBack,
+        recordings = viewModel.recordings(),
+        startRecording = viewModel::startRecording,
+        stopRecording = viewModel::stopRecording,
+    )
 
     DisposableEffect(Unit) {
         onDispose {
@@ -92,11 +77,10 @@ fun RecordingScreenRoute(
 @Composable
 fun RecordingScreen(
     uiState: AppleUiState,
+    navigateBack: (() -> Unit)?,
     recordings: List<Recording>,
     startRecording: () -> Unit,
     stopRecording: () -> Unit,
-    topPadding: Dp = 16.dp,
-    bottomPadding: Dp = 16.dp
 ) {
     val state = uiState.state
 
@@ -139,150 +123,155 @@ fun RecordingScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.padding(top = topPadding))
+    StyledScaffold(
+        title = stringResource(R.string.recorder),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.padding(top = topPadding))
 
-        AnimatedContent(
-            targetState = state.recordingState.isRecording,
-            label = "recording",
-            modifier = Modifier.padding(vertical = 24.dp).weight(1f)
-        ) { recording ->
-            if (recording) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            MaterialTheme.colorScheme.surface,
-                            RoundedCornerShape(28.dp)
-                        )
-                        .padding(24.dp)
-                ) {
-                    // AI-generated
-                    Canvas(
+            AnimatedContent(
+                targetState = state.recordingState.isRecording,
+                label = "recording",
+                modifier = Modifier.padding(vertical = 24.dp).weight(1f)
+            ) { recording ->
+                if (recording) {
+                    Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                    ) {
-                        if (history.isEmpty()) return@Canvas
-
-                        val spacing = 2.dp.toPx()
-                        val width = 3.dp.toPx()
-
-                        val visible = ((size.width + spacing) / (width + spacing)).toInt()
-
-                        val start = (history.size - visible).coerceAtLeast(0)
-
-                        val centerY = size.height / 2f
-
-                        var x = size.width - width
-
-                        for (i in history.lastIndex downTo start) {
-                            val h = history[i]
-                                .coerceIn(0f, 1f)
-                                .let { 6.dp.toPx() + it * (size.height * 0.45f) }
-
-                            drawRoundRect(
-                                color = Color(0xFFFF4D4D),
-                                topLeft = Offset(
-                                    x,
-                                    centerY - h
-                                ),
-                                size = Size(
-                                    width,
-                                    h * 2
-                                ),
-                                cornerRadius = CornerRadius(
-                                    width / 2,
-                                    width / 2
-                                )
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surface,
+                                RoundedCornerShape(28.dp)
                             )
+                            .padding(24.dp)
+                    ) {
+                        // AI-generated
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                        ) {
+                            if (history.isEmpty()) return@Canvas
 
-                            x -= width + spacing
+                            val spacing = 2.dp.toPx()
+                            val width = 3.dp.toPx()
 
-                            if (x < 0f)
-                                break
+                            val visible = ((size.width + spacing) / (width + spacing)).toInt()
+
+                            val start = (history.size - visible).coerceAtLeast(0)
+
+                            val centerY = size.height / 2f
+
+                            var x = size.width - width
+
+                            for (i in history.lastIndex downTo start) {
+                                val h = history[i]
+                                    .coerceIn(0f, 1f)
+                                    .let { 6.dp.toPx() + it * (size.height * 0.45f) }
+
+                                drawRoundRect(
+                                    color = Color(0xFFFF4D4D),
+                                    topLeft = Offset(
+                                        x,
+                                        centerY - h
+                                    ),
+                                    size = Size(
+                                        width,
+                                        h * 2
+                                    ),
+                                    cornerRadius = CornerRadius(
+                                        width / 2,
+                                        width / 2
+                                    )
+                                )
+
+                                x -= width + spacing
+
+                                if (x < 0f)
+                                    break
+                            }
                         }
+
+                        Spacer(Modifier.height(24.dp))
+
+                        Text(
+                            text = buildString {
+                                val total = state.microphoneState.durationMs
+
+                                append((total / 60000).toString().padStart(2, '0'))
+                                append(':')
+
+                                append(((total / 1000) % 60).toString().padStart(2, '0'))
+                                append('.')
+
+                                append(((total % 1000) / 10).toString().padStart(2, '0'))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            style = MaterialTheme.typography.displaySmall
+                        )
+
+                        Spacer(Modifier.height(12.dp))
                     }
+                } else {
+                    val scrollState = rememberScrollState()
+                    Box(
+                        modifier = Modifier.verticalScroll(scrollState)
+                    ) {
+                        if (recordings.isNotEmpty()) {
+                            StyledList(title = stringResource(R.string.recordings)) {
+                                recordings.forEach {
+                                    val text = formatter.format(
+                                        Instant.ofEpochMilli(it.createdAt.toEpochMilliseconds())
+                                            .atZone(ZoneId.systemDefault())
+                                    )
+                                    StyledListItem(
+                                        contentText = text,
+                                        supportingText = it.uuid.toString(),
+                                        orientation = StyledListItemOrientation.Vertical,
+                                        onClick = {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${BuildConfig.APPLICATION_ID}.provider",
+                                                it.file
+                                            )
 
-                    Spacer(Modifier.height(24.dp))
+                                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, "audio/wav")
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
 
-                    Text(
-                        text = buildString {
-                            val total = state.microphoneState.durationMs
-
-                            append((total / 60000).toString().padStart(2, '0'))
-                            append(':')
-
-                            append(((total / 1000) % 60).toString().padStart(2, '0'))
-                            append('.')
-
-                            append(((total % 1000) / 10).toString().padStart(2, '0'))
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.displaySmall
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-                }
-            } else {
-                val scrollState = rememberScrollState()
-                Box(
-                    modifier = Modifier.verticalScroll(scrollState)
-                ) {
-                    if (recordings.isNotEmpty()) {
-                        StyledList(title = stringResource(R.string.recordings)) {
-                            recordings.forEach {
-                                val text = formatter.format(
-                                    Instant.ofEpochMilli(it.createdAt.toEpochMilliseconds())
-                                        .atZone(ZoneId.systemDefault())
-                                )
-                                StyledListItem(
-                                    contentText = text,
-                                    supportingText = it.uuid.toString(),
-                                    orientation = StyledListItemOrientation.Vertical,
-                                    onClick = {
-                                        val uri = FileProvider.getUriForFile(
-                                            context,
-                                            "${BuildConfig.APPLICATION_ID}.provider",
-                                            it.file
-                                        )
-
-                                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                                            setDataAndType(uri, "audio/wav")
-                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            context.startActivity(
+                                                Intent.createChooser(intent, null)
+                                            )
                                         }
-
-                                        context.startActivity(
-                                            Intent.createChooser(intent, null)
-                                        )
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        StyledButton(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = if (state.recordingState.isRecording) {
-                stopRecording
-            } else {
-                startRecording
+            StyledButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = if (state.recordingState.isRecording) {
+                    stopRecording
+                } else {
+                    startRecording
+                }
+            ) {
+                Text(
+                    text = if (state.recordingState.isRecording) {
+                        "Stop Recording"
+                    } else "Start Recording",
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
-        ) {
-            Text(
-                text = if (state.recordingState.isRecording) {
-                    "Stop Recording"
-                } else "Start Recording",
-                style = MaterialTheme.typography.labelMedium
-            )
+            Spacer(modifier = Modifier.padding(bottom = bottomPadding))
         }
-        Spacer(modifier = Modifier.padding(bottom = bottomPadding))
     }
 }

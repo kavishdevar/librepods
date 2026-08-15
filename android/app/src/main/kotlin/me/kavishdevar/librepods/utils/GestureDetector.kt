@@ -16,20 +16,16 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-@file:OptIn(ExperimentalEncodingApi::class)
-
 package me.kavishdevar.librepods.utils
 
-import android.os.Build
 import android.util.Log
-import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.kavishdevar.librepods.services.LibrePodsService
 import java.util.Collections
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -37,10 +33,10 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.time.Duration.Companion.milliseconds
 
-class GestureDetector(
-    private val librepodsService: LibrePodsService
-) {
+// TODO: rewrite
+class GestureDetector {
     companion object {
         private const val TAG = "GestureDetector"
 
@@ -53,8 +49,6 @@ class GestureDetector(
 
         private const val MAX_VALID_ORIENTATION_VALUE = 6000
     }
-
-//    val audio = GestureFeedback(ServiceManager.getService()?.baseContext!!)
 
     private val horizontalBuffer = Collections.synchronizedList(ArrayList<Double>())
     private val verticalBuffer = Collections.synchronizedList(ArrayList<Double>())
@@ -86,7 +80,7 @@ class GestureDetector(
 
     private var isRunning = false
     private var detectionJob: Job? = null
-    private var gestureDetectedCallback: ((Boolean) -> Unit)? = null
+    private var processingJob: Job? = null
 
     private var significantMotion = false
     private var lastSignificantMotionTime = 0L
@@ -96,49 +90,52 @@ class GestureDetector(
         while (verticalAvgBuffer.size < 3) verticalAvgBuffer.add(0.0)
     }
 
-fun startDetection(doNotStop: Boolean = false, onGestureDetected: (Boolean) -> Unit) {
+    fun startDetection(acceleration: StateFlow<Acceleration>, callback: (Boolean) -> Unit) {
         if (isRunning) return
 
         Log.d(TAG, "Starting gesture detection...")
         isRunning = true
-        gestureDetectedCallback = onGestureDetected
-
-//        Log.d(TAG, "started: ${airPodsService.startHeadTracking()}")
 
         clearData()
 
         prevHorizontal = 0.0
         prevVertical = 0.0
 
+        processingJob = CoroutineScope(Dispatchers.Default).launch {
+            acceleration.collect {
+                processHeadOrientation(it.horizontal.toInt(), it.vertical.toInt())
+            }
+        }
+
         detectionJob = CoroutineScope(Dispatchers.Default).launch {
             while (isRunning) {
-                delay(50)
+                delay(50.milliseconds)
 
                 val gesture = detectGestures()
                 if (gesture != null) {
                     withContext(Dispatchers.Main) {
-//                        audio.playConfirmation(gesture)
+                        GestureFeedback.playConfirmation(gesture)
 
-                        gestureDetectedCallback?.invoke(gesture)
-                        stopDetection(doNotStop)
+                        callback.invoke(gesture)
+                        stopDetection()
                     }
                     break
                 }
             }
         }
     }
-    fun stopDetection(doNotStop: Boolean = false) {
+    fun stopDetection() {
         if (!isRunning) return
 
         Log.d(TAG, "Stopping gesture detection")
         isRunning = false
 
-//        if (!doNotStop) airPodsService.stopHeadTracking()
-
         detectionJob?.cancel()
         detectionJob = null
-        gestureDetectedCallback = null
-    }
+
+        processingJob?.cancel()
+        processingJob = null
+   }
 
     fun processHeadOrientation(horizontal: Int, vertical: Int) {
         if (!isRunning) return
@@ -156,7 +153,7 @@ fun startDetection(doNotStop: Boolean = false, onGestureDetected: (Boolean) -> U
 
         if (significantHorizontal && (!significantVertical || abs(horizontalDelta) > abs(verticalDelta))) {
             CoroutineScope(Dispatchers.Main).launch {
-//                audio.playDirectional(isVertical = false, value = horizontalDelta)
+                GestureFeedback.playDirectional(isVertical = false, value = horizontalDelta)
             }
             significantMotion = true
             lastSignificantMotionTime = System.currentTimeMillis()
@@ -164,7 +161,7 @@ fun startDetection(doNotStop: Boolean = false, onGestureDetected: (Boolean) -> U
         }
         else if (significantVertical) {
             CoroutineScope(Dispatchers.Main).launch {
-//                audio.playDirectional(isVertical = true, value = verticalDelta)
+                GestureFeedback.playDirectional(isVertical = true, value = verticalDelta)
             }
             significantMotion = true
             lastSignificantMotionTime = System.currentTimeMillis()
@@ -363,7 +360,7 @@ fun startDetection(doNotStop: Boolean = false, onGestureDetected: (Boolean) -> U
 
     private fun detectGestures(): Boolean? {
         val requiredExtremes = getRequiredExtremes()
-        Log.d(TAG, "Current required extremes: $requiredExtremes")
+//        Log.d(TAG, "Current required extremes: $requiredExtremes")
 
         if (verticalPeaks.size + verticalTroughs.size >= requiredExtremes) {
             val allExtremes = (verticalPeaks + verticalTroughs).sortedBy { it.first }

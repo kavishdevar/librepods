@@ -29,14 +29,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.TextFieldState
@@ -76,10 +72,10 @@ import me.kavishdevar.librepods.presentation.components.StyledInputField
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
 import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.components.StyledToggle
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.theme.NightTheme
 import me.kavishdevar.librepods.presentation.viewmodel.AppSettingsViewModel
 import me.kavishdevar.librepods.utils.XposedState
@@ -89,8 +85,8 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun AppSettingsScreen(
     viewModel: AppSettingsViewModel = viewModel(),
+    navigateBack: (() -> Unit)?,
     navigateToPurchase: () -> Unit,
-    navigateToTroubleshooting: () -> Unit,
     navigateToOpenSourceLicenses: () -> Unit,
     navigateToReleaseNotesScreen: () -> Unit,
     navigateToBleSettingsScreen: () -> Unit
@@ -107,237 +103,263 @@ fun AppSettingsScreen(
     val subjectFocusRequester = remember { FocusRequester() }
     val descriptionFocusRequester = remember { FocusRequester() }
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 16.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    StyledScaffold(
+        title = stringResource(R.string.settings),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .layerBackdrop(backdrop)
+                .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .layerBackdrop(backdrop)
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-
-        if (!state.isPremium && state.state.hasConnectedToAACP) {
-            StyledButton(
-                onClick = navigateToPurchase,
-                backdrop = rememberLayerBackdrop(),
-                modifier = Modifier.fillMaxWidth(),
-                maxScale = 0.05f,
-                surfaceColor = MaterialTheme.colorScheme.primary
-            ) {
-                Text(
-                    stringResource(R.string.unlock_advanced_features),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        if (state.state.timeUntilFOSSPremiumExpiry > 0L) {
-            Box(
-                modifier = Modifier
-                    .background(Color(0xFF32829B), RoundedCornerShape(28.dp))
-                    .clip(RoundedCornerShape(28.dp))
-                    .clickable {
-                        val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
-                            data = "mailto:".toUri()
-                            putExtra(Intent.EXTRA_EMAIL, arrayOf("billing@kavish.xyz"))
-                            putExtra(Intent.EXTRA_SUBJECT, "LibrePods Play billing error")
-                            putExtra(
-                                Intent.EXTRA_TEXT,
-                                "Please enter your GitHub username to restore your premium access:\n\nGitHub username: "
-                            )
-                        }
-                        context.startActivity(emailIntent)
-                    }
-            ) {
-                Text(
-                    text = stringResource(
-                        R.string.play_foss_premium_banner, maxOf(1, TimeUnit.MILLISECONDS.toDays(state.state.timeUntilFOSSPremiumExpiry).toInt())
-                    ),
-                    modifier = Modifier
-                        .padding(16.dp),
-                    style = MaterialTheme.typography.bodyMediumEmphasized,
-                    color = Color.White
-                )
-            }
-        }
-
-        if (state.state.hasConnectedToAACP) {
-            StyledList(title = stringResource(R.string.appearance)) {
-                StyledListItem(
-                    contentText = stringResource(R.string.light),
-                    selected = state.settings.nightMode == NightTheme.Light,
-                    onClick = { viewModel.updateSettings { it.copy(nightMode = NightTheme.Light) } },
-                    enabled = state.isPremium
-                )
-
-                StyledListItem(
-                    contentText = stringResource(R.string.system),
-                    selected = state.settings.nightMode == NightTheme.System,
-                    onClick = { viewModel.updateSettings { it.copy(nightMode = NightTheme.System) } },
-                    enabled = state.isPremium
-                )
-
-                StyledListItem(
-                    contentText = stringResource(R.string.dark),
-                    selected = state.settings.nightMode == NightTheme.Dark,
-                    onClick = { viewModel.updateSettings { it.copy(nightMode = NightTheme.Dark) } },
-                    enabled = state.isPremium
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            StyledList(title = stringResource(R.string.design_system)) {
-                StyledListItem(
-                    contentText = stringResource(R.string.apple),
-                    selected = state.settings.designSystem == DesignSystem.Apple,
-                    onClick = { viewModel.updateSettings { it.copy(designSystem = DesignSystem.Apple) } },
-                    enabled = state.isPremium
-                )
-
-                StyledListItem(
-                    contentText = stringResource(R.string.material3e),
-                    selected = state.settings.designSystem == DesignSystem.Material,
-                    onClick = { viewModel.updateSettings { it.copy(designSystem = DesignSystem.Material) } },
-                    enabled = state.isPremium
-                )
-            }
-        }
-
-        if (XposedState.isAvailable && XposedState.bluetoothScopeEnabled) {
-            val restartBluetoothText = stringResource(R.string.found_offset_restart_bluetooth)
-            StyledToggle(
-                label = stringResource(R.string.act_as_an_apple_device) + " (${
-                    stringResource(
-                        R.string.requires_xposed
+            if (!state.isPremium && state.state.hasConnectedToAACP) {
+                StyledButton(
+                    onClick = navigateToPurchase,
+                    backdrop = rememberLayerBackdrop(),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxScale = 0.05f,
+                    surfaceColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        stringResource(R.string.unlock_advanced_features),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
-                })",
-                description = stringResource(R.string.act_as_an_apple_device_description),
-                checked = state.vendorIdHook,
-                onCheckedChange = { checked ->
-                    Toast.makeText(context, restartBluetoothText, Toast.LENGTH_SHORT).show()
-                    viewModel.setVendorIdHook(checked)
                 }
-            )
-        }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
-        StyledListItem(
-            contentText = stringResource(R.string.ble_settings),
-            supportingText = stringResource(R.string.do_not_change),
-            orientation = StyledListItemOrientation.Vertical,
-            onClick = navigateToBleSettingsScreen
-        )
-
-        StyledToggle(
-            label = stringResource(R.string.enable_debug_mode),
-            checked = state.settings.debugMode,
-            onCheckedChange = { checked ->
-                viewModel.updateSettings {
-                    it.copy(debugMode = checked)
+            if (state.state.timeUntilFOSSPremiumExpiry > 0L) {
+                Box(
+                    modifier = Modifier
+                        .background(Color(0xFF32829B), RoundedCornerShape(28.dp))
+                        .clip(RoundedCornerShape(28.dp))
+                        .clickable {
+                            val emailIntent = Intent(Intent.ACTION_SENDTO).apply {
+                                data = "mailto:".toUri()
+                                putExtra(Intent.EXTRA_EMAIL, arrayOf("billing@kavish.xyz"))
+                                putExtra(Intent.EXTRA_SUBJECT, "LibrePods Play billing error")
+                                putExtra(
+                                    Intent.EXTRA_TEXT,
+                                    "Please enter your GitHub username to restore your premium access:\n\nGitHub username: "
+                                )
+                            }
+                            context.startActivity(emailIntent)
+                        }
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.play_foss_premium_banner, maxOf(1, TimeUnit.MILLISECONDS.toDays(state.state.timeUntilFOSSPremiumExpiry).toInt())
+                        ),
+                        modifier = Modifier
+                            .padding(16.dp),
+                        style = MaterialTheme.typography.bodyMediumEmphasized,
+                        color = Color.White
+                    )
                 }
             }
-        )
 
-        if (!BuildConfig.PLAY_BUILD) {
+            if (state.state.hasConnectedToAACP) {
+                StyledList(title = stringResource(R.string.appearance)) {
+                    StyledListItem(
+                        contentText = stringResource(R.string.light),
+                        selected = state.settings.nightMode == NightTheme.Light,
+                        onClick = { viewModel.updateSettings { it.copy(nightMode = NightTheme.Light) } },
+                        enabled = state.isPremium
+                    )
+
+                    StyledListItem(
+                        contentText = stringResource(R.string.system),
+                        selected = state.settings.nightMode == NightTheme.System,
+                        onClick = { viewModel.updateSettings { it.copy(nightMode = NightTheme.System) } },
+                        enabled = state.isPremium
+                    )
+
+                    StyledListItem(
+                        contentText = stringResource(R.string.dark),
+                        selected = state.settings.nightMode == NightTheme.Dark,
+                        onClick = { viewModel.updateSettings { it.copy(nightMode = NightTheme.Dark) } },
+                        enabled = state.isPremium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                StyledList(title = stringResource(R.string.design_system)) {
+                    StyledListItem(
+                        contentText = stringResource(R.string.apple),
+                        selected = state.settings.designSystem == DesignSystem.Apple,
+                        onClick = { viewModel.updateSettings { it.copy(designSystem = DesignSystem.Apple) } },
+                        enabled = state.isPremium
+                    )
+
+                    StyledListItem(
+                        contentText = stringResource(R.string.material3e),
+                        selected = state.settings.designSystem == DesignSystem.Material,
+                        onClick = { viewModel.updateSettings { it.copy(designSystem = DesignSystem.Material) } },
+                        enabled = state.isPremium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                StyledList(title = stringResource(R.string.interaction)) {
+                    StyledToggle(
+                        label = stringResource(R.string.swipe_anywhere_to_go_back),
+                        checked = state.settings.swipeAnywhereForBack,
+                        onCheckedChange = { checked ->
+                            viewModel.updateSettings {
+                                it.copy(swipeAnywhereForBack = checked)
+                            }
+                        },
+                    )
+
+                    StyledToggle(
+                        label = stringResource(R.string.use_highest_refresh_rate),
+                        checked = state.settings.useHighestRefreshRate,
+                        onCheckedChange = { checked ->
+                            viewModel.updateSettings {
+                                it.copy(useHighestRefreshRate = checked)
+                            }
+                        }
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
-            StyledList {
+
+            StyledList(
+                title = stringResource(R.string.advanced_options),
+                description = stringResource(R.string.do_not_change)
+            ) {
+                if (XposedState.isAvailable && XposedState.bluetoothScopeEnabled) {
+                    val restartBluetoothText =
+                        stringResource(R.string.found_offset_restart_bluetooth)
+                    StyledToggle(
+                        label = stringResource(R.string.act_as_an_apple_device) + " (${
+                            stringResource(
+                                R.string.requires_xposed
+                            )
+                        })",
+                        description = stringResource(R.string.act_as_an_apple_device_description),
+                        checked = state.vendorIdHook,
+                        onCheckedChange = { checked ->
+                            Toast.makeText(context, restartBluetoothText, Toast.LENGTH_SHORT).show()
+                            viewModel.setVendorIdHook(checked)
+                        }
+                    )
+                }
+
+                StyledToggle(
+                    label = stringResource(R.string.enable_debug_mode),
+                    description = stringResource(R.string.debug_mode_description),
+                    checked = state.settings.debugMode,
+                    onCheckedChange = { checked ->
+                        viewModel.updateSettings {
+                            it.copy(debugMode = checked)
+                        }
+                    }
+                )
+
                 StyledListItem(
-                    contentText =  stringResource(R.string.troubleshooting),
-                    onClick = navigateToTroubleshooting,
+                    contentText = stringResource(R.string.ble_settings),
+                    orientation = StyledListItemOrientation.Vertical,
+                    onClick = navigateToBleSettingsScreen
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        StyledList(title = stringResource(R.string.contact)) {
+            StyledList(title = stringResource(R.string.contact)) {
+                StyledListItem(
+                    contentText =  stringResource(R.string.email),
+                    supportingText = stringResource(R.string.contact_email_supporting_text),
+                    orientation = StyledListItemOrientation.Vertical,
+                    onClick = { contactBottomSheet.value = true },
+                )
+
+                val errorOpeningDiscordInviteText = stringResource(R.string.error_opening_discord_invite)
+
+                StyledListItem(
+                    contentText =  stringResource(R.string.discord),
+                    supportingText = stringResource(R.string.contact_discord_supporting_text),
+                    orientation = StyledListItemOrientation.Vertical,
+                    onClick = {
+                        try {
+                            val intent =
+                                Intent(Intent.ACTION_VIEW, "https://discord.gg/Ts4wupXcmc".toUri())
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(
+                                context,
+                                errorOpeningDiscordInviteText,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                )
+
+                val errorOpeningGitHubLink = stringResource(R.string.error_opening_github_link)
+
+                StyledListItem(
+                    contentText =  stringResource(R.string.github_issues),
+                    supportingText = stringResource(R.string.contact_github_supporting_text),
+                    orientation = StyledListItemOrientation.Vertical,
+                    onClick = {
+                        try {
+                            val appVersion =
+                                Uri.encode("v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                            val device = Uri.encode("${Build.MANUFACTURER} ${Build.MODEL}")
+                            val androidVersion = Uri.encode("${Build.ID} (${Build.DISPLAY})")
+                            val appSource = Uri.encode(
+                                when {
+                                    BuildConfig.PLAY_BUILD -> "Play"
+                                    else -> "GitHub"
+                                }
+                            )
+                            val url = "https://github.com/kavishdevar/librepods/issues/new" +
+                                "?template=01-bug-report-android.yml" +
+                                "&app-source=$appSource" +
+                                "&app-version=$appVersion" +
+                                "&device=$device" +
+                                "&android-version=$androidVersion"
+
+                            val intent = Intent(Intent.ACTION_VIEW, url.toUri())
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            Toast.makeText(
+                                context,
+                                errorOpeningGitHubLink,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            DeviceInfoCard()
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AppInfoCard(navigateToReleaseNotesScreen)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             StyledListItem(
-                contentText =  stringResource(R.string.email),
-                supportingText = stringResource(R.string.contact_email_supporting_text),
-                orientation = StyledListItemOrientation.Vertical,
-                onClick = { contactBottomSheet.value = true },
+                contentText =  stringResource(R.string.open_source_licenses),
+                onClick = navigateToOpenSourceLicenses,
             )
 
-            val errorOpeningDiscordInviteText = stringResource(R.string.error_opening_discord_invite)
-
-            StyledListItem(
-                contentText =  stringResource(R.string.discord),
-                supportingText = stringResource(R.string.contact_discord_supporting_text),
-                orientation = StyledListItemOrientation.Vertical,
-                onClick = {
-                    try {
-                        val intent =
-                            Intent(Intent.ACTION_VIEW, "https://discord.gg/Ts4wupXcmc".toUri())
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        Toast.makeText(
-                            context,
-                            errorOpeningDiscordInviteText,
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-            )
-
-            val errorOpeningGitHubLink = stringResource(R.string.error_opening_github_link)
-
-            StyledListItem(
-                contentText =  stringResource(R.string.github_issues),
-                supportingText = stringResource(R.string.contact_github_supporting_text),
-                orientation = StyledListItemOrientation.Vertical,
-                onClick = {
-                    try {
-                        val appVersion =
-                            Uri.encode("v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                        val device = Uri.encode("${Build.MANUFACTURER} ${Build.MODEL}")
-                        val androidVersion = Uri.encode("${Build.ID} (${Build.DISPLAY})")
-                        val appSource = Uri.encode(
-                            when {
-                                BuildConfig.PLAY_BUILD -> "Play"
-                                else -> "GitHub"
-                            }
-                        )
-                        val url = "https://github.com/kavishdevar/librepods/issues/new" +
-                            "?template=01-bug-report-android.yml" +
-                            "&app-source=$appSource" +
-                            "&app-version=$appVersion" +
-                            "&device=$device" +
-                            "&android-version=$androidVersion"
-
-                        val intent = Intent(Intent.ACTION_VIEW, url.toUri())
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        Toast.makeText(
-                            context,
-                            errorOpeningGitHubLink,
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                },
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-        DeviceInfoCard()
-        Spacer(modifier = Modifier.height(16.dp))
-        AppInfoCard(navigateToReleaseNotesScreen)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        StyledListItem(
-            contentText =  stringResource(R.string.open_source_licenses),
-            onClick = navigateToOpenSourceLicenses,
-        )
-
-        Spacer(modifier = Modifier.height(bottomPadding))
+            Spacer(modifier = Modifier.height(bottomPadding))
 
 //        if (state.showCameraDialog) {
 //            AlertDialog(onDismissRequest = { viewModel.setShowCameraDialog(false) }, title = {
@@ -403,6 +425,7 @@ fun AppSettingsScreen(
 //                }
 //            })
 //        }
+        }
     }
 
     StyledBottomSheet(

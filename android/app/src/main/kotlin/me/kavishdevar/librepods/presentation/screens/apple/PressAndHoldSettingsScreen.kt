@@ -24,18 +24,13 @@ import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -47,24 +42,25 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.data.StemAction
-import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.theme.DesignSystem
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 import kotlin.experimental.and
 import kotlin.io.encoding.ExperimentalEncodingApi
 
-@ExperimentalHazeMaterialsApi
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LongPress(viewModel: AppleViewModel, name: String, navigateToPurchase: () -> Unit) {
+fun LongPress(
+    viewModel: AppleViewModel,
+    name: String,
+    navigateBack: (() -> Unit)?,
+    navigateToPurchase: () -> Unit
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     val state = uiState.state
@@ -78,83 +74,144 @@ fun LongPress(viewModel: AppleViewModel, name: String, navigateToPurchase: () ->
     Log.d("PressAndHoldSettingsScreen", "Noise Cancellation mode: ${(modesByte and 0x02) != 0.toByte()}")
     Log.d("PressAndHoldSettingsScreen", "Adaptive mode: ${(modesByte and 0x08) != 0.toByte()}")
 
-    val longPressAction = if (name.lowercase() == "left") settings.leftLongPressAction else settings.rightLongPressAction
-
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    val longPressAction = if (name == stringResource(R.string.left)) settings.leftLongPressAction else settings.rightLongPressAction
 
     val scrollState = rememberScrollState()
 
-    Column (
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .verticalScroll(scrollState)
-            .padding(top = 8.dp)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
+    StyledScaffold(
+        title = name,
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column (
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .verticalScroll(scrollState)
+                .padding(top = 8.dp)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
 
-        StyledList {
-            StyledListItem(
-                contentText = stringResource(R.string.noise_control),
-                selected = longPressAction == StemAction.CYCLE_NOISE_CONTROL_MODES,
-                onClick = {
-                    viewModel.setLongPressAction(
-                        name,
-                        StemAction.CYCLE_NOISE_CONTROL_MODES
-                    )
-                }
-            )
+            StyledList {
+                StyledListItem(
+                    contentText = stringResource(R.string.noise_control),
+                    selected = longPressAction == StemAction.CYCLE_NOISE_CONTROL_MODES,
+                    onClick = {
+                        viewModel.setLongPressAction(
+                            name,
+                            StemAction.CYCLE_NOISE_CONTROL_MODES
+                        )
+                    }
+                )
 
-            StyledListItem(
-                contentText = stringResource(R.string.digital_assistant),
-                selected = longPressAction == StemAction.DIGITAL_ASSISTANT,
-                onClick = {
-                    viewModel.setLongPressAction(
-                        name,
-                        StemAction.DIGITAL_ASSISTANT
-                    )
-                },
-                enabled = uiState.isPremium
-            )
-        }
-
-        if (!uiState.isPremium) {
-            Spacer(modifier = Modifier.height(24.dp))
-            StyledButton(
-                onClick = navigateToPurchase,
-                backdrop = rememberLayerBackdrop(),
-                modifier = Modifier.fillMaxWidth(),
-                maxScale = 0.05f,
-                surfaceColor = MaterialTheme.colorScheme.primary
-            ) {
-                Text(
-                    stringResource(R.string.unlock_advanced_features),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimary
+                StyledListItem(
+                    contentText = stringResource(R.string.digital_assistant),
+                    selected = longPressAction == StemAction.DIGITAL_ASSISTANT,
+                    onClick = {
+                        viewModel.setLongPressAction(
+                            name,
+                            StemAction.DIGITAL_ASSISTANT
+                        )
+                    },
+                    enabled = uiState.isPremium
                 )
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
 
-        if (longPressAction == StemAction.CYCLE_NOISE_CONTROL_MODES) {
-            Spacer(modifier = Modifier.height(32.dp))
+            if (!uiState.isPremium) {
+                Spacer(modifier = Modifier.height(24.dp))
+                StyledButton(
+                    onClick = navigateToPurchase,
+                    backdrop = rememberLayerBackdrop(),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxScale = 0.05f,
+                    surfaceColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        stringResource(R.string.unlock_advanced_features),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
 
-            val currentByte = state.controlStates[ControlCommandIdentifier.LISTENING_MODE_CONFIGS]?.get(0)?.toInt() ?: 0
+            if (longPressAction == StemAction.CYCLE_NOISE_CONTROL_MODES) {
+                Spacer(modifier = Modifier.height(32.dp))
 
-            StyledList(
-                title = stringResource(R.string.noise_control),
-                description = stringResource(R.string.press_and_hold_noise_control_description)
-            ) {
-                if (state.controlStates[ControlCommandIdentifier.ALLOW_OFF_OPTION]?.get(0) == 1.toByte()) {
+                val currentByte = state.controlStates[ControlCommandIdentifier.LISTENING_MODE_CONFIGS]?.get(0)?.toInt() ?: 0
+
+                StyledList(
+                    title = stringResource(R.string.noise_control),
+                    description = stringResource(R.string.press_and_hold_noise_control_description)
+                ) {
+                    if (state.controlStates[ControlCommandIdentifier.ALLOW_OFF_OPTION]?.get(0) == 1.toByte()) {
+                        StyledListItem(
+                            contentText = stringResource(R.string.off),
+                            supportingText = stringResource(R.string.listening_mode_off_description),
+                            selected = (currentByte and 0x01) != 0,
+                            onClick = {
+                                viewModel.toggleListeningMode(0x01)
+                            },
+                            orientation = StyledListItemOrientation.Vertical,
+                            leadingContent = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_noise_cancellation),
+                                    contentDescription = "Icon",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .height(42.dp)
+                                        .wrapContentWidth()
+                                )
+                            }
+                        )
+                    }
+
                     StyledListItem(
-                        contentText = stringResource(R.string.off),
-                        supportingText = stringResource(R.string.listening_mode_off_description),
-                        selected = (currentByte and 0x01) != 0,
+                        contentText = stringResource(R.string.transparency),
+                        supportingText = stringResource(R.string.listening_mode_transparency_description),
+                        selected = (currentByte and 0x04) != 0,
                         onClick = {
-                            viewModel.toggleListeningMode(0x01)
+                            viewModel.toggleListeningMode(0x04)
+                        },
+                        orientation = StyledListItemOrientation.Vertical,
+                        leadingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_transparency),
+                                contentDescription = "Icon",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .height(42.dp)
+                                    .wrapContentWidth()
+                            )
+                        }
+                    )
+
+                    StyledListItem(
+                        contentText = stringResource(R.string.adaptive),
+                        supportingText = stringResource(R.string.listening_mode_adaptive_description),
+                        selected = (currentByte and 0x08) != 0,
+                        onClick = {
+                            viewModel.toggleListeningMode(0x08)
+                        },
+                        orientation = StyledListItemOrientation.Vertical,
+                        leadingContent = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_adaptive),
+                                contentDescription = "Icon",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .height(42.dp)
+                                    .wrapContentWidth()
+                            )
+                        }
+                    )
+
+                    StyledListItem(
+                        contentText = stringResource(R.string.noise_cancellation),
+                        supportingText = stringResource(R.string.listening_mode_noise_cancellation_description),
+                        selected = (currentByte and 0x02) != 0,
+                        onClick = {
+                            viewModel.toggleListeningMode(0x02)
                         },
                         orientation = StyledListItemOrientation.Vertical,
                         leadingContent = {
@@ -169,68 +226,8 @@ fun LongPress(viewModel: AppleViewModel, name: String, navigateToPurchase: () ->
                         }
                     )
                 }
-
-                StyledListItem(
-                    contentText = stringResource(R.string.transparency),
-                    supportingText = stringResource(R.string.listening_mode_transparency_description),
-                    selected = (currentByte and 0x04) != 0,
-                    onClick = {
-                        viewModel.toggleListeningMode(0x04)
-                    },
-                    orientation = StyledListItemOrientation.Vertical,
-                    leadingContent = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_transparency),
-                            contentDescription = "Icon",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .height(42.dp)
-                                .wrapContentWidth()
-                        )
-                    }
-                )
-
-                StyledListItem(
-                    contentText = stringResource(R.string.adaptive),
-                    supportingText = stringResource(R.string.listening_mode_adaptive_description),
-                    selected = (currentByte and 0x08) != 0,
-                    onClick = {
-                        viewModel.toggleListeningMode(0x08)
-                    },
-                    orientation = StyledListItemOrientation.Vertical,
-                    leadingContent = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_adaptive),
-                            contentDescription = "Icon",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .height(42.dp)
-                                .wrapContentWidth()
-                        )
-                    }
-                )
-
-                StyledListItem(
-                    contentText = stringResource(R.string.noise_cancellation),
-                    supportingText = stringResource(R.string.listening_mode_noise_cancellation_description),
-                    selected = (currentByte and 0x02) != 0,
-                    onClick = {
-                        viewModel.toggleListeningMode(0x02)
-                    },
-                    orientation = StyledListItemOrientation.Vertical,
-                    leadingContent = {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_noise_cancellation),
-                            contentDescription = "Icon",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .height(42.dp)
-                                .wrapContentWidth()
-                        )
-                    }
-                )
             }
+            Spacer(modifier = Modifier.height(bottomPadding))
         }
-        Spacer(modifier = Modifier.height(bottomPadding))
     }
 }

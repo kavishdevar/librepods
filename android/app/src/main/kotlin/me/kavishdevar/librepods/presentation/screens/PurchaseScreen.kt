@@ -36,7 +36,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -45,12 +44,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
 import me.kavishdevar.librepods.presentation.components.MaterialButtonStyle
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.navigation.Screen
+import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.PurchaseViewModel
@@ -59,7 +58,7 @@ import me.kavishdevar.librepods.utils.XposedState
 @Composable
 fun PurchaseScreen(
     viewModel: PurchaseViewModel = viewModel(),
-    backStack: SnapshotStateList<Screen>
+    navigateBack: (() -> Unit)?,
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -68,150 +67,149 @@ fun PurchaseScreen(
 
     val backdrop = rememberLayerBackdrop()
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    StyledScaffold(
+        title = stringResource(R.string.unlock_advanced_features),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .layerBackdrop(backdrop)
+                .verticalScroll(scrollState)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
 
-    Column(
-        modifier = Modifier
-            .layerBackdrop(backdrop)
-            .verticalScroll(scrollState)
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-
-        LaunchedEffect(state.isPremium) {
-            if (state.isPremium) {
-                if (backStack.size > 1) {
-                    backStack.removeAt(backStack.lastIndex)
+            LaunchedEffect(state.isPremium) {
+                if (state.isPremium) {
+                    navigateBack?.invoke()
                 }
             }
-        }
-        if (!state.isPremium) {
-            StyledList(title = stringResource(R.string.free_features)) {
-                StyledListItem(
-                    contentText =  stringResource(R.string.ear_detection),
-                    supportingText =  stringResource(R.string.ear_detection_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.battery),
-                    supportingText =  stringResource(R.string.battery_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.noise_control),
-                    supportingText =  stringResource(R.string.noise_control_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                if (XposedState.isAvailable) {
+            if (!state.isPremium) {
+                StyledList(title = stringResource(R.string.free_features)) {
                     StyledListItem(
-                        contentText =  "${stringResource(R.string.hearing_aid)} (${stringResource(R.string.requires_xposed)})",
-                        supportingText =  stringResource(R.string.hearing_aid_description)
-                            .substringBefore("\n\n"),
+                        contentText =  stringResource(R.string.ear_detection),
+                        supportingText =  stringResource(R.string.ear_detection_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.battery),
+                        supportingText =  stringResource(R.string.battery_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.noise_control),
+                        supportingText =  stringResource(R.string.noise_control_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    if (XposedState.isAvailable) {
+                        StyledListItem(
+                            contentText =  "${stringResource(R.string.hearing_aid)} (${stringResource(R.string.requires_xposed)})",
+                            supportingText =  stringResource(R.string.hearing_aid_description)
+                                .substringBefore("\n\n"),
+                            enabled = false,
+                            orientation = StyledListItemOrientation.Vertical
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                StyledList(title = stringResource(R.string.advanced_features), description =  stringResource(R.string.feature_availability_disclaimer)) {
+                    StyledListItem(
+                        contentText =  stringResource(R.string.conversational_awareness),
+                        supportingText =  stringResource(R.string.conversational_awareness_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.digital_assistant_on_long_press),
+                        supportingText =  stringResource(R.string.digital_assistant_on_long_press_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.head_gestures),
+                        supportingText =  stringResource(R.string.head_gestures_details),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.advanced_device_settings),
+                        supportingText =  stringResource(R.string.advanced_device_settings_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.automatic_connection),
+                        supportingText =  stringResource(R.string.automatic_connection_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.customizations),
+                        supportingText =  stringResource(R.string.customizations_description),
+                        enabled = false,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+
+                    StyledListItem(
+                        contentText =  stringResource(R.string.support_the_development),
+                        supportingText =  stringResource(R.string.support_development_description),
                         enabled = false,
                         orientation = StyledListItemOrientation.Vertical
                     )
                 }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                StyledButton(
+                    onClick = {
+                        viewModel.purchase(context)
+                    },
+                    backdrop = rememberLayerBackdrop(),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxScale = 0.05f,
+                    surfaceColor = MaterialTheme.colorScheme.primary,
+                    materialButtonStyle = MaterialButtonStyle.Filled
+                ) {
+                    Text(
+                        stringResource(R.string.buy_price, state.price),
+                        style = MaterialTheme.typography.bodyMediumEmphasized,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                StyledButton(
+                    onClick = {
+                        viewModel.restorePurchases()
+                    },
+                    backdrop = rememberLayerBackdrop(),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxScale = 0.05f,
+                    isInteractive = false,
+                    materialButtonStyle = MaterialButtonStyle.Outlined
+                ) {
+                    Text(
+                        stringResource(R.string.restore_purchases),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            StyledList(title = stringResource(R.string.advanced_features), description =  stringResource(R.string.feature_availability_disclaimer)) {
-                StyledListItem(
-                    contentText =  stringResource(R.string.conversational_awareness),
-                    supportingText =  stringResource(R.string.conversational_awareness_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.digital_assistant_on_long_press),
-                    supportingText =  stringResource(R.string.digital_assistant_on_long_press_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.head_gestures),
-                    supportingText =  stringResource(R.string.head_gestures_details),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.advanced_device_settings),
-                    supportingText =  stringResource(R.string.advanced_device_settings_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.automatic_connection),
-                    supportingText =  stringResource(R.string.automatic_connection_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.customizations),
-                    supportingText =  stringResource(R.string.customizations_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-
-                StyledListItem(
-                    contentText =  stringResource(R.string.support_the_development),
-                    supportingText =  stringResource(R.string.support_development_description),
-                    enabled = false,
-                    orientation = StyledListItemOrientation.Vertical
-                )
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            StyledButton(
-                onClick = {
-                    viewModel.purchase(context)
-                },
-                backdrop = rememberLayerBackdrop(),
-                modifier = Modifier.fillMaxWidth(),
-                maxScale = 0.05f,
-                surfaceColor = MaterialTheme.colorScheme.primary,
-                materialButtonStyle = MaterialButtonStyle.Filled
-            ) {
-                Text(
-                    stringResource(R.string.buy_price, state.price),
-                    style = MaterialTheme.typography.bodyMediumEmphasized,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            StyledButton(
-                onClick = {
-                    viewModel.restorePurchases()
-                },
-                backdrop = rememberLayerBackdrop(),
-                modifier = Modifier.fillMaxWidth(),
-                maxScale = 0.05f,
-                isInteractive = false,
-                materialButtonStyle = MaterialButtonStyle.Outlined
-            ) {
-                Text(
-                    stringResource(R.string.restore_purchases),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
+            Spacer(modifier = Modifier.height(bottomPadding))
         }
-        Spacer(modifier = Modifier.height(bottomPadding))
     }
 }

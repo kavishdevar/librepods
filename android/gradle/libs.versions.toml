@@ -26,12 +26,10 @@ navevent = "1.1.2"
 m3 = "1.5.0-alpha23"
 ksp = "2.3.10"
 room = "3.0.0"
-ktxSerialization = "1.11.0"
-junit = "4.13.2"
-junitVersion = "1.1.5"
-espressoCore = "3.5.1"
-appcompat = "1.6.1"
-material = "1.10.0"
+protobufPlugin = "0.10.0"
+protobuf = "4.35.1"
+healthConnect = "1.2.0-alpha05"
+foundationLayout = "1.12.0"
 
 [libraries]
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanistPermissions" }
@@ -71,11 +69,10 @@ androidx-navigationevent = { module = "androidx.navigationevent:navigationevent"
 androidx-room3-runtime = { group = "androidx.room3", name = "room3-runtime", version.ref = "room" }
 androidx-room3-compiler = { group = "androidx.room3", name = "room3-compiler", version.ref = "room" }
 kotlinx-serialization-cbor = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-cbor", version = "ktxSerialization" }
-junit = { group = "junit", name = "junit", version.ref = "junit" }
-androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
-androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+protobuf-kotlin = { group = "com.google.protobuf", name = "protobuf-kotlin", version.ref = "protobuf" }
+protobuf-protoc = { group = "com.google.protobuf", name = "protoc", version.ref = "protobuf" }
+androidx-healthconnect-client = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
+androidx-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -86,3 +83,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 room3 = { id = "androidx.room3", version.ref = "room" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+protobuf = { id = "com.google.protobuf", version.ref = "protobufPlugin" }

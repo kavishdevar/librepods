@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.mikepenz.aboutlibraries.ui.compose.LibrariesContainer
 import com.mikepenz.aboutlibraries.ui.compose.LibraryDefaults
@@ -57,131 +58,135 @@ import com.mikepenz.aboutlibraries.ui.compose.variant.LibraryDetailMode
 import com.mikepenz.aboutlibraries.ui.compose.variant.LibraryInlineDetail
 import com.mikepenz.aboutlibraries.ui.compose.variant.LibraryRow
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 
 @Composable
-fun OpenSourceLicensesScreen() {
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+fun OpenSourceLicensesScreen(
+    navigateBack: (() -> Unit)?
+) {
+    StyledScaffold(
+        title = stringResource(R.string.open_source_licenses),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Spacer(Modifier.height(topPadding))
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Spacer(Modifier.height(topPadding))
+            val libraries by produceLibraries(R.raw.aboutlibraries)
 
-        val libraries by produceLibraries(R.raw.aboutlibraries)
+            val count = libraries?.libraries?.size ?: 0
 
-        val count = libraries?.libraries?.size ?: 0
+            LibrariesContainer(
+                libraries = libraries,
+                modifier = Modifier.fillMaxSize(),
 
-        LibrariesContainer(
-            libraries = libraries,
-            modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 16.dp, bottom = bottomPadding),
 
-            contentPadding = PaddingValues(top = 16.dp, bottom = bottomPadding),
+                badges = LibraryBadges(version = true),
 
-            badges = LibraryBadges(version = true),
+                variant = LibrariesVariant.Refined,
+                detailMode = LibraryDetailMode.Inline,
 
-            variant = LibrariesVariant.Refined,
-            detailMode = LibraryDetailMode.Inline,
+                colors = LibraryDefaults.libraryColors(
+                    libraryBackgroundColor = MaterialTheme.colorScheme.surface,
+                    libraryContentColor = MaterialTheme.colorScheme.onBackground,
+                ),
 
-            colors = LibraryDefaults.libraryColors(
-                libraryBackgroundColor = MaterialTheme.colorScheme.surface,
-                libraryContentColor = MaterialTheme.colorScheme.onBackground,
-            ),
+                variantColors = LibraryDefaults.m3VariantColors(
+                    rowBackground = MaterialTheme.colorScheme.surfaceContainer,
+                    rowOnBackground = MaterialTheme.colorScheme.onSurface,
+                    rowExpandedBackground = MaterialTheme.colorScheme.surfaceContainer
+                ),
 
-            variantColors = LibraryDefaults.m3VariantColors(
-                rowBackground = MaterialTheme.colorScheme.surfaceContainer,
-                rowOnBackground = MaterialTheme.colorScheme.onSurface,
-                rowExpandedBackground = MaterialTheme.colorScheme.surfaceContainer
-            ),
+                divider = {
+                    Spacer(modifier = Modifier.height(2.dp))
+                },
 
-            divider = {
-                Spacer(modifier = Modifier.height(2.dp))
-            },
-
-            libraryRow = { index, library, expanded, toggle, style ->
-                val transition = updateTransition(
-                    targetState = expanded,
-                    label = "library"
-                )
-
-                val bottomCorner by transition.animateDp(
-                    transitionSpec = {
-                        spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                        )
-                    },
-                    label = "bottomCorner"
-                ) { expanded ->
-                    if (expanded) 0.dp else if (index == count - 1) 24.dp else 8.dp
-                }
-
-                val topCorner = when {
-                    count == 1 -> 24.dp
-                    index == 0 -> 24.dp
-                    index == count - 1 -> 8.dp
-                    else -> 8.dp
-                }
-
-                val shape = RoundedCornerShape(
-                    topStart = topCorner,
-                    topEnd = topCorner,
-                    bottomStart = bottomCorner,
-                    bottomEnd = bottomCorner,
-                )
-
-                LibraryRow(
-                    library = library,
-                    expanded = expanded,
-                    onToggle = toggle,
-                    style = style,
-                    variant = LibrariesVariant.Refined,
-                    badges = LibraryBadges(version = true),
-                    modifier = Modifier.clip(shape)
-                )
-
-                transition.AnimatedVisibility(
-                    visible = { it },
-                    enter = expandVertically(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                        )
-                    ),
-                    exit = shrinkVertically(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                        )
-                    ),
-                ) {
-                    LibraryInlineDetail(
-                        library = library,
-                        actionMode = LibraryActionMode.Chips,
-                        style = style,
-                        actionLabels = DefaultLibraryActionBadges,
-                        onActionClick = { _, _ -> false },
-                        onDialogRequest = { },
-                        modifier = Modifier
-                            .clip(
-                                RoundedCornerShape(
-                                    bottomStart = if (index == count - 1) 24.dp else 8.dp,
-                                    bottomEnd = if (index == count - 1) 24.dp else 8.dp
-                                )
-                            )
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                libraryRow = { index, library, expanded, toggle, style ->
+                    val transition = updateTransition(
+                        targetState = expanded,
+                        label = "library"
                     )
-                }
-            }
-        )
 
-        Spacer(Modifier.height(bottomPadding))
+                    val bottomCorner by transition.animateDp(
+                        transitionSpec = {
+                            spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            )
+                        },
+                        label = "bottomCorner"
+                    ) { expanded ->
+                        if (expanded) 0.dp else if (index == count - 1) 24.dp else 8.dp
+                    }
+
+                    val topCorner = when {
+                        count == 1 -> 24.dp
+                        index == 0 -> 24.dp
+                        index == count - 1 -> 8.dp
+                        else -> 8.dp
+                    }
+
+                    val shape = RoundedCornerShape(
+                        topStart = topCorner,
+                        topEnd = topCorner,
+                        bottomStart = bottomCorner,
+                        bottomEnd = bottomCorner,
+                    )
+
+                    LibraryRow(
+                        library = library,
+                        expanded = expanded,
+                        onToggle = toggle,
+                        style = style,
+                        variant = LibrariesVariant.Refined,
+                        badges = LibraryBadges(version = true),
+                        modifier = Modifier.clip(shape)
+                    )
+
+                    transition.AnimatedVisibility(
+                        visible = { it },
+                        enter = expandVertically(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            )
+                        ),
+                        exit = shrinkVertically(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            )
+                        ),
+                    ) {
+                        LibraryInlineDetail(
+                            library = library,
+                            actionMode = LibraryActionMode.Chips,
+                            style = style,
+                            actionLabels = DefaultLibraryActionBadges,
+                            onActionClick = { _, _ -> false },
+                            onDialogRequest = { },
+                            modifier = Modifier
+                                .clip(
+                                    RoundedCornerShape(
+                                        bottomStart = if (index == count - 1) 24.dp else 8.dp,
+                                        bottomEnd = if (index == count - 1) 24.dp else 8.dp
+                                    )
+                                )
+                                .background(MaterialTheme.colorScheme.surfaceContainer)
+                        )
+                    }
+                }
+            )
+
+            Spacer(Modifier.height(bottomPadding))
+        }
     }
 }

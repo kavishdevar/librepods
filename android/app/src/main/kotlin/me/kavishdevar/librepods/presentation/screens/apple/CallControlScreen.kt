@@ -1,19 +1,12 @@
 package me.kavishdevar.librepods.presentation.screens.apple
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -28,27 +21,23 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.theme.DesignSystem
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CallControlScreen(viewModel: AppleViewModel, action: String, onCallControlValueChanged: (Boolean) -> Unit) {
+fun CallControlScreen(
+    viewModel: AppleViewModel,
+    action: String,
+    navigateBack: (() -> Unit)?,
+    onCallControlValueChanged: (Boolean) -> Unit
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     val state = uiState.state
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
-
     val scrollState = rememberScrollState()
 
-    val bytes =
-        state.controlStates[ControlCommandIdentifier.CALL_MANAGEMENT_CONFIG]?.take(
-            2
-        )?.toByteArray() ?: byteArrayOf(0x00, 0x00)
+    val bytes = state.controlStates[ControlCommandIdentifier.CALL_MANAGEMENT_CONFIG]?.take(2)?.toByteArray() ?: byteArrayOf(0x00, 0x00)
     val flipped = try {
         bytes[1] == 0x02.toByte()
     } catch (e: Exception) {
@@ -64,36 +53,40 @@ fun CallControlScreen(viewModel: AppleViewModel, action: String, onCallControlVa
     val pressOnceIsAction by remember { derivedStateOf { singlePressAction == pressOnceText } }
     val flippedValue = action != muteUnmuteText
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .verticalScroll(scrollState)
-            .padding(top = 8.dp)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
+    StyledScaffold(
+        title = action,
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(top = 8.dp)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
 
-        StyledList {
-            StyledListItem(
-                contentText = pressOnceText,
-                selected = pressOnceIsAction,
-                onClick = {
-                    singlePressAction = pressOnceText
-                    onCallControlValueChanged(flippedValue)
-                }
-            )
+            StyledList {
+                StyledListItem(
+                    contentText = pressOnceText,
+                    selected = pressOnceIsAction,
+                    onClick = {
+                        singlePressAction = pressOnceText
+                        onCallControlValueChanged(flippedValue)
+                    }
+                )
 
-            StyledListItem(
-                contentText = pressTwiceText,
-                selected = !pressOnceIsAction,
-                onClick = {
-                    singlePressAction = pressTwiceText
-                    onCallControlValueChanged(!flippedValue)
-                }
-            )
+                StyledListItem(
+                    contentText = pressTwiceText,
+                    selected = !pressOnceIsAction,
+                    onClick = {
+                        singlePressAction = pressTwiceText
+                        onCallControlValueChanged(!flippedValue)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(bottomPadding))
         }
-
-        Spacer(modifier = Modifier.height(bottomPadding))
     }
 }

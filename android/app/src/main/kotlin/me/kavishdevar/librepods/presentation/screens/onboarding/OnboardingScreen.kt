@@ -93,6 +93,7 @@ fun OnboardingScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(modifier = Modifier.height(topPadding))
             HorizontalUncontainedCarousel(
                 modifier = Modifier
                     .fillMaxWidth()

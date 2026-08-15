@@ -320,4 +320,24 @@
     <string name="enable_debug_mode">Enable debug mode</string>
     <string name="ble_report_delay_description">Any value greater than 0 enables batching.</string>
     <string name="ble_report_delay">Report delay (in ms)</string>
+    <string name="interval">Interval</string>
+    <string name="heart_rate_interval_description">Interval between heart rate measurements</string>
+    <string name="no_heart_rate_data">No heart rate data</string>
+    <string name="one_second">1 second</string>
+    <string name="one_minute">1 minute</string>
+    <string name="permission_healthconnect">Write heart rate to Health Connect</string>
+    <string name="permission_description_healthconnect">Allows the app to write heart rate data to Android\'s Health Connect platform.</string>
+    <string name="required_permissions">Required Permissions</string>
+    <string name="bluetooth">Bluetooth</string>
+    <string name="permission_description_bluetooth">Required to communicate with AirPods.</string>
+    <string name="optional_permissions">Optional Permissions</string>
+    <string name="notifications">Notifications</string>
+    <string name="permission_description_notification">Show battery status when connected or available nearby.</string>
+    <string name="permission_description_phone">Respond to phone calls with head gestures.</string>
+    <string name="permission_overlay">Display over other apps</string>
+    <string name="permission_description_overlay">Show popups when AirPods are nearby or audio switches to them.</string>
+    <string name="swipe_anywhere_to_go_back">Swipe anywhere to go back</string>
+    <string name="use_highest_refresh_rate">Use highest refresh rate available</string>
+    <string name="debug_mode_description">Shows extra information and settings.</string>
+    <string name="interaction">Interaction</string>
 </resources>

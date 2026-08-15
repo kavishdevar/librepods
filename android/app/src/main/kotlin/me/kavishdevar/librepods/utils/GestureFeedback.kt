@@ -23,14 +23,12 @@ package me.kavishdevar.librepods.utils
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
-import android.os.Build
 import android.os.SystemClock
 import android.util.Log
-import androidx.annotation.RequiresApi
 import me.kavishdevar.librepods.R
 import java.util.concurrent.atomic.AtomicBoolean
 
-class GestureFeedback(context: Context) {
+object GestureFeedback {
 
     private val TAG = "GestureFeedback"
 
@@ -71,7 +69,7 @@ class GestureFeedback(context: Context) {
     private val RIGHT_VOLUME = Pair(0.0f, 1.0f)
     private val VERTICAL_VOLUME = Pair(1.0f, 1.0f)
 
-    init {
+    fun init (context: Context) {
         soundId = soundPool.load(context, R.raw.blip_no, 1)
         confirmYesId = soundPool.load(context, R.raw.confirm_yes, 1)
         confirmNoId = soundPool.load(context, R.raw.confirm_no, 1)
@@ -84,7 +82,6 @@ class GestureFeedback(context: Context) {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
     fun playDirectional(isVertical: Boolean, value: Double) {
         if (!soundsLoaded.get()) {
             Log.d(TAG, "Sounds not yet loaded, skipping playback")

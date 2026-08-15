@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "ae2e348e0198b8d871e9e3ed6959ab30",
+    "identityHash": "7a502eac34ab57e1c12ba8f849e172cf",
     "entities": [
       {
         "tableName": "AppleEntity",
@@ -42,7 +42,7 @@
       },
       {
         "tableName": "AppSettingsEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `nightMode` TEXT NOT NULL, `designSystem` TEXT NOT NULL, `debugMode` INTEGER NOT NULL, `bleScanMode` INTEGER NOT NULL, `bleReportDelay` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `nightMode` TEXT NOT NULL, `designSystem` TEXT NOT NULL, `useHighestRefreshRate` INTEGER NOT NULL, `debugMode` INTEGER NOT NULL, `bleScanMode` INTEGER NOT NULL, `bleReportDelay` INTEGER NOT NULL, `swipeAnywhereForBack` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -63,6 +63,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "useHighestRefreshRate",
+            "columnName": "useHighestRefreshRate",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
             "fieldPath": "debugMode",
             "columnName": "debugMode",
             "affinity": "INTEGER",
@@ -77,6 +83,12 @@
           {
             "fieldPath": "bleReportDelay",
             "columnName": "bleReportDelay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "swipeAnywhereForBack",
+            "columnName": "swipeAnywhereForBack",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -163,11 +175,41 @@
             "appWidgetId"
           ]
         }
+      },
+      {
+        "tableName": "HeartRateSampleEntity",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `bpm` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bpm",
+            "columnName": "bpm",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ae2e348e0198b8d871e9e3ed6959ab30')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7a502eac34ab57e1c12ba8f849e172cf')"
     ]
   }
 }

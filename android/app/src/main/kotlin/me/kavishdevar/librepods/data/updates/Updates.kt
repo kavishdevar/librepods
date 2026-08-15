@@ -2,7 +2,7 @@ package me.kavishdevar.librepods.data.updates
 
 import androidx.compose.runtime.Composable
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.presentation.screens.apple.AirPodsSettingsScreenPreviewMaterial
+import me.kavishdevar.librepods.presentation.screens.apple.AppleSettingsScreenPreviewMaterial
 import me.kavishdevar.librepods.presentation.screens.apple.EqualizerScreenPreviewApple
 import me.kavishdevar.librepods.presentation.screens.apple.EqualizerScreenPreviewMaterial
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
@@ -13,7 +13,7 @@ val update1_0_0 = listOf(
             titleRes = R.string.material3e,
             descriptionRes = R.string.update_m3e_description,
             demoComposeable = @Composable {
-                AirPodsSettingsScreenPreviewMaterial()
+                AppleSettingsScreenPreviewMaterial()
             }
         ),
         UpdateItem(

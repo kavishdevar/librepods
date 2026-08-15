@@ -37,8 +37,11 @@ import me.kavishdevar.librepods.bluetooth.aacp.packet.CustomEqPacket
 import me.kavishdevar.librepods.bluetooth.aacp.packet.EarDetectionResponsePacket
 import me.kavishdevar.librepods.bluetooth.aacp.packet.InformationPacket
 import me.kavishdevar.librepods.bluetooth.aacp.packet.MagicKeyResponsePacket
+import me.kavishdevar.librepods.bluetooth.aacp.packet.RTBuddyPacket
 import me.kavishdevar.librepods.bluetooth.aacp.packet.RenamePacket
 import me.kavishdevar.librepods.bluetooth.aacp.packet.StemPressPacket
+import me.kavishdevar.librepods.bluetooth.aacp.rtbuddy.proto.SensorDataWX
+import me.kavishdevar.librepods.bluetooth.aacp.rtbuddy.proto.SensorServiceType
 import me.kavishdevar.librepods.bluetooth.aacp.types.AppleEvent
 import me.kavishdevar.librepods.bluetooth.aacp.types.Capability
 import me.kavishdevar.librepods.bluetooth.aacp.types.CapabilityEntry
@@ -48,12 +51,18 @@ import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.aacp.types.CustomEq
 import me.kavishdevar.librepods.bluetooth.aacp.types.MagicKeyType
 import me.kavishdevar.librepods.bluetooth.aacp.types.MessageOpcode
+import me.kavishdevar.librepods.bluetooth.aacp.types.RTBuddyDescriptor
+import me.kavishdevar.librepods.bluetooth.aacp.types.SensorDataWxBuddyPayload
 import me.kavishdevar.librepods.data.audio.MicrophoneFrame
+import me.kavishdevar.librepods.data.heartrate.HeartRateSample
 import me.kavishdevar.librepods.devices.AppleDevice
 import me.kavishdevar.librepods.devices.BatteryStatus
+import me.kavishdevar.librepods.utils.HeadTracking
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.Clock
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 class AACPManager(private val device: AppleDevice) {
@@ -61,6 +70,8 @@ class AACPManager(private val device: AppleDevice) {
     private val TAG = "AACPManager[${macParts[0]}:${macParts[1]}:${macParts[2]}]"
 
     private var socket: BluetoothSocket? = null
+
+    private val rtBuddyManager = RTBuddyManager(::sendPacket)
 
     fun connect(): Boolean {
         if (socket != null && socket!!.isConnected) {
@@ -192,7 +203,7 @@ class AACPManager(private val device: AppleDevice) {
             )
             return
         }
-        Log.d(TAG, "received packet: ${packet.toHexString()}")
+//        Log.d(TAG, "received packet: ${packet.toHexString()}")
         val opcode = packet[4]
         when (MessageOpcode.fromByte(opcode)) {
             MessageOpcode.BUD_ROLE -> {
@@ -314,7 +325,28 @@ class AACPManager(private val device: AppleDevice) {
             }
 
             MessageOpcode.BUDDY_COMMAND -> {
-                Log.w(TAG, "BUDDY not implemented")
+                val packet = RTBuddyPacket.parse(packet)
+
+                val rtBuddyPayload = packet.rtBuddyPayload
+
+                rtBuddyManager.handlePacket(packet)
+
+                when (rtBuddyPayload.descriptor) {
+                    RTBuddyDescriptor.SENSOR_DATA_WX -> {
+                        val sensorDataWxBuddyPayload = rtBuddyPayload as SensorDataWxBuddyPayload
+                        val data = sensorDataWxBuddyPayload.data
+
+                        handleSensorData(data)
+                    } else -> {
+                        Log.d(TAG, "Unhandled descriptor: ${rtBuddyPayload.descriptor}")
+                    }
+                }
+
+//                device.updateState {
+//                    it.copy(
+//                        aacpPackets = it.aacpPackets + packet
+//                    )
+//                }
             }
 
             MessageOpcode.MAGIC_KEYS_RESPONSE -> {
@@ -625,55 +657,7 @@ class AACPManager(private val device: AppleDevice) {
         return sendPacket(packet)
     }
 
-    fun sendStartHeadTracking(): Boolean {
-        val payload = byteArrayOf(
-            0x00, 0x00, 0x10, 0x00,
-            0x10, 0x00, 0x08, 0xA1.toByte(), 0x02, 0x42, 0x0B, 0x08, 0x0E, 0x10, 0x02, 0x1A, 0x05, 0x01, 0x40, 0x9C.toByte(), 0x00, 0x00
-        )
-        val packet = AACPPacket.createUnknownPacket(
-            MessageOpcode.BUDDY_COMMAND,
-            payload
-        )
-        return sendPacket(packet)
-    }
-
-    fun sendStartAlternateHeadTracking(): Boolean {
-        val payload = byteArrayOf(
-            0x00, 0x00, 0x10, 0x00,
-            0x0F, 0x00, 0x08, 0x73, 0x42, 0x0B, 0x08, 0x10, 0x10, 0x02, 0x1A, 0x05, 0x01, 0x40, 0x9C.toByte(), 0x00, 0x00
-        )
-        val packet = AACPPacket.createUnknownPacket(
-            MessageOpcode.BUDDY_COMMAND,
-            payload
-        )
-        return sendPacket(packet)
-    }
-
-    fun sendStopHeadTracking(): Boolean {
-        val payload = byteArrayOf(
-            0x00, 0x00, 0x10, 0x00,
-            0x11, 0x00, 0x08, 0x7E, 0x10, 0x02, 0x42, 0x0B, 0x08, 0x4E, 0x10, 0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00
-        )
-        val packet = AACPPacket.createUnknownPacket(
-            MessageOpcode.BUDDY_COMMAND,
-            payload
-        )
-        return sendPacket(packet)
-    }
-
-    fun sendStopAlternateHeadTracking(): Boolean {
-        val payload = byteArrayOf(
-            0x00, 0x00, 0x10, 0x00,
-            0x0F, 0x00, 0x08, 0x75, 0x42, 0x0B, 0x08, 0x10, 0x10, 0x02, 0x1A, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00
-        )
-
-        val packet = AACPPacket.createUnknownPacket(
-            opcode = MessageOpcode.BUDDY_COMMAND,
-            payload = payload,
-        )
-
-        return sendPacket(packet)
-    }
+    fun setSensorServiceReportInterval(sensorServiceType: SensorServiceType, interval: Duration): Boolean = rtBuddyManager.setSensorServiceReportInterval(sensorServiceType, interval)
 
     fun sendRename(name: String): Boolean {
         val packet = RenamePacket.create(name)
@@ -1045,6 +1029,8 @@ class AACPManager(private val device: AppleDevice) {
                 connectedDevices = emptyList(),
                 microphoneFrames = emptyList(),
                 controlStates = emptyMap(),
+                aacpPackets = emptyList(),
+                currentHeartRate = null
             )
         }
     }
@@ -1173,5 +1159,94 @@ class AACPManager(private val device: AppleDevice) {
         }
 
         return capabilities
+    }
+
+    private fun handleSensorData(data: SensorDataWX) {
+        if (data.hasCommand()) {
+            when (data.command.service) {
+                SensorServiceType.ACTIVITY, SensorServiceType.DEVMOTION6 -> {
+                    val payload = data.command.payload.toByteArray()
+
+                    if (payload.size != 58) {
+                        Log.w(
+                            TAG,
+                            "Unexpected payload size for ACTIVITY/DEVMOTION6: ${payload.size}, payload: ${payload.toHexString()}"
+                        )
+                        return
+                    }
+
+                    fun i16(offset: Int): Int =
+                        (payload[offset].toInt() and 0xFF) or
+                            ((payload[offset + 1].toInt() and 0xFF) shl 8)
+                                .let { value ->
+                                    if (value and 0x8000 != 0) value - 0x10000 else value
+                                }
+
+                    HeadTracking.addAccel(i16(device.settings.value.headGesturesVerticalOffset).toFloat(), i16(device.settings.value.headGesturesHorizontalOffset).toFloat())
+                }
+
+                SensorServiceType.HEARTRATE -> {
+                    Log.d(
+                        TAG,
+                        "Received sensor data for service: ${data.command.service}, payload: ${data.command.payload.toByteArray().toHexString()}"
+                    )
+                }
+
+                SensorServiceType.HEARTRATEv2 -> {
+                    val payload = data.command.payload.toByteArray()
+                    val timestamp = Clock.System.now()
+                    if (payload.size == 18) {
+                        val heartRate = payload[1].toInt()
+
+                        // same as healthconnect's datatype. 300 isn't possible anyway, but whatever
+                        if (heartRate !in 1..300) {
+                            Log.w(
+                                TAG,
+                                "Invalid heart rate value: $heartRate"
+                            )
+                            return
+                        }
+
+                        if (!device.state.value.hrmActive) {
+                            device.updateState {
+                                it.copy(
+                                    hrmActive = true
+                                )
+                            }
+                        }
+
+                        Log.i(
+                            TAG,
+                            "hr: $heartRate bpm"
+                        )
+
+                        val heartRateSample = HeartRateSample(
+                            bpm = heartRate,
+                            timestamp = timestamp
+                        )
+
+                        device.updateState {
+                            it.copy(
+                                currentHeartRate = heartRateSample
+                            )
+                        }
+
+                    } else {
+                        Log.w(
+                            TAG,
+                            "Unexpected payload size for HEARTRATEv2: ${payload.size}, payload: ${payload.toHexString()}"
+                        )
+                    }
+                }
+
+                else -> {
+                    val payload = data.command.payload.toByteArray()
+                    Log.d(
+                        TAG,
+                        "Unhandled sensor command service: ${data.command.service}, payload: ${payload.toHexString()}"
+                    )
+                }
+            }
+        }
     }
 }

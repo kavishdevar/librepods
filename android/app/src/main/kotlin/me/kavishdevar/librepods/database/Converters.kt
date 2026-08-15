@@ -8,6 +8,7 @@ import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.data.apple.AppleCache
 import me.kavishdevar.librepods.devices.AppleMetadata
 import me.kavishdevar.librepods.devices.AppleSettings
+import kotlin.time.Instant
 
 object Converters {
     @ColumnTypeConverter
@@ -39,4 +40,12 @@ object Converters {
     @ColumnTypeConverter
     fun bytesToAppleCache(bytes: ByteArray): AppleCache =
         Cbor.decodeFromByteArray(bytes)
+
+    @ColumnTypeConverter
+    fun kotlinInstantToLong(instant: Instant): Long =
+        instant.toEpochMilliseconds()
+
+    @ColumnTypeConverter
+    fun longToKotlinInstant(millis: Long): Instant =
+        Instant.fromEpochMilliseconds(millis)
 }

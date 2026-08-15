@@ -31,9 +31,6 @@ sealed interface Screen: NavKey {
     data object AppSettings: Screen
 
     @Serializable
-    data object Troubleshooting: Screen
-
-    @Serializable
     data class HeadTracking(
         override val macAddress: MacAddress
     ): DeviceScreen
@@ -126,6 +123,11 @@ sealed interface Screen: NavKey {
 
     @Serializable
     data object BLESettings: Screen
+
+    @Serializable
+    data class HeartRate(
+        override val macAddress: MacAddress
+    ): DeviceScreen
 }
 
 @Serializable

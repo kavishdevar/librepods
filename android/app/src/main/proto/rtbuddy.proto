@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package rtbuddy;
+
+option java_package = "me.kavishdevar.librepods.bluetooth.aacp.rtbuddy.proto";
+option java_multiple_files = true;
+
+enum SensorServiceType {
+    SENSOR_SERVICE_UNKNOWN = 0;
+    DRVCOMM = 1;
+    TTR = 2;
+    ANALYTICS = 3;
+    ACTIN = 4;
+    KADABRA = 5;
+    MANDO = 6;
+    IED = 7;
+    NEO = 8;
+    NEORELAY = 9;
+    COMM = 10;
+    ACCEL = 11;
+    GYRO = 12;
+    PDR = 13;
+    ACTIVITY = 14;
+    CMA = 15;
+    DEVMOTION6 = 16;
+    SPL0 = 17;
+    HOSTLIBHID = 18;
+    HEARTRATE = 19;
+    HEARTRATEv2 = 20;
+
+    SENSOR_SERVICE_UNKNOWN_82 = 82;
+    HEARTRATE_COMMAND = 84;
+}
+
+message SensorDataWX {
+    int32 seq = 1;
+    int32 log_type = 2;
+    bytes another_sensor_stream = 3;
+    RequestAllDescriptors request_all_descriptors = 4;
+    SensorDescriptor sensor_descriptor = 5;
+
+    SensorCommand command = 7;
+    SensorServiceSetting service_settings = 8;
+    SensorTypeAck start_ack = 9;
+
+    SensorTypeAck command_ack = 12;
+}
+
+message RequestAllDescriptors {
+}
+
+message SensorCommand {
+    SensorServiceType service = 1;
+    bytes payload = 3;
+}
+
+message SensorDescriptor {
+    SensorServiceType service = 1;
+    bytes sensor_descriptor = 2;
+}
+
+message SensorTypeAck {
+    SensorServiceType service = 1;
+}
+
+message SensorServiceSetting {
+    SensorServiceType service = 1;
+    int32 setting = 2;
+    bytes configuration = 3;
+}

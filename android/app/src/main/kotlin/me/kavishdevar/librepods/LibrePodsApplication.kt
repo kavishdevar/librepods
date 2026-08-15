@@ -1,6 +1,7 @@
 package me.kavishdevar.librepods
 
 import android.app.Application
+import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -12,7 +13,10 @@ import me.kavishdevar.librepods.billing.BillingProviderFactory
 import me.kavishdevar.librepods.database.LibrePodsDatabase
 import me.kavishdevar.librepods.repository.AppDataRepository
 import me.kavishdevar.librepods.repository.AppleRepository
+import me.kavishdevar.librepods.repository.HeartRateRepository
+import me.kavishdevar.librepods.repository.RecordingRepository
 import me.kavishdevar.librepods.repository.WidgetConfigRepository
+import me.kavishdevar.librepods.utils.GestureFeedback
 import me.kavishdevar.librepods.utils.XposedServiceHolder
 import me.kavishdevar.librepods.utils.XposedState
 
@@ -23,6 +27,18 @@ class LibrePodsApplication: Application(), XposedServiceHelper.OnServiceListener
     val appleRepository by lazy { AppleRepository(database.appleDao()) }
     val appDataRepository by lazy { AppDataRepository(database.appSettingsDao(), database.appStateDao()) }
     val widgetConfigRepository by lazy { WidgetConfigRepository(database.widgetConfigDao()) }
+
+    val recordingRepository by lazy { RecordingRepository(applicationContext) }
+    val heartRateRepository by lazy { HeartRateRepository(database.heartRateDao()) }
+
+    val healthConnectClient: HealthConnectClient? by lazy {
+        val status = HealthConnectClient.getSdkStatus(this)
+        if (status == HealthConnectClient.SDK_AVAILABLE) {
+            HealthConnectClient.getOrCreate(this)
+        } else {
+            null
+        }
+    }
 
     override fun onCreate() {
         System.loadLibrary("hiddenapi")
@@ -36,6 +52,8 @@ class LibrePodsApplication: Application(), XposedServiceHelper.OnServiceListener
         XposedServiceHelper.registerListener(this)
         BillingManager.provider = BillingProviderFactory.create(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+
+        GestureFeedback.init(this)
 
         super<Application>.onCreate()
 

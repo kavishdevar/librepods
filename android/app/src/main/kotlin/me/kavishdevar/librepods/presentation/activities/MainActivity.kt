@@ -28,9 +28,11 @@ import android.content.Context
 import android.content.Context.MODE_PRIVATE
 import android.content.Intent
 import android.content.ServiceConnection
+import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Log
+import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -58,8 +60,8 @@ import me.kavishdevar.librepods.services.LibrePodsService
 import me.kavishdevar.librepods.utils.XposedState
 import kotlin.io.encoding.ExperimentalEncodingApi
 
-lateinit var serviceConnection: ServiceConnection
-lateinit var connectionStatusReceiver: BroadcastReceiver
+private lateinit var serviceConnection: ServiceConnection
+private lateinit var connectionStatusReceiver: BroadcastReceiver
 //lateinit var testReviewReceiver: BroadcastReceiver
 
 class MainActivity : ComponentActivity() {
@@ -93,6 +95,22 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(darkTheme) {
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            }
+
+            LaunchedEffect(settings.swipeAnywhereForBack) {
+                if (settings.useHighestRefreshRate) {
+                    val display = getSystemService(DisplayManager::class.java)
+                        .getDisplay(Display.DEFAULT_DISPLAY)
+
+                    val highest = display.supportedModes
+                        .maxByOrNull { it.refreshRate }
+
+                    highest?.let {
+                        window.attributes = window.attributes.apply {
+                            preferredRefreshRate = it.refreshRate
+                        }
+                    }
+                }
             }
 
             LibrePodsTheme(

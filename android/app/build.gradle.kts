@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.room3)
+    alias(libs.plugins.protobuf)
 //    alias(libs.plugins.hilt)
     id("kotlin-parcelize")
 }
@@ -31,13 +32,30 @@ room3 {
     schemaDirectory("$projectDir/schemas")
 }
 
+protobuf {
+    protoc {
+        artifact = libs.protobuf.protoc.get().toString()
+    }
+
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {
+                create("java")
+                create("kotlin")
+            }
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
         optIn.addAll(
             "androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
             "kotlin.uuid.ExperimentalUuidApi",
             "kotlinx.coroutines.FlowPreview",
-            "kotlinx.serialization.ExperimentalSerializationApi"
+            "kotlinx.serialization.ExperimentalSerializationApi",
+            "kotlinx.coroutines.ExperimentalCoroutinesApi",
+            "dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi"
         )
     }
 }
@@ -136,6 +154,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.accompanist.permissions)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.foundation.layout)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
@@ -169,8 +188,9 @@ dependencies {
     implementation(libs.androidx.room3.runtime)
     ksp(libs.androidx.room3.compiler)
     implementation(libs.kotlinx.serialization.cbor)
-
+    implementation(libs.protobuf.kotlin)
 //    compileOnly(files("../../../framework-classes.jar"))
+    implementation(libs.androidx.healthconnect.client)
 }
 
 aboutLibraries {

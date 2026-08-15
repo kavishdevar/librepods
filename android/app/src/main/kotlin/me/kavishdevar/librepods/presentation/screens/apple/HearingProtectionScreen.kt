@@ -21,14 +21,10 @@ package me.kavishdevar.librepods.presentation.screens.apple
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,81 +36,85 @@ import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
+import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.presentation.components.StyledButton
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.components.StyledToggle
-import me.kavishdevar.librepods.presentation.theme.DesignSystem
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 
 @Composable
-fun HearingProtectionScreen(viewModel: AppleViewModel, navigateToPurchase: () -> Unit) {
+fun HearingProtectionScreen(
+    viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?,
+    navigateToPurchase: () -> Unit
+) {
     val backdrop = rememberLayerBackdrop()
     val uiState by viewModel.uiState.collectAsState()
 
     val state = uiState.state
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .layerBackdrop(backdrop)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-        if (!uiState.isPremium) {
-            StyledButton(
-                onClick = navigateToPurchase,
-                backdrop = rememberLayerBackdrop(),
-                modifier = Modifier.fillMaxWidth(),
-                maxScale = 0.05f,
-                surfaceColor = MaterialTheme.colorScheme.primary
-            ) {
-                Text(
-                    stringResource(R.string.unlock_advanced_features),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
+    StyledScaffold(
+        title = stringResource(R.string.hearing_protection),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .layerBackdrop(backdrop)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
+            if (!uiState.isPremium) {
+                StyledButton(
+                    onClick = navigateToPurchase,
+                    backdrop = rememberLayerBackdrop(),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxScale = 0.05f,
+                    surfaceColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        stringResource(R.string.unlock_advanced_features),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
 
-        if (uiState.vendorIdHook) {
+            if (uiState.vendorIdHook) {
+                StyledToggle(
+                    title = stringResource(R.string.environmental_noise),
+                    label = stringResource(R.string.loud_sound_reduction),
+                    description = stringResource(R.string.loud_sound_reduction_description),
+                    checked = state.loudSoundReductionEnabled,
+                    onCheckedChange = {
+                        viewModel.writeATTCharacteristic(
+                            ATTHandle.LOUD_SOUND_REDUCTION,
+                            byteArrayOf(if (it) 1.toByte() else 0.toByte())
+                        )
+                    },
+                    enabled = uiState.isPremium
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
             StyledToggle(
-                title = stringResource(R.string.environmental_noise),
-                label = stringResource(R.string.loud_sound_reduction),
-                description = stringResource(R.string.loud_sound_reduction_description),
-                checked = state.loudSoundReductionEnabled,
+                title = stringResource(R.string.workspace_use),
+                label = stringResource(R.string.ppe),
+                description = stringResource(R.string.workspace_use_description),
+                checked = state.controlStates[ControlCommandIdentifier.PPE_TOGGLE_CONFIG]?.getOrNull(
+                    0
+                )?.toInt() == 1,
                 onCheckedChange = {
-                    viewModel.writeATTCharacteristic(
-                        ATTHandle.LOUD_SOUND_REDUCTION,
-                        byteArrayOf(if (it) 1.toByte() else 0.toByte())
+                    viewModel.setControlCommand(
+                        ControlCommandIdentifier.PPE_TOGGLE_CONFIG, it
                     )
                 },
                 enabled = uiState.isPremium
             )
-
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(bottomPadding))
         }
-        StyledToggle(
-            title = stringResource(R.string.workspace_use),
-            label = stringResource(R.string.ppe),
-            description = stringResource(R.string.workspace_use_description),
-            checked = state.controlStates[ControlCommandIdentifier.PPE_TOGGLE_CONFIG]?.getOrNull(
-                0
-            )?.toInt() == 1,
-            onCheckedChange = {
-                viewModel.setControlCommand(
-                    ControlCommandIdentifier.PPE_TOGGLE_CONFIG, it
-                )
-            },
-            enabled = uiState.isPremium
-        )
-        Spacer(modifier = Modifier.height(bottomPadding))
     }
 }

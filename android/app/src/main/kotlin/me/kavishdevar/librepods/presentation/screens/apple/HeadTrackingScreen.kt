@@ -32,26 +32,28 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconToggleButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,6 +66,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -78,14 +81,17 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.bluetooth.aacp.types.AppleEvent
 import me.kavishdevar.librepods.presentation.components.MaterialButtonStyle
 import me.kavishdevar.librepods.presentation.components.StyledButton
+import me.kavishdevar.librepods.presentation.components.StyledIconButton
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.StyledSlider
 import me.kavishdevar.librepods.presentation.components.StyledToggle
+import me.kavishdevar.librepods.presentation.icons.LocalIcons
+import me.kavishdevar.librepods.presentation.icons.MaterialIcons
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
@@ -98,7 +104,11 @@ import kotlin.time.Duration.Companion.seconds
 @ExperimentalHazeMaterialsApi
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
-fun HeadTrackingScreen(viewModel: AppleViewModel, navigateToPurchase: () -> Unit) {
+fun HeadTrackingScreen(
+    viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?,
+    navigateToPurchase: () -> Unit
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     val settings = uiState.settings
@@ -112,10 +122,6 @@ fun HeadTrackingScreen(viewModel: AppleViewModel, navigateToPurchase: () -> Unit
 
     val backdrop = rememberLayerBackdrop()
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
-
     var gestureText by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
 
@@ -124,137 +130,200 @@ fun HeadTrackingScreen(viewModel: AppleViewModel, navigateToPurchase: () -> Unit
 
     val scrollState = rememberScrollState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .verticalScroll(scrollState),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-
-        Column (
-            modifier = Modifier
-                .fillMaxWidth()
-                .layerBackdrop(backdrop)
-                .padding(top = 8.dp)
-                .padding(horizontal = 16.dp)
-        ) {
-
-            if (!uiState.isPremium) {
-                StyledButton(
-                    onClick = navigateToPurchase,
-                    backdrop = rememberLayerBackdrop(),
-                    modifier = Modifier.fillMaxWidth(),
-                    maxScale = 0.05f,
-                    surfaceColor = MaterialTheme.colorScheme.primary
-                ) {
-                    Text(
-                        stringResource(R.string.unlock_advanced_features),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            StyledToggle(
-                label = "Head Gestures",
-                checked = settings.headGesturesEnabled,
-                onCheckedChange = { viewModel.setHeadGesturesEnabled(it) },
-                enabled = uiState.isPremium || settings.headGesturesEnabled,
-                description = stringResource(R.string.head_gestures_details),
-                header = true
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                "Velocity",
-                style = MaterialTheme.typography.labelSmallEmphasized,
-                modifier = Modifier.padding(start = 16.dp, bottom = 8.dp, top = 8.dp)
-            )
-            Plot()
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            LaunchedEffect(gestureText) {
-                if (gestureText.isNotEmpty()) {
-                    lastClickTime = System.currentTimeMillis()
-                    delay(3.seconds)
-                    if (System.currentTimeMillis() - lastClickTime >= 3000) {
-                        shouldExplode = true
+    StyledScaffold(
+        title = stringResource(R.string.head_gestures),
+        navigateBack = navigateBack,
+        actionButtons = listOf(
+            { scaffoldBackdrop ->
+                if (LocalDesignSystem.current == DesignSystem.Material) {
+                    FilledTonalIconToggleButton(
+                        checked = uiState.state.headTrackingActive,
+                        onCheckedChange = { if (it) viewModel.startHeadTracking() else viewModel.stopHeadTracking() },
+                        modifier = Modifier
+                            .minimumInteractiveComponentSize()
+                            .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Uniform)),
+                        shape = IconButtonDefaults.mediumRoundShape
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.state.headTrackingActive) MaterialIcons.Pause else Icons.Default.PlayArrow,
+                            contentDescription = "Play/Pause",
+                            modifier = Modifier.size(IconButtonDefaults.mediumIconSize),
+                        )
+                    }
+                } else {
+                    StyledIconButton(
+                        onClick = if (!uiState.state.headTrackingActive) viewModel::startHeadTracking else viewModel::stopHeadTracking,
+                        backdrop = scaffoldBackdrop
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.state.headTrackingActive) LocalIcons.current.Pause else LocalIcons.current.Play,
+                            contentDescription = "Play/Pause",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
                     }
                 }
             }
-        }
-        val gestureTextValue = stringResource(R.string.shake_your_head_or_nod)
-        StyledButton(
-            onClick = {
-                gestureText = gestureTextValue
-                coroutineScope.launch {
-                    viewModel.testHeadGestures()
-                    val accepted = viewModel.events
-                        .filterIsInstance<AppleEvent.HeadGesturesResult>()
-                        .first()
-                        .yes
-                    gestureText = if (accepted) "\"Yes\" gesture detected." else "\"No\" gesture detected."
-                }
-            },
-            backdrop = backdrop,
+        )
+    ) { topPadding, bottomPadding ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            maxScale = 0.05f,
-            materialButtonStyle = MaterialButtonStyle.Outlined
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                "Test Head Gestures",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(top = 12.dp, bottom = 24.dp)
-        ) {
-            AnimatedContent(
-                targetState = gestureText,
-                transitionSpec = {
-                    (fadeIn(
-                        animationSpec = tween(300)
-                    ) + slideInVertically(
-                        initialOffsetY = { 40 },
-                        animationSpec = tween(300)
-                    )).togetherWith(fadeOut(animationSpec = tween(150)))
+            Spacer(modifier = Modifier.height(topPadding))
+
+            Column (
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .layerBackdrop(backdrop)
+                    .padding(top = 8.dp)
+            ) {
+
+                if (!uiState.isPremium) {
+                    StyledButton(
+                        onClick = navigateToPurchase,
+                        backdrop = rememberLayerBackdrop(),
+                        modifier = Modifier.fillMaxWidth(),
+                        maxScale = 0.05f,
+                        surfaceColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Text(
+                            stringResource(R.string.unlock_advanced_features),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-            ) { text ->
-                if (shouldExplode) {
-                    LaunchedEffect(Unit) {
-                        CoroutineScope(coroutineScope.coroutineContext).launch {
-                            delay(750.milliseconds)
-                            gestureText = ""
+
+                StyledToggle(
+                    label = "Head Gestures",
+                    checked = settings.headGesturesEnabled,
+                    onCheckedChange = { viewModel.setHeadGesturesEnabled(it) },
+                    enabled = uiState.isPremium || settings.headGesturesEnabled,
+                    description = stringResource(R.string.head_gestures_details),
+                    header = true
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    "Velocity",
+                    style = MaterialTheme.typography.labelSmallEmphasized,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                Plot()
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                LaunchedEffect(gestureText) {
+                    if (gestureText.isNotEmpty()) {
+                        lastClickTime = System.currentTimeMillis()
+                        delay(3.seconds)
+                        if (System.currentTimeMillis() - lastClickTime >= 3000) {
+                            shouldExplode = true
                         }
                     }
-                    Text(
-                        text = text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        textAlign = TextAlign.Center
-                    )
-                } else {
-                    Text(
-                        text = text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
+            val gestureTextValue = stringResource(R.string.shake_your_head_or_nod)
+            StyledButton(
+                onClick = {
+                    gestureText = gestureTextValue
+                    coroutineScope.launch {
+                        viewModel.detectHeadGestures { gestureText = if (it) "\"Yes\" gesture detected." else "\"No\" gesture detected." }
+                    }
+                },
+                backdrop = backdrop,
+                modifier = Modifier
+                    .fillMaxWidth(),
+                maxScale = 0.05f,
+                materialButtonStyle = MaterialButtonStyle.Outlined
+            ) {
+                Text(
+                    "Test Head Gestures",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(top = 12.dp, bottom = 24.dp)
+            ) {
+                AnimatedContent(
+                    targetState = gestureText,
+                    transitionSpec = {
+                        (fadeIn(
+                            animationSpec = tween(300)
+                        ) + slideInVertically(
+                            initialOffsetY = { 40 },
+                            animationSpec = tween(300)
+                        )).togetherWith(fadeOut(animationSpec = tween(150)))
+                    }
+                ) { text ->
+                    if (shouldExplode) {
+                        LaunchedEffect(Unit) {
+                            CoroutineScope(coroutineScope.coroutineContext).launch {
+                                delay(750.milliseconds)
+                                gestureText = ""
+                            }
+                        }
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            if (uiState.appSettings.debugMode) {
+                Spacer(modifier = Modifier.height(16.dp))
+                StyledToggle(
+                    label = "[debug] alternate horizontal byte offset",
+                    checked = settings.headGesturesHorizontalOffset == 26,
+                    onCheckedChange = { viewModel.setHeadGesturesHorizontalOffset(if (it) 26 else 28) }
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                val sliderValue = remember {
+                    mutableFloatStateOf(settings.headTrackingInterval.inWholeMilliseconds.toFloat())
+                }
+
+                LaunchedEffect(sliderValue) {
+                    snapshotFlow { sliderValue.floatValue }
+                        .debounce(100.milliseconds)
+                        .collect { value ->
+                            viewModel.setHeadTrackingInterval(value.toInt().milliseconds)
+                        }
+                }
+
+                StyledSlider(
+                    label = "[debug] head tracking interval",
+                    value = sliderValue.floatValue,
+                    onValueChange = { sliderValue.floatValue = it },
+                    valueRange = 10f..200f,
+                    snapPoints = listOf(40f),
+                    independent = true,
+                    description = "how often airpods report sensor information",
+                    enabled = uiState.isPremium
+                )
+            }
+
+            Spacer(modifier = Modifier.height(bottomPadding))
         }
-        Spacer(modifier = Modifier.height(bottomPadding))
     }
 }
 

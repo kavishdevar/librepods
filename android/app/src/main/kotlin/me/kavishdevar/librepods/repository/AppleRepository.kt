@@ -39,7 +39,7 @@ class AppleRepository(
     }
 
     suspend fun saveCacheFromState(macAddress: MacAddress, state: AppleState) {
-        Log.d(TAG, "Saving AppleCache from AppleState for ${macAddress.toRedactedString()}: $state")
+        Log.d(TAG, "Saving AppleCache from AppleState for ${macAddress.toRedactedString()}")
         val cache = try {
             AppleCache(
                 capabilities = state.capabilities,
@@ -48,7 +48,7 @@ class AppleRepository(
                 customEq = state.customEq
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create AppleCache from AppleState for ${macAddress.toRedactedString()}: $state", e)
+            Log.e(TAG, "Failed to create AppleCache from AppleState for ${macAddress.toRedactedString()}", e)
             return
         }
 

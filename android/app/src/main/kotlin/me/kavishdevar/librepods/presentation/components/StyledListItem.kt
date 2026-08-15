@@ -668,7 +668,7 @@ fun StyledListScope.StyledListItem(
                         Text(
                             text = supportingText,
                             style = if (LocalDesignSystem.current == DesignSystem.Apple && orientation == StyledListItemOrientation.Horizontal) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
-                            color = if (selected == true) MaterialTheme.colorScheme.onPrimaryContainer.copy(0.7f) else MaterialTheme.colorScheme.onSurface.copy(0.7f), // TODO: move to color scheme
+                            color = if (selected == true && LocalDesignSystem.current == DesignSystem.Material) MaterialTheme.colorScheme.onPrimaryContainer.copy(0.7f) else MaterialTheme.colorScheme.onSurface.copy(0.7f), // TODO: move to color scheme
                         )
                     }
                 } else null,
@@ -805,25 +805,27 @@ private fun StyledListItemContent(
                         }
                     )
                     .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                if (enabled) {
-                                    backgroundColor = pressedColor
-                                    tryAwaitRelease()
-                                    backgroundColor = surfaceColor
-                                }
-                            },
-                            onTap = {
-                                if (enabled) {
-                                    scope.launch {
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.ContextClick
-                                        )
+                        if (onClick != null) {
+                            detectTapGestures(
+                                onPress = {
+                                    if (enabled) {
+                                        backgroundColor = pressedColor
+                                        tryAwaitRelease()
+                                        backgroundColor = surfaceColor
                                     }
-                                    onClick?.invoke()
+                                },
+                                onTap = {
+                                    if (enabled) {
+                                        scope.launch {
+                                            haptics.performHapticFeedback(
+                                                HapticFeedbackType.ContextClick
+                                            )
+                                        }
+                                        onClick.invoke()
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                     .heightIn(min = height)
                     .padding(horizontal = 16.dp)

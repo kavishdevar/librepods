@@ -1,0 +1,35 @@
+package me.kavishdevar.librepods.bluetooth.aacp.types
+
+enum class RTBuddyDescriptor(val value: UInt) {
+    ACOUSTIC(0x00000001u),
+    SCP(0x00000002u),
+    BUDDY(0x00000004u),
+    VIRTUAL_CLI_PRIMARY(0x00000008u),
+    VIRTUAL_CLI_SECONDARY(0x00000010u),
+    APP_DIAGNOSTICS(0x00000020u),
+    LOGGING_TRIGGER(0x00000040u),
+    DEBUG_DATA(0x00000080u),
+    TOUCH(0x00000100u),
+    LOG_CONFIG(0x00000200u),
+    LOG_MSG(0x00000400u),
+    SENSOR(0x00000800u),
+    SWITCH_CONTROL(0x00001000u),
+    MISMATCHED_BUDS(0x00002000u),
+    UNKNOWN_4000(0x00004000u),
+    B2P(0x00008000u),
+    CONTINUITY(0x00010000u),
+    BATTERY_HEALTH(0x00020000u),
+    SENSOR_V2(0x00040000u),
+    OBC_V2(0x00080000u),
+    SENSOR_DATA_WX(0x00100000u),
+    UNKNOWN_00200000(0x00200000u),
+    UNKNOWN_00400000(0x00400000u),
+    DIGITAL_ENGRAVING_INFO(0x00800000u),
+    ACTIVE_MODE_DATA(0x01000000u),
+
+    UNKNOWN(0xFFFFFFFFu); // better way?
+
+    companion object {
+        fun fromValue(value: UInt): RTBuddyDescriptor = entries.firstOrNull { it.value == value } ?: UNKNOWN
+    }
+}

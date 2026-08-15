@@ -55,6 +55,8 @@ interface IconSet {
 
     val CircleDotted: ImageVector
 
+    val VitalSigns: ImageVector
+
     /*
      * AirPods Icons
      */
@@ -155,6 +157,7 @@ interface IconSet {
             "BoltCircle" to BoltCircle,
             "Circle" to Circle,
             "CircleDotted" to CircleDotted,
+            "VitalSign" to VitalSigns,
 
             "AirPods1" to AirPods1,
             "AirPods1Case" to AirPods1Case,

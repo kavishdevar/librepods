@@ -13,12 +13,12 @@ data class AppSettingsEntity(
 
     val nightMode: NightTheme = NightTheme.System,
     val designSystem: DesignSystem = DesignSystem.Material,
+    val useHighestRefreshRate: Boolean = false,
 
-    /**
-     * Currently only shows the button for Debug screen.
-     */
     val debugMode: Boolean = false,
 
     val bleScanMode: Int = ScanSettings.SCAN_MODE_BALANCED,
     val bleReportDelay: Long = 0,
+
+    val swipeAnywhereForBack: Boolean = true,
 )

@@ -122,12 +122,13 @@ fun StyledListDemo() {
         darkTheme = false
     ) {
         StyledScaffold(
-            title = "StyledListTest"
-        ) {
+            title = "StyledListTest",
+            navigateBack = null
+        ) { topPadding, bottomPadding ->
             Column (
                 modifier = Modifier.padding(horizontal = 12.dp)
             ) {
-                Spacer(modifier = Modifier.height(56.dp))
+                Spacer(modifier = Modifier.height(topPadding))
                 StyledList(
                     title = "hello"
                 ) {
@@ -145,6 +146,7 @@ fun StyledListDemo() {
                         onCheckedChange = { checked.value = it },
                     )
                 }
+                Spacer(modifier = Modifier.height(bottomPadding))
             }
         }
     }

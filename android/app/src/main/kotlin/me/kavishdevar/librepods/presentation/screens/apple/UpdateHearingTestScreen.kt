@@ -25,14 +25,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
@@ -56,7 +51,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import me.kavishdevar.librepods.R
@@ -64,90 +58,132 @@ import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.bluetooth.att.types.HearingAidSettings
 import me.kavishdevar.librepods.bluetooth.att.types.parseHearingAidSettingsResponse
 import me.kavishdevar.librepods.bluetooth.att.types.sendHearingAidSettings
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AppleUiState
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 
 private const val TAG = "UpdateHearingTestScreen"
 
 @Composable
-fun UpdateHearingTestRoute(viewModel: AppleViewModel) {
+fun UpdateHearingTestRoute(
+    viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?
+) {
     val uiState by viewModel.uiState.collectAsState()
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-    ) {
-        UpdateHearingTestScreen(
-            uiState = uiState,
-            topPadding = topPadding,
-            bottomPadding = bottomPadding,
-            setATTCharacteristicValue = viewModel::writeATTCharacteristic
-        )
-    }
+    UpdateHearingTestScreen(
+        uiState = uiState,
+        navigateBack = navigateBack,
+        setATTCharacteristicValue = viewModel::writeATTCharacteristic
+    )
 }
 
 @Composable
 fun UpdateHearingTestScreen(
     uiState: AppleUiState,
-    topPadding: Dp = 16.dp,
-    bottomPadding: Dp = 16.dp,
+    navigateBack: (() -> Unit)?,
     setATTCharacteristicValue: (ATTHandle, ByteArray) -> Unit
 ) {
     val state = uiState.state
 
     val verticalScrollState = rememberScrollState()
 
-    Column(
-        modifier = Modifier
-            .verticalScroll(verticalScrollState)
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-
-        Text(
-            text = stringResource(R.string.hearing_test_value_instruction),
-            style = MaterialTheme.typography.labelMedium,
-            textAlign = TextAlign.Center,
-        )
-        val tone = rememberSaveable { mutableFloatStateOf(0.5f) }
-        val ambientNoiseReduction = rememberSaveable { mutableFloatStateOf(0.0f) }
-        val ownVoiceAmplification = rememberSaveable { mutableFloatStateOf(0.5f) }
-        val leftAmplification = rememberSaveable { mutableFloatStateOf(0.5f) }
-        val rightAmplification = rememberSaveable { mutableFloatStateOf(0.5f) }
-        val conversationBoostEnabled = rememberSaveable { mutableStateOf(false) }
-        val leftEQ = rememberSaveable(
-            saver = Saver(
-                save = { it.value.toList() },
-                restore = { mutableStateOf(it.toFloatArray()) }
-            )
+    StyledScaffold(
+        title = stringResource(R.string.update_hearing_test),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .verticalScroll(verticalScrollState)
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            mutableStateOf(FloatArray(8))
-        }
-        val rightEQ = rememberSaveable(
-            saver = Saver(
-                save = { it.value.toList() },
-                restore = { mutableStateOf(it.toFloatArray()) }
+            Spacer(modifier = Modifier.height(topPadding))
+
+            Text(
+                text = stringResource(R.string.hearing_test_value_instruction),
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
             )
-        ) {
-            mutableStateOf(FloatArray(8))
-        }
+            val tone = rememberSaveable { mutableFloatStateOf(0.5f) }
+            val ambientNoiseReduction = rememberSaveable { mutableFloatStateOf(0.0f) }
+            val ownVoiceAmplification = rememberSaveable { mutableFloatStateOf(0.5f) }
+            val leftAmplification = rememberSaveable { mutableFloatStateOf(0.5f) }
+            val rightAmplification = rememberSaveable { mutableFloatStateOf(0.5f) }
+            val conversationBoostEnabled = rememberSaveable { mutableStateOf(false) }
+            val leftEQ = rememberSaveable(
+                saver = Saver(
+                    save = { it.value.toList() },
+                    restore = { mutableStateOf(it.toFloatArray()) }
+                )
+            ) {
+                mutableStateOf(FloatArray(8))
+            }
+            val rightEQ = rememberSaveable(
+                saver = Saver(
+                    save = { it.value.toList() },
+                    restore = { mutableStateOf(it.toFloatArray()) }
+                )
+            ) {
+                mutableStateOf(FloatArray(8))
+            }
 
-        val debounceJob = remember { mutableStateOf<Job?>(null) }
-        val initialized = rememberSaveable { mutableStateOf(false) }
+            val debounceJob = remember { mutableStateOf<Job?>(null) }
+            val initialized = rememberSaveable { mutableStateOf(false) }
 
-        val hearingAidSettings = remember {
-            mutableStateOf(
-                HearingAidSettings(
+            val hearingAidSettings = remember {
+                mutableStateOf(
+                    HearingAidSettings(
+                        leftEQ = leftEQ.value,
+                        rightEQ = rightEQ.value,
+                        leftAmplification = leftAmplification.floatValue,
+                        rightAmplification = rightAmplification.floatValue,
+                        leftTone = tone.floatValue,
+                        rightTone = tone.floatValue,
+                        leftConversationBoost = conversationBoostEnabled.value,
+                        rightConversationBoost = conversationBoostEnabled.value,
+                        leftAmbientNoiseReduction = ambientNoiseReduction.floatValue,
+                        rightAmbientNoiseReduction = ambientNoiseReduction.floatValue,
+                        netAmplification = leftAmplification.floatValue + rightAmplification.floatValue / 2,
+                        balance = 0.5f + (rightAmplification.floatValue - leftAmplification.floatValue) / 2,
+                        ownVoiceAmplification = ownVoiceAmplification.floatValue
+                    )
+                )
+            }
+
+            LaunchedEffect(state.hearingAidData) {
+                val parsed = parseHearingAidSettingsResponse(state.hearingAidData)
+                if (parsed != null) {
+                    leftEQ.value = parsed.leftEQ.copyOf()
+                    rightEQ.value = parsed.rightEQ.copyOf()
+                    conversationBoostEnabled.value = parsed.leftConversationBoost
+                    tone.floatValue = parsed.leftTone
+                    ambientNoiseReduction.floatValue = parsed.leftAmbientNoiseReduction
+                    ownVoiceAmplification.floatValue = parsed.ownVoiceAmplification
+                    leftAmplification.floatValue = parsed.leftAmplification
+                    rightAmplification.floatValue = parsed.rightAmplification
+                    initialized.value = true
+                    Log.d(TAG, "Updated hearing aid settings from notification")
+                } else {
+                    Log.w(TAG, "Failed to parse hearing aid settings from notification")
+                }
+            }
+
+            LaunchedEffect(
+                leftEQ.value,
+                rightEQ.value,
+                conversationBoostEnabled.value,
+                leftAmplification.floatValue,
+                rightAmplification.floatValue,
+                tone.floatValue,
+                ambientNoiseReduction.floatValue,
+                ownVoiceAmplification.floatValue
+            ) {
+                if (!initialized.value) return@LaunchedEffect
+                hearingAidSettings.value = HearingAidSettings(
                     leftEQ = leftEQ.value,
                     rightEQ = rightEQ.value,
                     leftAmplification = leftAmplification.floatValue,
@@ -162,125 +198,79 @@ fun UpdateHearingTestScreen(
                     balance = 0.5f + (rightAmplification.floatValue - leftAmplification.floatValue) / 2,
                     ownVoiceAmplification = ownVoiceAmplification.floatValue
                 )
-            )
-        }
-
-        LaunchedEffect(state.hearingAidData) {
-            val parsed = parseHearingAidSettingsResponse(state.hearingAidData)
-            if (parsed != null) {
-                leftEQ.value = parsed.leftEQ.copyOf()
-                rightEQ.value = parsed.rightEQ.copyOf()
-                conversationBoostEnabled.value = parsed.leftConversationBoost
-                tone.floatValue = parsed.leftTone
-                ambientNoiseReduction.floatValue = parsed.leftAmbientNoiseReduction
-                ownVoiceAmplification.floatValue = parsed.ownVoiceAmplification
-                leftAmplification.floatValue = parsed.leftAmplification
-                rightAmplification.floatValue = parsed.rightAmplification
-                initialized.value = true
-                Log.d(TAG, "Updated hearing aid settings from notification")
-            } else {
-                Log.w(TAG, "Failed to parse hearing aid settings from notification")
+                Log.d(TAG, "Updated settings: ${hearingAidSettings.value}")
+                sendHearingAidSettings(state.hearingAidData, hearingAidSettings.value, debounceJob, setATTCharacteristicValue)
             }
-        }
 
-        LaunchedEffect(
-            leftEQ.value,
-            rightEQ.value,
-            conversationBoostEnabled.value,
-            leftAmplification.floatValue,
-            rightAmplification.floatValue,
-            tone.floatValue,
-            ambientNoiseReduction.floatValue,
-            ownVoiceAmplification.floatValue
-        ) {
-            if (!initialized.value) return@LaunchedEffect
-            hearingAidSettings.value = HearingAidSettings(
-                leftEQ = leftEQ.value,
-                rightEQ = rightEQ.value,
-                leftAmplification = leftAmplification.floatValue,
-                rightAmplification = rightAmplification.floatValue,
-                leftTone = tone.floatValue,
-                rightTone = tone.floatValue,
-                leftConversationBoost = conversationBoostEnabled.value,
-                rightConversationBoost = conversationBoostEnabled.value,
-                leftAmbientNoiseReduction = ambientNoiseReduction.floatValue,
-                rightAmbientNoiseReduction = ambientNoiseReduction.floatValue,
-                netAmplification = leftAmplification.floatValue + rightAmplification.floatValue / 2,
-                balance = 0.5f + (rightAmplification.floatValue - leftAmplification.floatValue) / 2,
-                ownVoiceAmplification = ownVoiceAmplification.floatValue
-            )
-            Log.d(TAG, "Updated settings: ${hearingAidSettings.value}")
-            sendHearingAidSettings(state.hearingAidData, hearingAidSettings.value, debounceJob, setATTCharacteristicValue)
-        }
+            val frequencies =
+                listOf("250Hz", "500Hz", "1kHz", "2kHz", "3kHz", "4kHz", "6kHz", "8kHz")
 
-        val frequencies =
-            listOf("250Hz", "500Hz", "1kHz", "2kHz", "3kHz", "4kHz", "6kHz", "8kHz")
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Spacer(modifier = Modifier.width(60.dp))
-            Text(
-                text = stringResource(R.string.left),
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelMediumEmphasized
-            )
-            Text(
-                text = stringResource(R.string.right),
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelMediumEmphasized
-            )
-        }
-
-        frequencies.forEachIndexed { index, freq ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Spacer(modifier = Modifier.width(60.dp))
                 Text(
-                    text = freq,
-                    modifier = Modifier
-                        .width(60.dp)
-                        .align(Alignment.CenterVertically),
-                    textAlign = TextAlign.End,
-                    style = MaterialTheme.typography.labelSmall
+                    text = stringResource(R.string.left),
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelMediumEmphasized
                 )
-                OutlinedTextField(
-                    value = leftEQ.value[index].toString(),
-                    onValueChange = { newValue ->
-                        val parsed = newValue.toFloatOrNull()
-                        if (parsed != null) {
-                            val newArray = leftEQ.value.copyOf()
-                            newArray[index] = parsed
-                            leftEQ.value = newArray
-                            Log.d(TAG, "Left EQ updated at index $index to $parsed")
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    textStyle = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = rightEQ.value[index].toString(),
-                    onValueChange = { newValue ->
-                        val parsed = newValue.toFloatOrNull()
-                        if (parsed != null) {
-                            val newArray = rightEQ.value.copyOf()
-                            newArray[index] = parsed
-                            rightEQ.value = newArray
-                            Log.d(TAG, "Right EQ updated at index $index to $parsed")
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    textStyle = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.weight(1f)
+                Text(
+                    text = stringResource(R.string.right),
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelMediumEmphasized
                 )
             }
+
+            frequencies.forEachIndexed { index, freq ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = freq,
+                        modifier = Modifier
+                            .width(60.dp)
+                            .align(Alignment.CenterVertically),
+                        textAlign = TextAlign.End,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    OutlinedTextField(
+                        value = leftEQ.value[index].toString(),
+                        onValueChange = { newValue ->
+                            val parsed = newValue.toFloatOrNull()
+                            if (parsed != null) {
+                                val newArray = leftEQ.value.copyOf()
+                                newArray[index] = parsed
+                                leftEQ.value = newArray
+                                Log.d(TAG, "Left EQ updated at index $index to $parsed")
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        textStyle = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = rightEQ.value[index].toString(),
+                        onValueChange = { newValue ->
+                            val parsed = newValue.toFloatOrNull()
+                            if (parsed != null) {
+                                val newArray = rightEQ.value.copyOf()
+                                newArray[index] = parsed
+                                rightEQ.value = newArray
+                                Log.d(TAG, "Right EQ updated at index $index to $parsed")
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        textStyle = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(bottomPadding))
         }
-        Spacer(modifier = Modifier.height(bottomPadding))
     }
 }
 
@@ -295,6 +285,7 @@ fun UpdateHearingTestScreenPreviewApple() {
         ) {
             UpdateHearingTestScreen(
                 uiState = AppleUiState(),
+                navigateBack = null,
                 setATTCharacteristicValue = { _, _ -> }
             )
         }
@@ -314,6 +305,7 @@ fun UpdateHearingTestScreenPreviewMaterial() {
         ) {
             UpdateHearingTestScreen(
                 uiState = AppleUiState(),
+                navigateBack = null,
                 setATTCharacteristicValue = { _, _ -> }
             )
         }

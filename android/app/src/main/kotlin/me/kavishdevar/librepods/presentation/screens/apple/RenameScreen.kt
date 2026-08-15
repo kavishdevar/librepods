@@ -20,20 +20,13 @@
 
 package me.kavishdevar.librepods.presentation.screens.apple
 
-import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -41,21 +34,22 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.edit
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
+import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.presentation.components.StyledInputField
-import me.kavishdevar.librepods.presentation.theme.DesignSystem
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalHazeMaterialsApi::class)
 @Composable
-fun RenameScreen(viewModel: AppleViewModel) {
-    val sharedPreferences = LocalContext.current.getSharedPreferences("settings", Context.MODE_PRIVATE)
+fun RenameScreen(
+    viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?
+) {
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -64,33 +58,33 @@ fun RenameScreen(viewModel: AppleViewModel) {
         keyboardController?.show()
     }
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
-
     val uiState by viewModel.uiState.collectAsState()
     val metadata = uiState.metadata
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
+    StyledScaffold(
+        title = stringResource(R.string.name),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
 
-        val textFieldState = rememberTextFieldState(initialText = metadata.name)
+            val textFieldState = rememberTextFieldState(initialText = metadata.name)
 
-        LaunchedEffect(textFieldState.text) {
-            viewModel.renameDevice(textFieldState.text.toString())
+            LaunchedEffect(textFieldState.text) {
+                viewModel.renameDevice(textFieldState.text.toString())
+            }
+
+            StyledInputField(
+                textFieldState,
+                focusRequester
+            )
+
+            Spacer(modifier = Modifier.height(bottomPadding))
+
         }
-
-        StyledInputField(
-            textFieldState,
-            focusRequester
-        )
-
-        Spacer(modifier = Modifier.height(bottomPadding))
-
     }
 }

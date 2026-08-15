@@ -16,25 +16,17 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-@file:OptIn(ExperimentalEncodingApi::class)
-
 package me.kavishdevar.librepods.presentation.screens.apple
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,10 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.att.ATTHandle
@@ -59,22 +49,22 @@ import me.kavishdevar.librepods.presentation.components.BatteryView
 import me.kavishdevar.librepods.presentation.components.CallControlSettings
 import me.kavishdevar.librepods.presentation.components.ConnectionSettings
 import me.kavishdevar.librepods.presentation.components.HearingHealthSettings
-import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
 import me.kavishdevar.librepods.presentation.components.NoiseControlSettings
 import me.kavishdevar.librepods.presentation.components.PressAndHoldSettings
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledListItem
+import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.components.StyledToggle
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AppleUiState
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 @Composable
-fun AirPodsSettingsRoute(
+fun AppleSettingsRoute(
     viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?,
     navigateToRename: () -> Unit,
     navigateToHearingProtection: () -> Unit,
     navigateToHearingAid: () -> Unit,
@@ -89,65 +79,49 @@ fun AirPodsSettingsRoute(
     navigateToCallControlScreen: (action: String) -> Unit,
     navigateToMicrophoneSettings: () -> Unit,
     navigateToRecordingScreen: () -> Unit,
-    navigateToDebugScreen: () -> Unit
+    navigateToDebugScreen: () -> Unit,
+    navigateToHeartRateScreen: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = WindowInsets.statusBars.asPaddingValues()
-        .calculateTopPadding() + if (m3eEnabled) 0.dp else 84.dp
-    val bottomPadding =
-        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    AppleSettingsScreen(
+        uiState = uiState,
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-    ) {
-        AirPodsSettingsScreen(
-            uiState = uiState,
-
-            topPadding = topPadding,
-            bottomPadding = bottomPadding,
-
-            setControlCommandInt = { id, value -> viewModel.setControlCommand(id, value) },
-            setControlCommandBoolean = { id, value -> viewModel.setControlCommand(id, value) },
+        setControlCommandInt = { id, value -> viewModel.setControlCommand(id, value) },
+        setControlCommandBoolean = { id, value -> viewModel.setControlCommand(id, value) },
 //            setControlCommandByte = { id, value -> viewModel.setControlCommand(id, value) },
 //            setControlCommandValue = { id, value -> viewModel.setControlCommand(id, value) },
 
-            writeATTCharacteristic = viewModel::writeATTCharacteristic,
+        writeATTCharacteristic = viewModel::writeATTCharacteristic,
 
 //            onAutomaticEarDetectionChanged = viewModel::setAutomaticEarDetectionEnabled,
 //            onAutomaticConnectionChanged = viewModel::setAutomaticConnectionEnabled,
-            disconnect = viewModel::disconnect,
+        disconnect = viewModel::disconnect,
 
-            navigateToRename = navigateToRename,
-            navigateToHearingProtection = navigateToHearingProtection,
-            navigateToHearingAid = navigateToHearingAid,
-            navigateToLeftLongPress = navigateToLeftLongPress,
-            navigateToRightLongPress = navigateToRightLongPress,
-            navigateToPurchase = navigateToPurchase,
-            navigateToAdaptiveStrength = navigateToAdaptiveStrength,
-            navigateToEqualizer = navigateToEqualizer,
-            navigateToHeadTracking = navigateToHeadTracking,
-            navigateToAccessibility = navigateToAccessibility,
-            navigateToVersion = navigateToVersion,
-            navigateToCallControlScreen = navigateToCallControlScreen,
-            navigateToMicrophoneSettings = navigateToMicrophoneSettings,
-            navigateToRecordingScreen = navigateToRecordingScreen,
-            navigateToDebugScreen = navigateToDebugScreen
-        )
-    }
+        navigateBack = navigateBack,
+        navigateToRename = navigateToRename,
+        navigateToHearingProtection = navigateToHearingProtection,
+        navigateToHearingAid = navigateToHearingAid,
+        navigateToLeftLongPress = navigateToLeftLongPress,
+        navigateToRightLongPress = navigateToRightLongPress,
+        navigateToPurchase = navigateToPurchase,
+        navigateToAdaptiveStrength = navigateToAdaptiveStrength,
+        navigateToEqualizer = navigateToEqualizer,
+        navigateToHeadTracking = navigateToHeadTracking,
+        navigateToAccessibility = navigateToAccessibility,
+        navigateToVersion = navigateToVersion,
+        navigateToCallControlScreen = navigateToCallControlScreen,
+        navigateToMicrophoneSettings = navigateToMicrophoneSettings,
+        navigateToRecordingScreen = navigateToRecordingScreen,
+        navigateToHeartRateScreen = navigateToHeartRateScreen,
+        navigateToDebugScreen = navigateToDebugScreen
+    )
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalHazeMaterialsApi::class)
 @SuppressLint("MissingPermission", "UnspecifiedRegisterReceiverFlag")
 @Composable
-fun AirPodsSettingsScreen(
+fun AppleSettingsScreen(
     uiState: AppleUiState,
-
-    topPadding: Dp = 16.dp,
-    bottomPadding: Dp = 16.dp,
 
     setControlCommandInt: (ControlCommandIdentifier, Int) -> Unit,
     setControlCommandBoolean: (ControlCommandIdentifier, Boolean) -> Unit,
@@ -161,6 +135,7 @@ fun AirPodsSettingsScreen(
 
     disconnect: () -> Unit,
 
+    navigateBack: (() -> Unit)?,
     navigateToRename: () -> Unit,
     navigateToHearingProtection: () -> Unit,
     navigateToHearingAid: () -> Unit,
@@ -175,6 +150,7 @@ fun AirPodsSettingsScreen(
     navigateToCallControlScreen: (action: String) -> Unit,
     navigateToMicrophoneSettings: () -> Unit,
     navigateToRecordingScreen: () -> Unit,
+    navigateToHeartRateScreen: () -> Unit,
     navigateToDebugScreen: () -> Unit
 ) {
     val state = uiState.state
@@ -185,113 +161,128 @@ fun AirPodsSettingsScreen(
 
     val baseCapabilities = spec.baseCapabilities
 
-    LazyColumn(
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 16.dp),
-    ) {
-        item(key = "top_padding") { Spacer(modifier = Modifier.height(topPadding)) }
+    StyledScaffold(
+        title = uiState.metadata.name,
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        LazyColumn(
+            modifier = Modifier.padding(horizontal = 16.dp),
+        ) {
+            item(key = "top_padding") { Spacer(modifier = Modifier.height(topPadding)) }
 
-        item(key = "battery") {
-            BatteryView(
-                batteryList = state.battery,
-                primaryImageRes = spec.primaryImageRes,
-                caseImageRes = spec.caseImageRes ?: R.drawable.img_airpods_pro_2_case // TODO
-            )
-        }
-        item(key = "spacer_battery") {
-            Spacer(modifier = Modifier.height(32.dp))
-        }
+            item(key = "battery") {
+                BatteryView(
+                    batteryList = state.battery,
+                    primaryImageRes = spec.primaryImageRes,
+                    caseImageRes = spec.caseImageRes ?: R.drawable.img_airpods_pro_2_case // TODO
+                )
+            }
+            item(key = "spacer_battery") {
+                Spacer(modifier = Modifier.height(32.dp))
+            }
 
-        item(key = "name") {
-            StyledListItem(
-                contentText = stringResource(R.string.name),
-                supportingText = metadata.name,
-                onClick = navigateToRename,
-            )
-        }
+            item(key = "name") {
+                StyledListItem(
+                    contentText = stringResource(R.string.name),
+                    supportingText = metadata.name,
+                    onClick = navigateToRename,
+                )
+            }
 
-        val hasHearingAidCapability = baseCapabilities.contains(BaseCapability.HEARING_AID)
-        val hasPPECapability = baseCapabilities.contains(BaseCapability.PPE)
+            val hasHearingAidCapability = baseCapabilities.contains(BaseCapability.HEARING_AID)
+            val hasPPECapability = baseCapabilities.contains(BaseCapability.PPE)
 
-        if (hasHearingAidCapability || hasPPECapability) {
-            if (hasPPECapability || uiState.vendorIdHook) {
-                item(key = "spacer_hearing_health") {
-                    Spacer(modifier = Modifier.height(24.dp))
+            if (hasHearingAidCapability || hasPPECapability) {
+                if (hasPPECapability || uiState.vendorIdHook) {
+                    item(key = "spacer_hearing_health") {
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+                }
+                item(key = "hearing_health") {
+                    HearingHealthSettings(
+                        hasPPECapability = hasPPECapability,
+                        hasHearingAidCapability = hasHearingAidCapability,
+                        vendorIdHook = uiState.vendorIdHook,
+                        navigateToHearingProtection = navigateToHearingProtection,
+                        navigateToHearingAid = navigateToHearingAid
+                    )
                 }
             }
-            item(key = "hearing_health") {
-                HearingHealthSettings(
-                    hasPPECapability = hasPPECapability,
-                    hasHearingAidCapability = hasHearingAidCapability,
-                    vendorIdHook = uiState.vendorIdHook,
-                    navigateToHearingProtection = navigateToHearingProtection,
-                    navigateToHearingAid = navigateToHearingAid
-                )
-            }
-        }
 
-        if (metadata.version3.startsWith("8") || metadata.version3.startsWith("9")) {
-            item(key = "spacer_recording") {
+            if (metadata.version3.startsWith("8") || metadata.version3.startsWith("9")) {
+                item(key = "spacer_recording") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                item(key = "recording") {
+                    StyledListItem(
+                        contentText = stringResource(R.string.recorder),
+                        supportingText = stringResource(R.string.recorder_description),
+                        onClick = navigateToRecordingScreen,
+                        orientation = StyledListItemOrientation.Vertical
+                    )
+                }
+            }
+
+            if (baseCapabilities.contains(BaseCapability.LISTENING_MODE)) {
+                item(key = "spacer_noise") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                item(key = "noise_control") {
+                    NoiseControlSettings(
+                        showOffListeningMode = state.controlStates[ControlCommandIdentifier.ALLOW_OFF_OPTION]?.getOrNull(0)?.toInt() == 1,
+                        noiseControlModeValue = state.controlStates[ControlCommandIdentifier.LISTENING_MODE]?.getOrNull(0)?.toInt() ?: 3,
+                        onNoiseControlModeChanged = {
+                            setControlCommandInt(
+                                ControlCommandIdentifier.LISTENING_MODE, it
+                            )
+                        },
+                    )
+                }
+            }
+
+            if (baseCapabilities.contains(BaseCapability.HRM)) {
+                item(key = "spacer_heart_rate") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                item(key = "heart_rate") {
+                    StyledListItem(
+                        contentText = stringResource(R.string.heart_rate),
+                        onClick = navigateToHeartRateScreen,
+                        supportingText = state.currentHeartRate?.let { "${it.bpm} bpm" }
+                    )
+                }
+            }
+
+            if (baseCapabilities.contains(BaseCapability.STEM_CONFIG)) {
+                item(key = "spacer_press_hold") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                item(key = "press_hold") {
+                    PressAndHoldSettings(
+                        leftAction = settings.leftLongPressAction,
+                        rightAction = settings.rightLongPressAction,
+                        navigateToLeftLongPress = navigateToLeftLongPress,
+                        navigateToRightLongPress = navigateToRightLongPress
+                    )
+                }
+            }
+
+            item(key = "spacer_call") {
                 Spacer(modifier = Modifier.height(16.dp))
             }
-            item(key = "recording") {
-                StyledListItem(
-                    contentText = stringResource(R.string.recorder),
-                    supportingText = stringResource(R.string.recorder_description),
-                    onClick = navigateToRecordingScreen,
-                    orientation = StyledListItemOrientation.Vertical
+            item(key = "call_control") {
+                val bytes =
+                    state.controlStates[ControlCommandIdentifier.CALL_MANAGEMENT_CONFIG]?.take(2)?.toByteArray() ?: byteArrayOf(0x00, 0x00)
+                val flipped = try {
+                    bytes[1] == 0x02.toByte()
+                } catch (_: Exception) {
+                    false
+                }
+                CallControlSettings(
+                    flipped = flipped,
+                    navigateToCallControlScreen = navigateToCallControlScreen
                 )
             }
-        }
-
-        if (baseCapabilities.contains(BaseCapability.LISTENING_MODE)) {
-            item(key = "spacer_noise") {
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            item(key = "noise_control") {
-                NoiseControlSettings(
-                    showOffListeningMode = state.controlStates[ControlCommandIdentifier.ALLOW_OFF_OPTION]?.getOrNull(0)?.toInt() == 1,
-                    noiseControlModeValue = state.controlStates[ControlCommandIdentifier.LISTENING_MODE]?.getOrNull(0)?.toInt() ?: 3,
-                    onNoiseControlModeChanged = {
-                        setControlCommandInt(
-                            ControlCommandIdentifier.LISTENING_MODE, it
-                        )
-                    },
-                )
-            }
-        }
-
-        if (baseCapabilities.contains(BaseCapability.STEM_CONFIG)) {
-            item(key = "spacer_press_hold") {
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            item(key = "press_hold") {
-                PressAndHoldSettings(
-                    leftAction = settings.leftLongPressAction,
-                    rightAction = settings.rightLongPressAction,
-                    navigateToLeftLongPress = navigateToLeftLongPress,
-                    navigateToRightLongPress = navigateToRightLongPress
-                )
-            }
-        }
-
-        item(key = "spacer_call") {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-        item(key = "call_control") {
-            val bytes =
-                state.controlStates[ControlCommandIdentifier.CALL_MANAGEMENT_CONFIG]?.take(2)?.toByteArray() ?: byteArrayOf(0x00, 0x00)
-            val flipped = try {
-                bytes[1] == 0x02.toByte()
-            } catch (_: Exception) {
-                false
-            }
-            CallControlSettings(
-                flipped = flipped,
-                navigateToCallControlScreen = navigateToCallControlScreen
-            )
-        }
 
 //                if (baseCapabilities.contains(BaseCapability.RAW_GESTURES_CONFIG) && !BuildConfig.PLAY_BUILD) {
 //                    item(key = "spacer_camera") { Spacer(modifier = Modifier.height(16.dp)) }
@@ -306,208 +297,212 @@ fun AirPodsSettingsScreen(
 //                    }
 //                }
 
-        item(key = "upgrade_button") {
-            if (!uiState.isPremium) {
-                Spacer(modifier = Modifier.height(28.dp))
+            item(key = "upgrade_button") {
+                if (!uiState.isPremium) {
+                    Spacer(modifier = Modifier.height(28.dp))
+                    StyledButton(
+                        onClick = navigateToPurchase,
+                        backdrop = rememberLayerBackdrop(),
+                        modifier = Modifier.fillMaxWidth(),
+                        maxScale = 0.05f,
+                        surfaceColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Text(
+                            stringResource(R.string.unlock_advanced_features),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            item(key = "spacer_audio") { Spacer(modifier = Modifier.height(16.dp)) }
+            item(key = "audio") {
+                val adaptiveVolumeCapability =
+                    baseCapabilities.contains(BaseCapability.ADAPTIVE_VOLUME)
+                val conversationalAwarenessCapability =
+                    baseCapabilities.contains(BaseCapability.CONVERSATION_AWARENESS)
+                val loudSoundReductionCapability =
+                    baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION)
+                val adaptiveAudioCapability =
+                    baseCapabilities.contains(BaseCapability.ADAPTIVE_VOLUME)
+
+                val adaptiveVolumeChecked =
+                    state.controlStates[ControlCommandIdentifier.ADAPTIVE_VOLUME_CONFIG]?.getOrNull(
+                        0
+                    ) == 0x01.toByte()
+                val conversationalAwarenessChecked =
+                    state.controlStates[ControlCommandIdentifier.CONVERSATION_DETECT_CONFIG]?.getOrNull(
+                        0
+                    ) == 0x01.toByte()
+
+                AudioSettings(
+                    adaptiveVolumeCapability = adaptiveVolumeCapability,
+                    conversationalAwarenessCapability = conversationalAwarenessCapability,
+                    loudSoundReductionCapability = loudSoundReductionCapability,
+                    adaptiveAudioCapability = adaptiveAudioCapability,
+                    customEqCapability = metadata.version3.startsWith("9"),
+                    adaptiveVolumeChecked = adaptiveVolumeChecked,
+                    onAdaptiveVolumeCheckedChange = { checked ->
+                        setControlCommandBoolean(
+                            ControlCommandIdentifier.ADAPTIVE_VOLUME_CONFIG,
+                            checked
+                        )
+                    },
+                    conversationalAwarenessChecked = conversationalAwarenessChecked && uiState.isPremium,
+                    onConversationalAwarenessCheckedChange = { checked ->
+                        setControlCommandBoolean(
+                            ControlCommandIdentifier.CONVERSATION_DETECT_CONFIG,
+                            checked
+                        )
+                    },
+                    loudSoundReductionChecked = state.loudSoundReductionEnabled,
+                    onLoudSoundReductionCheckedChange = { checked ->
+                        writeATTCharacteristic(
+                            ATTHandle.LOUD_SOUND_REDUCTION,
+                            byteArrayOf(if (checked) 0x01.toByte() else 0x00.toByte())
+                        )
+                    },
+                    navigateToAdaptiveStrength = navigateToAdaptiveStrength,
+                    navigateToEqualizer = navigateToEqualizer,
+                    vendorIdHook = uiState.vendorIdHook,
+                    isPremium = uiState.isPremium
+                )
+            }
+
+            item(key = "spacer_connection") { Spacer(modifier = Modifier.height(16.dp)) }
+            item(key = "connection") {
+                ConnectionSettings(
+                    automaticEarDetectionEnabled = state.controlStates[ControlCommandIdentifier.EAR_DETECTION_CONFIG]?.getOrNull(0) == 0x01.toByte(),
+                    onAutomaticEarDetectionChanged = { setControlCommandBoolean(ControlCommandIdentifier.EAR_DETECTION_CONFIG, it) },
+                    automaticConnectionEnabled = state.controlStates[ControlCommandIdentifier.SMART_ROUTING_MODE]?.getOrNull(0) == 0x01.toByte(),
+                    onAutomaticConnectionChanged = { setControlCommandBoolean(ControlCommandIdentifier.SMART_ROUTING_MODE, it) }
+                )
+            }
+
+            item(key = "spacer_microphone") { Spacer(modifier = Modifier.height(16.dp)) }
+            item(key = "microphoneState") {
+                val id = ControlCommandIdentifier.MIC_MODE
+
+                val selectedModeText =
+                    when (state.controlStates[id]?.getOrNull(0) ?: 0x00.toByte()) {
+                        0x00.toByte() -> stringResource(R.string.microphone_automatic)
+                        0x01.toByte() -> stringResource(R.string.microphone_always_right)
+                        0x02.toByte() -> stringResource(R.string.microphone_always_left)
+                        else -> stringResource(R.string.microphone_automatic)
+                    }
+
+                StyledListItem(
+                    contentText = stringResource(R.string.microphone_mode),
+                    supportingText = selectedModeText,
+                    onClick = navigateToMicrophoneSettings
+                )
+            }
+
+            if (baseCapabilities.contains(BaseCapability.SLEEP_DETECTION)) {
+                item(key = "spacer_sleep") { Spacer(modifier = Modifier.height(16.dp)) }
+                item(key = "sleep_detection") {
+                    val id = ControlCommandIdentifier.SLEEP_DETECTION_CONFIG
+                    StyledToggle(
+                        label = stringResource(R.string.sleep_detection),
+                        checked = state.controlStates[id]?.getOrNull(0) == 0x01.toByte(),
+                        onCheckedChange = { setControlCommandBoolean(id, it) },
+                        enabled = uiState.isPremium
+                    )
+                }
+            }
+
+            if (baseCapabilities.contains(BaseCapability.HEAD_GESTURES)) {
+                item(key = "spacer_head_tracking") { Spacer(modifier = Modifier.height(16.dp)) }
+                item(key = "head_tracking") {
+                    StyledListItem(
+                        contentText = stringResource(R.string.head_gestures),
+                        supportingText = if (settings.headGesturesEnabled) stringResource(R.string.on) else stringResource(R.string.off),
+                        onClick = navigateToHeadTracking
+                    )
+                }
+            }
+
+            item(key = "spacer_dynamic_end_of_charge") { Spacer(modifier = Modifier.height(16.dp)) }
+            item(key = "dynamic_end_of_charge") {
+                StyledToggle(
+                    label = stringResource(R.string.optimized_charging),
+                    description = stringResource(R.string.optimized_charging_description),
+                    checked = state.controlStates[ControlCommandIdentifier.DYNAMIC_END_OF_CHARGE]?.getOrNull(0) == 0x01.toByte(),
+                    onCheckedChange = { setControlCommandBoolean(ControlCommandIdentifier.DYNAMIC_END_OF_CHARGE, it) }
+                )
+            }
+
+            item(key = "spacer_accessibility") { Spacer(modifier = Modifier.height(16.dp)) }
+            item(key = "accessibility") {
+                StyledListItem(
+                    contentText = stringResource(R.string.accessibility), onClick = navigateToAccessibility
+                )
+            }
+
+            if (baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION) && (metadata.version3.startsWith("8") || metadata.version3.startsWith("9"))) {
+                item(key = "spacer_off_listening") { Spacer(modifier = Modifier.height(16.dp)) }
+                item(key = "off_listening") {
+                    val id = ControlCommandIdentifier.ALLOW_OFF_OPTION
+                    StyledToggle(
+                        label = stringResource(R.string.off_listening_mode),
+                        description = stringResource(R.string.off_listening_mode_description),
+                        checked = state.controlStates[id]?.getOrNull(0) == 0x01.toByte(),
+                        onCheckedChange = { setControlCommandBoolean(id, it) }
+                    )
+                }
+            }
+
+            item(key = "spacer_about") { Spacer(modifier = Modifier.height(32.dp)) }
+            item(key = "about") {
+                AboutCard(
+                    modelName = metadata.modelName,
+                    actualModel = metadata.modelNumber,
+                    serialNumbers = listOf(metadata.serialNumber, metadata.leftSerialNumber, metadata.rightSerialNumber),
+                    version = metadata.version3,
+                    navigateToVersion = navigateToVersion
+                )
+            }
+
+            item(key = "spacer_disconnect") { Spacer(modifier = Modifier.height(28.dp)) }
+            item(key = "disconnect_button") {
                 StyledButton(
-                    onClick = navigateToPurchase,
+                    onClick = disconnect,
                     backdrop = rememberLayerBackdrop(),
-                    modifier = Modifier.fillMaxWidth(),
-                    maxScale = 0.05f,
-                    surfaceColor = MaterialTheme.colorScheme.primary
+                    isInteractive = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
                 ) {
                     Text(
-                        stringResource(R.string.unlock_advanced_features),
+                        text = stringResource(R.string.disconnect),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
             }
-        }
 
-        item(key = "spacer_audio") { Spacer(modifier = Modifier.height(16.dp)) }
-        item(key = "audio") {
-            val adaptiveVolumeCapability =
-                baseCapabilities.contains(BaseCapability.ADAPTIVE_VOLUME)
-            val conversationalAwarenessCapability =
-                baseCapabilities.contains(BaseCapability.CONVERSATION_AWARENESS)
-            val loudSoundReductionCapability =
-                baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION)
-            val adaptiveAudioCapability =
-                baseCapabilities.contains(BaseCapability.ADAPTIVE_VOLUME)
+            item(key = "spacer_debug") { Spacer(modifier = Modifier.height(16.dp)) }
 
-            val adaptiveVolumeChecked =
-                state.controlStates[ControlCommandIdentifier.ADAPTIVE_VOLUME_CONFIG]?.getOrNull(
-                    0
-                ) == 0x01.toByte()
-            val conversationalAwarenessChecked =
-                state.controlStates[ControlCommandIdentifier.CONVERSATION_DETECT_CONFIG]?.getOrNull(
-                    0
-                ) == 0x01.toByte()
-
-            AudioSettings(
-                adaptiveVolumeCapability = adaptiveVolumeCapability,
-                conversationalAwarenessCapability = conversationalAwarenessCapability,
-                loudSoundReductionCapability = loudSoundReductionCapability,
-                adaptiveAudioCapability = adaptiveAudioCapability,
-                customEqCapability = metadata.version3.startsWith("9"),
-                adaptiveVolumeChecked = adaptiveVolumeChecked,
-                onAdaptiveVolumeCheckedChange = { checked ->
-                    setControlCommandBoolean(
-                        ControlCommandIdentifier.ADAPTIVE_VOLUME_CONFIG,
-                        checked
+            if (uiState.appSettings.debugMode) {
+                item(key = "debug") {
+                    StyledListItem(
+                        contentText = "debug",
+                        onClick = navigateToDebugScreen
                     )
-                },
-                conversationalAwarenessChecked = conversationalAwarenessChecked && uiState.isPremium,
-                onConversationalAwarenessCheckedChange = { checked ->
-                    setControlCommandBoolean(
-                        ControlCommandIdentifier.CONVERSATION_DETECT_CONFIG,
-                        checked
-                    )
-                },
-                loudSoundReductionChecked = state.loudSoundReductionEnabled,
-                onLoudSoundReductionCheckedChange = { checked ->
-                    writeATTCharacteristic(
-                        ATTHandle.LOUD_SOUND_REDUCTION,
-                        byteArrayOf(if (checked) 0x01.toByte() else 0x00.toByte())
-                    )
-                },
-                navigateToAdaptiveStrength = navigateToAdaptiveStrength,
-                navigateToEqualizer = navigateToEqualizer,
-                vendorIdHook = uiState.vendorIdHook,
-                isPremium = uiState.isPremium
-            )
-        }
-
-        item(key = "spacer_connection") { Spacer(modifier = Modifier.height(16.dp)) }
-        item(key = "connection") {
-            ConnectionSettings(
-                automaticEarDetectionEnabled = state.controlStates[ControlCommandIdentifier.EAR_DETECTION_CONFIG]?.getOrNull(0) == 0x01.toByte(),
-                onAutomaticEarDetectionChanged = { setControlCommandBoolean(ControlCommandIdentifier.EAR_DETECTION_CONFIG, it) },
-                automaticConnectionEnabled = state.controlStates[ControlCommandIdentifier.SMART_ROUTING_MODE]?.getOrNull(0) == 0x01.toByte(),
-                onAutomaticConnectionChanged = { setControlCommandBoolean(ControlCommandIdentifier.SMART_ROUTING_MODE, it) }
-            )
-        }
-
-        item(key = "spacer_microphone") { Spacer(modifier = Modifier.height(16.dp)) }
-        item(key = "microphoneState") {
-            val id = ControlCommandIdentifier.MIC_MODE
-
-            val selectedModeText =
-                when (state.controlStates[id]?.getOrNull(0) ?: 0x00.toByte()) {
-                    0x00.toByte() -> stringResource(R.string.microphone_automatic)
-                    0x01.toByte() -> stringResource(R.string.microphone_always_right)
-                    0x02.toByte() -> stringResource(R.string.microphone_always_left)
-                    else -> stringResource(R.string.microphone_automatic)
                 }
-
-            StyledListItem(
-                contentText = stringResource(R.string.microphone_mode),
-                supportingText = selectedModeText,
-                onClick = navigateToMicrophoneSettings
-            )
-        }
-
-        if (baseCapabilities.contains(BaseCapability.SLEEP_DETECTION)) {
-            item(key = "spacer_sleep") { Spacer(modifier = Modifier.height(16.dp)) }
-            item(key = "sleep_detection") {
-                val id = ControlCommandIdentifier.SLEEP_DETECTION_CONFIG
-                StyledToggle(
-                    label = stringResource(R.string.sleep_detection),
-                    checked = state.controlStates[id]?.getOrNull(0) == 0x01.toByte(),
-                    onCheckedChange = { setControlCommandBoolean(id, it) },
-                    enabled = uiState.isPremium
-                )
             }
-        }
 
-        if (baseCapabilities.contains(BaseCapability.HEAD_GESTURES)) {
-            item(key = "spacer_head_tracking") { Spacer(modifier = Modifier.height(16.dp)) }
-            item(key = "head_tracking") {
-                StyledListItem(
-                    contentText = stringResource(R.string.head_gestures),
-                    supportingText = if (settings.headGesturesEnabled) stringResource(R.string.on) else stringResource(R.string.off),
-                    onClick = navigateToHeadTracking
-                )
-            }
+            item(key = "bottom_padding") { Spacer(modifier = Modifier.height(bottomPadding)) }
         }
-
-        item(key = "spacer_dynamic_end_of_charge") { Spacer(modifier = Modifier.height(16.dp)) }
-        item(key = "dynamic_end_of_charge") {
-            StyledToggle(
-                label = stringResource(R.string.optimized_charging),
-                description = stringResource(R.string.optimized_charging_description),
-                checked = state.controlStates[ControlCommandIdentifier.DYNAMIC_END_OF_CHARGE]?.getOrNull(0) == 0x01.toByte(),
-                onCheckedChange = { setControlCommandBoolean(ControlCommandIdentifier.DYNAMIC_END_OF_CHARGE, it) }
-            )
-        }
-
-        item(key = "spacer_accessibility") { Spacer(modifier = Modifier.height(16.dp)) }
-        item(key = "accessibility") {
-            StyledListItem(
-                contentText = stringResource(R.string.accessibility), onClick = navigateToAccessibility
-            )
-        }
-
-        if (baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION) && (metadata.version3.startsWith("8") || metadata.version3.startsWith("9"))) {
-            item(key = "spacer_off_listening") { Spacer(modifier = Modifier.height(16.dp)) }
-            item(key = "off_listening") {
-                val id = ControlCommandIdentifier.ALLOW_OFF_OPTION
-                StyledToggle(
-                    label = stringResource(R.string.off_listening_mode),
-                    description = stringResource(R.string.off_listening_mode_description),
-                    checked = state.controlStates[id]?.getOrNull(0) == 0x01.toByte(),
-                    onCheckedChange = { setControlCommandBoolean(id, it) }
-                )
-            }
-        }
-
-        item(key = "spacer_about") { Spacer(modifier = Modifier.height(32.dp)) }
-        item(key = "about") {
-            AboutCard(
-                modelName = metadata.modelName,
-                actualModel = metadata.modelNumber,
-                serialNumbers = listOf(metadata.serialNumber, metadata.leftSerialNumber, metadata.rightSerialNumber),
-                version = metadata.version3,
-                navigateToVersion = navigateToVersion
-            )
-        }
-
-        item(key = "spacer_disconnect") { Spacer(modifier = Modifier.height(28.dp)) }
-        item(key = "disconnect_button") {
-            StyledButton(
-                onClick = disconnect,
-                backdrop = rememberLayerBackdrop(),
-                isInteractive = false,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 56.dp)
-            ) {
-                Text(
-                    text = stringResource(R.string.disconnect),
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Start,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        item(key = "spacer_debug") { Spacer(modifier = Modifier.height(16.dp)) }
-        item(key = "debug") {
-            StyledListItem(
-                contentText = "debug",
-                onClick = navigateToDebugScreen
-            )
-        }
-
-        item(key = "bottom_padding") { Spacer(modifier = Modifier.height(bottomPadding)) }
     }
 }
 
 @Preview(name = "Apple")
 @Composable
-fun AirPodsSettingsScreenPreviewApple() {
+fun AppleSettingsScreenPreviewApple() {
     LibrePodsTheme(
         designSystem = DesignSystem.Apple
     ) {
@@ -515,7 +510,7 @@ fun AirPodsSettingsScreenPreviewApple() {
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.surfaceContainer)
         ) {
-            AirPodsSettingsScreen(
+            AppleSettingsScreen(
                 uiState = AppleUiState(),
 
                 setControlCommandInt = { _, _ -> },
@@ -524,6 +519,7 @@ fun AirPodsSettingsScreenPreviewApple() {
 
                 disconnect = {},
 
+                navigateBack = null,
                 navigateToRename = {},
                 navigateToHearingProtection = {},
                 navigateToHearingAid = {},
@@ -538,6 +534,7 @@ fun AirPodsSettingsScreenPreviewApple() {
                 navigateToCallControlScreen = {},
                 navigateToMicrophoneSettings = {},
                 navigateToRecordingScreen = {},
+                navigateToHeartRateScreen = {},
                 navigateToDebugScreen = {}
             )
         }
@@ -547,7 +544,7 @@ fun AirPodsSettingsScreenPreviewApple() {
 
 @Preview(name = "Material")
 @Composable
-fun AirPodsSettingsScreenPreviewMaterial() {
+fun AppleSettingsScreenPreviewMaterial() {
     LibrePodsTheme(
         designSystem = DesignSystem.Material
     ) {
@@ -555,7 +552,7 @@ fun AirPodsSettingsScreenPreviewMaterial() {
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.surfaceContainer)
         ) {
-            AirPodsSettingsScreen(
+            AppleSettingsScreen(
                 uiState = AppleUiState(),
 
                 setControlCommandInt = { _, _ -> },
@@ -564,6 +561,7 @@ fun AirPodsSettingsScreenPreviewMaterial() {
 
                 disconnect = {},
 
+                navigateBack = null,
                 navigateToRename = {},
                 navigateToHearingProtection = {},
                 navigateToHearingAid = {},
@@ -578,6 +576,7 @@ fun AirPodsSettingsScreenPreviewMaterial() {
                 navigateToCallControlScreen = {},
                 navigateToMicrophoneSettings = {},
                 navigateToRecordingScreen = {},
+                navigateToHeartRateScreen = {},
                 navigateToDebugScreen = {}
             )
         }

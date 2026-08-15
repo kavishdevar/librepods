@@ -48,42 +48,50 @@ fun PrivacyPolicyPage(
 
             Text(
                 text = "Overview",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "LibrePods does not collect, store, sell, or share personal information for advertising, analytics, tracking, or profiling purposes. The app does not include analytics, crash reporting, telemetry, advertising SDKs, or tracking services.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "All information remains on your device unless you explicitly choose to contact me, create a GitHub issue from the app, or make a purchase or sponsorship through a third-party platform.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "Third Party Services",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "LibrePods provides several ways to contact me, including email, Discord, and GitHub Issues.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "Email",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "If you contact me by email, I receive your email address and any information you choose to include in your message. When using the contact form within LibrePods, your email client will open with a pre-filled email address, the subject line and body that you fill out. The body will also include LibrePods version information and device information to help with troubleshooting.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "You can edit or remove any of this information before sending the email.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
@@ -93,22 +101,26 @@ fun PrivacyPolicyPage(
 
             Text(
                 text = "The app provides a link to the LibrePods Discord server. If you choose to join the Discord server, you will be subject to Discord's privacy policy.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "I do not receive any information about you from Discord other than what is publicly visible in the Discord server, such as your username, joining date, common servers, and any messages or content you post in the server, unless you choose to share it with me in the Discord server.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "GitHub Issues",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "When creating a GitHub issue through LibrePods, the app will pre-fill the issue form with:",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Column(
@@ -117,68 +129,86 @@ fun PrivacyPolicyPage(
             ) {
                 Text(
                     "• LibrePods version name and version code",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = "• Device manufacturer and model",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = "• Android build information",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = "• Installation source (Google Play or GitHub)",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
             Text(
                 text = "This information helps diagnose bugs and provide support. No information is sent automatically. The information is only submitted if you choose to create the GitHub issue.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
-                text = "Payments", style = MaterialTheme.typography.titleLarge
+                text = "Payments",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             if (BuildConfig.PLAY_BUILD) {
                 Text(
-                    text = "Google Play", style = MaterialTheme.typography.titleMedium
+                    text = "Google Play",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Text(
                     text = "When using the version available on Google Play, purchases are processed by Google Play.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Text(
                     text = "LibrePods verifies the purchase with Google Play on-device, not with a remote server that I control. I do not receive any information about you or your purchase from Google Play. Payment processing is handled entirely by Google Play, and I do not have access to any of your payment information.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             } else {
                 Text(
-                    text = "GitHub Sponsors", style = MaterialTheme.typography.titleMedium
+                    text = "GitHub Sponsors",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Text(
                     text = "When using the FOSS version available on GitHub, the upgrade button links to GitHub Sponsors. If you choose to sponsor LibrePods, your sponsorship is processed by GitHub.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Text(
                     text = "Your username and country/region are shared with me when you sponsor LibrePods. Depending on your GitHub Sponsors privacy settings, I may also receive your email address.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
 
             Text(
-                text = "Contact", style = MaterialTheme.typography.titleLarge
+                text = "Contact",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Text(
                 text = "If you have questions about this privacy policy, please contact me via email at privacy@kavish.xyz.",
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
             Button(
@@ -187,7 +217,7 @@ fun PrivacyPolicyPage(
             ) {
                 Text(
                     text = stringResource(R.string.i_agree),
-                    style = MaterialTheme.typography.labelMediumEmphasized
+                    style = MaterialTheme.typography.labelMediumEmphasized,
                 )
             }
 

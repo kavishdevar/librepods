@@ -18,7 +18,6 @@
 
 package me.kavishdevar.librepods.presentation.screens.apple
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -56,6 +55,7 @@ import me.kavishdevar.librepods.devices.BaseCapability
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.components.StyledSlider
 import me.kavishdevar.librepods.presentation.components.StyledToggle
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
@@ -67,7 +67,12 @@ import kotlin.time.Duration.Companion.milliseconds
 //private var phoneMediaDebounceJob: Job? = null
 
 @Composable
-fun AccessibilitySettingsScreen(viewModel: AppleViewModel, navigateToPurchase: () -> Unit, navigateToTransparencyCustomization: () -> Unit) {
+fun AccessibilitySettingsScreen(
+    viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?,
+    navigateToPurchase: () -> Unit,
+    navigateToTransparencyCustomization: () -> Unit
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     val state = uiState.state
@@ -82,89 +87,88 @@ fun AccessibilitySettingsScreen(viewModel: AppleViewModel, navigateToPurchase: (
         )?.toInt() == 1
 
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    StyledScaffold(
+        title = stringResource(R.string.accessibility),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-
-        if (!uiState.isPremium) {
-            StyledButton(
-                onClick = navigateToPurchase,
-                backdrop = rememberLayerBackdrop(),
-                modifier = Modifier.fillMaxWidth(),
-                maxScale = 0.05f,
-                surfaceColor = MaterialTheme.colorScheme.primary
-            ) {
-                Text(
-                    stringResource(R.string.unlock_advanced_features),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimary
-                )
+            if (!uiState.isPremium) {
+                StyledButton(
+                    onClick = navigateToPurchase,
+                    backdrop = rememberLayerBackdrop(),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxScale = 0.05f,
+                    surfaceColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        stringResource(R.string.unlock_advanced_features),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
 
 //            val phoneMediaEQ = remember { mutableStateOf(FloatArray(8) { 0.5f }) }
 //            val phoneEQEnabled = remember { mutableStateOf(false) }
 //            val mediaEQEnabled = remember { mutableStateOf(false) }
 
-        val pressSpeedOptions = mapOf(
-            0.toByte() to stringResource(R.string.default_option),
-            1.toByte() to stringResource(R.string.slower),
-            2.toByte() to stringResource(R.string.slowest)
-        )
+            val pressSpeedOptions = mapOf(
+                0.toByte() to stringResource(R.string.default_option),
+                1.toByte() to stringResource(R.string.slower),
+                2.toByte() to stringResource(R.string.slowest)
+            )
 
-        val selectedPressSpeedValue =
-            state.controlStates[ControlCommandIdentifier.DOUBLE_CLICK_INTERVAL]?.getOrNull(
-                0
-            )
-        var selectedPressSpeed by remember {
-            mutableStateOf(
-                pressSpeedOptions[selectedPressSpeedValue] ?: pressSpeedOptions[0]
-            )
-        }
+            val selectedPressSpeedValue =
+                state.controlStates[ControlCommandIdentifier.DOUBLE_CLICK_INTERVAL]?.getOrNull(
+                    0
+                )
+            var selectedPressSpeed by remember {
+                mutableStateOf(
+                    pressSpeedOptions[selectedPressSpeedValue] ?: pressSpeedOptions[0]
+                )
+            }
 
-        val pressAndHoldDurationOptions = mapOf(
-            0.toByte() to stringResource(R.string.default_option),
-            1.toByte() to stringResource(R.string.slower),
-            2.toByte() to stringResource(R.string.slowest)
-        )
+            val pressAndHoldDurationOptions = mapOf(
+                0.toByte() to stringResource(R.string.default_option),
+                1.toByte() to stringResource(R.string.slower),
+                2.toByte() to stringResource(R.string.slowest)
+            )
 
-        val selectedPressAndHoldDurationValue =
-            state.controlStates[ControlCommandIdentifier.CLICK_HOLD_INTERVAL]?.getOrNull(
-                0
-            )
-        var selectedPressAndHoldDuration by remember {
-            mutableStateOf(
-                pressAndHoldDurationOptions[selectedPressAndHoldDurationValue]
-                    ?: pressAndHoldDurationOptions[0]
-            )
-        }
+            val selectedPressAndHoldDurationValue =
+                state.controlStates[ControlCommandIdentifier.CLICK_HOLD_INTERVAL]?.getOrNull(
+                    0
+                )
+            var selectedPressAndHoldDuration by remember {
+                mutableStateOf(
+                    pressAndHoldDurationOptions[selectedPressAndHoldDurationValue]
+                        ?: pressAndHoldDurationOptions[0]
+                )
+            }
 
-        val volumeSwipeSpeedOptions = mapOf(
-            1.toByte() to stringResource(R.string.default_option),
-            2.toByte() to stringResource(R.string.longer),
-            3.toByte() to stringResource(R.string.longest)
-        )
-        val selectedVolumeSwipeSpeedValue =
-            state.controlStates[ControlCommandIdentifier.VOLUME_SWIPE_INTERVAL]?.getOrNull(
-                0
+            val volumeSwipeSpeedOptions = mapOf(
+                1.toByte() to stringResource(R.string.default_option),
+                2.toByte() to stringResource(R.string.longer),
+                3.toByte() to stringResource(R.string.longest)
             )
-        var selectedVolumeSwipeSpeed by remember {
-            mutableStateOf(
-                volumeSwipeSpeedOptions[selectedVolumeSwipeSpeedValue]
-                    ?: volumeSwipeSpeedOptions[1]
-            )
-        }
+            val selectedVolumeSwipeSpeedValue =
+                state.controlStates[ControlCommandIdentifier.VOLUME_SWIPE_INTERVAL]?.getOrNull(
+                    0
+                )
+            var selectedVolumeSwipeSpeed by remember {
+                mutableStateOf(
+                    volumeSwipeSpeedOptions[selectedVolumeSwipeSpeedValue]
+                        ?: volumeSwipeSpeedOptions[1]
+                )
+            }
 
 //        val phoneMediaEQ = remember { mutableStateOf(FloatArray(8) { 0.5f }) }
 //        val phoneEQEnabled = remember { mutableStateOf(false) }
@@ -191,151 +195,151 @@ fun AccessibilitySettingsScreen(viewModel: AppleViewModel, navigateToPurchase: (
 //            }
 //        }
 
-        StyledList(
-            title = stringResource(R.string.press_speed),
-            description = stringResource(R.string.press_speed_description)
-        ) {
-            pressSpeedOptions.forEach { (value, label) ->
-                StyledListItem(
-                    contentText = label,
-                    selected = selectedPressSpeed == label,
-                    onClick = {
-                        selectedPressSpeed = label
-
-                        viewModel.setControlCommand(
-                            identifier = ControlCommandIdentifier.DOUBLE_CLICK_INTERVAL,
-                            value = value
-                        )
-                    }
-                )
-            }
-        }
-
-        StyledList(
-            title = stringResource(R.string.press_and_hold_duration),
-            description = stringResource(R.string.press_and_hold_duration_description)
-        ) {
-            pressAndHoldDurationOptions.forEach { (value, label) ->
-                StyledListItem(
-                    contentText = label,
-                    selected = selectedPressAndHoldDuration == label,
-                    onClick = {
-                        selectedPressAndHoldDuration = label
-
-                        viewModel.setControlCommand(
-                            identifier = ControlCommandIdentifier.CLICK_HOLD_INTERVAL,
-                            value = value
-                        )
-                    }
-                )
-            }
-        }
-
-        StyledToggle(
-            title = stringResource(R.string.noise_control),
-            label = stringResource(R.string.noise_cancellation_single_airpod),
-            description = stringResource(R.string.noise_cancellation_single_airpod_description),
-            checked = state.controlStates[ControlCommandIdentifier.ONE_BUD_ANC_MODE]?.getOrNull(
-                0
-            ) == 0x01.toByte(),
-            onCheckedChange = {
-                viewModel.setControlCommand(
-                    ControlCommandIdentifier.ONE_BUD_ANC_MODE, it
-                )
-            },
-            enabled = uiState.isPremium
-        )
-
-        if (AirPodsSpecs.getSpec(metadata.model).baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION) && uiState.vendorIdHook) {
-            StyledToggle(
-                label = stringResource(R.string.loud_sound_reduction),
-                description = stringResource(R.string.loud_sound_reduction_description),
-                checked = state.loudSoundReductionEnabled,
-                onCheckedChange = {
-                    viewModel.writeATTCharacteristic(
-                        ATTHandle.LOUD_SOUND_REDUCTION,
-                        if (it) byteArrayOf(0x01) else byteArrayOf(0x00)
-                    )
-                },
-                enabled = uiState.isPremium
-            )
-        }
-
-        if (!hearingAidEnabled && uiState.vendorIdHook) {
-            StyledListItem(
-                contentText = stringResource(R.string.customize_transparency_mode),
-                onClick = navigateToTransparencyCustomization,
-                enabled = uiState.isPremium
-            )
-        }
-
-        val toneVolumeValue = remember { mutableFloatStateOf(state.controlStates[ControlCommandIdentifier.CHIME_VOLUME]?.getOrNull(0)?.toFloat() ?: 75f) }
-
-        LaunchedEffect(toneVolumeValue) {
-            snapshotFlow {
-                toneVolumeValue.floatValue
-            }
-                .debounce(100.milliseconds)
-                .collect {
-                    viewModel.setControlCommand(
-                        ControlCommandIdentifier.CHIME_VOLUME,
-                        byteArrayOf(it.toInt().toByte(), 0x50)
-                    )
-                }
-        }
-
-        StyledSlider(
-            label = stringResource(R.string.tone_volume),
-            description = stringResource(R.string.tone_volume_description),
-            value = toneVolumeValue.floatValue,
-            onValueChange = {
-                toneVolumeValue.floatValue = it
-            },
-            valueRange = 0f..100f,
-            snapPoints = listOf(75f),
-            startImageVector = LocalIcons.current.SpeakerMin,
-            endImageVector = LocalIcons.current.SpeakerMax,
-            independent = true,
-            enabled = uiState.isPremium
-        )
-
-        if (AirPodsSpecs.getSpec(metadata.model).baseCapabilities.contains(BaseCapability.SWIPE_FOR_VOLUME)) {
-            val volumeSwipeEnabled =
-                state.controlStates[ControlCommandIdentifier.VOLUME_SWIPE_MODE]?.getOrNull(
-                    0
-                )?.toInt() == 0x01
-            StyledToggle(
-                label = stringResource(R.string.volume_control),
-                description = stringResource(R.string.volume_control_description),
-                checked = volumeSwipeEnabled,
-                onCheckedChange = {
-                    viewModel.setControlCommand(
-                        ControlCommandIdentifier.VOLUME_SWIPE_MODE, it
-                    )
-                },
-                enabled = uiState.isPremium
-            )
-
             StyledList(
-                title = stringResource(R.string.volume_swipe_speed),
-                description = stringResource(R.string.volume_swipe_speed_description)
+                title = stringResource(R.string.press_speed),
+                description = stringResource(R.string.press_speed_description)
             ) {
-                volumeSwipeSpeedOptions.forEach { (value, label) ->
+                pressSpeedOptions.forEach { (value, label) ->
                     StyledListItem(
                         contentText = label,
-                        selected = selectedVolumeSwipeSpeed == label,
+                        selected = selectedPressSpeed == label,
                         onClick = {
-                            selectedVolumeSwipeSpeed = label
+                            selectedPressSpeed = label
 
                             viewModel.setControlCommand(
-                                identifier = ControlCommandIdentifier.VOLUME_SWIPE_INTERVAL,
+                                identifier = ControlCommandIdentifier.DOUBLE_CLICK_INTERVAL,
                                 value = value
                             )
                         }
                     )
                 }
             }
-        }
+
+            StyledList(
+                title = stringResource(R.string.press_and_hold_duration),
+                description = stringResource(R.string.press_and_hold_duration_description)
+            ) {
+                pressAndHoldDurationOptions.forEach { (value, label) ->
+                    StyledListItem(
+                        contentText = label,
+                        selected = selectedPressAndHoldDuration == label,
+                        onClick = {
+                            selectedPressAndHoldDuration = label
+
+                            viewModel.setControlCommand(
+                                identifier = ControlCommandIdentifier.CLICK_HOLD_INTERVAL,
+                                value = value
+                            )
+                        }
+                    )
+                }
+            }
+
+            StyledToggle(
+                title = stringResource(R.string.noise_control),
+                label = stringResource(R.string.noise_cancellation_single_airpod),
+                description = stringResource(R.string.noise_cancellation_single_airpod_description),
+                checked = state.controlStates[ControlCommandIdentifier.ONE_BUD_ANC_MODE]?.getOrNull(
+                    0
+                ) == 0x01.toByte(),
+                onCheckedChange = {
+                    viewModel.setControlCommand(
+                        ControlCommandIdentifier.ONE_BUD_ANC_MODE, it
+                    )
+                },
+                enabled = uiState.isPremium
+            )
+
+            if (AirPodsSpecs.getSpec(metadata.model).baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION) && uiState.vendorIdHook) {
+                StyledToggle(
+                    label = stringResource(R.string.loud_sound_reduction),
+                    description = stringResource(R.string.loud_sound_reduction_description),
+                    checked = state.loudSoundReductionEnabled,
+                    onCheckedChange = {
+                        viewModel.writeATTCharacteristic(
+                            ATTHandle.LOUD_SOUND_REDUCTION,
+                            if (it) byteArrayOf(0x01) else byteArrayOf(0x00)
+                        )
+                    },
+                    enabled = uiState.isPremium
+                )
+            }
+
+            if (!hearingAidEnabled && uiState.vendorIdHook) {
+                StyledListItem(
+                    contentText = stringResource(R.string.customize_transparency_mode),
+                    onClick = navigateToTransparencyCustomization,
+                    enabled = uiState.isPremium
+                )
+            }
+
+            val toneVolumeValue = remember { mutableFloatStateOf(state.controlStates[ControlCommandIdentifier.CHIME_VOLUME]?.getOrNull(0)?.toFloat() ?: 75f) }
+
+            LaunchedEffect(toneVolumeValue) {
+                snapshotFlow {
+                    toneVolumeValue.floatValue
+                }
+                    .debounce(100.milliseconds)
+                    .collect {
+                        viewModel.setControlCommand(
+                            ControlCommandIdentifier.CHIME_VOLUME,
+                            byteArrayOf(it.toInt().toByte(), 0x50)
+                        )
+                    }
+            }
+
+            StyledSlider(
+                label = stringResource(R.string.tone_volume),
+                description = stringResource(R.string.tone_volume_description),
+                value = toneVolumeValue.floatValue,
+                onValueChange = {
+                    toneVolumeValue.floatValue = it
+                },
+                valueRange = 0f..100f,
+                snapPoints = listOf(75f),
+                startImageVector = LocalIcons.current.SpeakerMin,
+                endImageVector = LocalIcons.current.SpeakerMax,
+                independent = true,
+                enabled = uiState.isPremium
+            )
+
+            if (AirPodsSpecs.getSpec(metadata.model).baseCapabilities.contains(BaseCapability.SWIPE_FOR_VOLUME)) {
+                val volumeSwipeEnabled =
+                    state.controlStates[ControlCommandIdentifier.VOLUME_SWIPE_MODE]?.getOrNull(
+                        0
+                    )?.toInt() == 0x01
+                StyledToggle(
+                    label = stringResource(R.string.volume_control),
+                    description = stringResource(R.string.volume_control_description),
+                    checked = volumeSwipeEnabled,
+                    onCheckedChange = {
+                        viewModel.setControlCommand(
+                            ControlCommandIdentifier.VOLUME_SWIPE_MODE, it
+                        )
+                    },
+                    enabled = uiState.isPremium
+                )
+
+                StyledList(
+                    title = stringResource(R.string.volume_swipe_speed),
+                    description = stringResource(R.string.volume_swipe_speed_description)
+                ) {
+                    volumeSwipeSpeedOptions.forEach { (value, label) ->
+                        StyledListItem(
+                            contentText = label,
+                            selected = selectedVolumeSwipeSpeed == label,
+                            onClick = {
+                                selectedVolumeSwipeSpeed = label
+
+                                viewModel.setControlCommand(
+                                    identifier = ControlCommandIdentifier.VOLUME_SWIPE_INTERVAL,
+                                    value = value
+                                )
+                            }
+                        )
+                    }
+                }
+            }
 
 //            if (!hearingAidEnabled && XposedState.isAvailable) {
 //                Text(
@@ -570,6 +574,7 @@ fun AccessibilitySettingsScreen(viewModel: AppleViewModel, navigateToPurchase: (
 //                    }
 //                }
 //            }
-        Spacer(modifier = Modifier.height(bottomPadding))
+            Spacer(modifier = Modifier.height(bottomPadding))
+        }
     }
 }

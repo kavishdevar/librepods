@@ -18,17 +18,11 @@
 
 package me.kavishdevar.librepods.presentation.screens.apple
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -38,46 +32,48 @@ import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.theme.DesignSystem
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 
 @Composable
-fun VersionScreen(viewModel: AppleViewModel) {
+fun VersionScreen(
+    viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?
+) {
     val uiState by viewModel.uiState.collectAsState()
 
     val metadata = uiState.metadata
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    StyledScaffold(
+        title = stringResource(R.string.version),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(topPadding))
+            StyledList(title = stringResource(R.string.version)) {
+                StyledListItem(
+                    contentText = stringResource(R.string.version) + " 1",
+                    supportingText = metadata.version1,
+                    enabled = false
+                )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(modifier = Modifier.height(topPadding))
-        StyledList(title = stringResource(R.string.version)) {
-            StyledListItem(
-                contentText = stringResource(R.string.version) + " 1",
-                supportingText = metadata.version1,
-                enabled = false
-            )
+                StyledListItem(
+                    contentText = stringResource(R.string.version) + " 2",
+                    supportingText = metadata.version2,
+                    enabled = false
+                )
 
-            StyledListItem(
-                contentText = stringResource(R.string.version) + " 2",
-                supportingText = metadata.version2,
-                enabled = false
-            )
-
-            StyledListItem(
-                contentText = stringResource(R.string.version) + " 3",
-                supportingText = metadata.version3,
-                enabled = false
-            )
+                StyledListItem(
+                    contentText = stringResource(R.string.version) + " 3",
+                    supportingText = metadata.version3,
+                    enabled = false
+                )
+            }
+            Spacer(modifier = Modifier.height(bottomPadding))
         }
-        Spacer(modifier = Modifier.height(bottomPadding))
     }
 }

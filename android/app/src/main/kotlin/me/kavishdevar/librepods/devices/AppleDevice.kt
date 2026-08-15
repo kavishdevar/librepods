@@ -18,12 +18,17 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.bluetooth.aacp.AACPManager
+import me.kavishdevar.librepods.bluetooth.aacp.rtbuddy.proto.SensorServiceType
 import me.kavishdevar.librepods.bluetooth.aacp.types.AppleEvent
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.bluetooth.att.ATTManager
 import me.kavishdevar.librepods.data.StemAction
+import me.kavishdevar.librepods.utils.GestureDetector
+import me.kavishdevar.librepods.utils.HeadTracking
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 private const val TAG = "AppleDevice"
 
@@ -76,6 +81,12 @@ class AppleDevice(
 
     val aacp = AACPManager(this)
     val att = ATTManager(this)
+
+
+    // ik, probably wrong place. TODO
+    private val gestureDetector by lazy {
+        GestureDetector()
+    }
 
     init {
         updateMetadata {
@@ -205,30 +216,59 @@ class AppleDevice(
     }
 
     fun startHeadTracking() {
-        if (settings.value.alternateHeadTrackingPackets) {
-            aacp.sendStartAlternateHeadTracking()
-        } else {
-            aacp.sendStartHeadTracking()
-        }
+        aacp.setSensorServiceReportInterval(
+            sensorServiceType = if (metadata.value.version3.first().digitToInt() >= 8) SensorServiceType.DEVMOTION6 else SensorServiceType.ACTIVITY,
+            interval = _settings.value.headTrackingInterval
+        )
         _state.update {
             it.copy(headTrackingActive = true)
         }
     }
 
     fun stopHeadTracking() {
-        if (settings.value.alternateHeadTrackingPackets) {
-            aacp.sendStopAlternateHeadTracking()
-        } else {
-            aacp.sendStopHeadTracking()
-        }
+        aacp.setSensorServiceReportInterval(
+            sensorServiceType = if (metadata.value.version3.first().digitToInt() >= 8) SensorServiceType.DEVMOTION6 else SensorServiceType.ACTIVITY,
+            interval = Duration.ZERO
+        )
         _state.update {
             it.copy(headTrackingActive = false)
         }
+        gestureDetector.stopDetection()
+    }
+
+    fun detectHeadGestures(callback: (Boolean) -> Unit) {
+        if (!state.value.headTrackingActive) startHeadTracking()
+        if (!state.value.headTrackingActive) {
+            aacp.setSensorServiceReportInterval(
+                sensorServiceType = if (metadata.value.version3.first().digitToInt() >= 8) SensorServiceType.DEVMOTION6 else SensorServiceType.ACTIVITY,
+                interval = 40.milliseconds
+            )
+        }
+        gestureDetector.startDetection(HeadTracking.acceleration, callback)
     }
 
     fun setHeadGesturesEnabled(enabled: Boolean) {
         _settings.update {
             it.copy(headGesturesEnabled = enabled)
+        }
+    }
+
+    fun setHeadGesturesVerticalOffset(offset: Int) {
+        _settings.update {
+            it.copy(headGesturesVerticalOffset = offset)
+        }
+    }
+
+    fun setHeadGesturesHorizontalOffset(offset: Int) {
+        _settings.update {
+            it.copy(headGesturesHorizontalOffset = offset)
+        }
+    }
+
+    fun setHeadTrackingInterval(interval: Duration) {
+        startHeadTracking()
+        _settings.update {
+            it.copy(headTrackingInterval = interval)
         }
     }
 
@@ -243,17 +283,24 @@ class AppleDevice(
         aacp.setCustomEq(_state.value.customEq.copy(low = low, mid = mid, high = high))
     }
 
-    fun testHeadGestures() {
-        if (settings.value.alternateHeadTrackingPackets) {
-            aacp.sendStartAlternateHeadTracking()
-        } else {
-            aacp.sendStartHeadTracking()
-        }
-        _state.update {
+    // AACPManager sets hrmActive true when a valid reading is received
+    fun startHr(): Boolean = aacp.setSensorServiceReportInterval(
+        sensorServiceType = if (metadata.value.version3.first().digitToInt() >= 8) SensorServiceType.HEARTRATE_COMMAND else SensorServiceType.HEARTRATE,
+        interval = 1.seconds
+    )
+
+    fun stopHr(): Boolean {
+        val success = aacp.setSensorServiceReportInterval(
+            sensorServiceType = if (metadata.value.version3.first().digitToInt() >= 8) SensorServiceType.HEARTRATE_COMMAND else SensorServiceType.HEARTRATE,
+            interval = Duration.ZERO
+        )
+        if (state.value.hrmActive && success) _state.update {
             it.copy(
-                detectHeadGestures = true
+                hrmActive = false,
+                currentHeartRate = null
             )
         }
+        return success
     }
 
     fun sendRawPacket(data: ByteArray): Boolean = aacp.sendRawPacket(data)

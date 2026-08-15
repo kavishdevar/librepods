@@ -759,12 +759,13 @@ fun StyledSliderPreview() {
     ) {
         StyledScaffold(
             title = "test",
-        ) {
+            navigateBack = null
+        ) { topPadding, bottomPadding ->
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Spacer(modifier = Modifier.height(72.dp))
+                Spacer(modifier = Modifier.height(topPadding))
                 StyledSlider(
                     value = a.floatValue,
                     onValueChange = {
@@ -803,6 +804,7 @@ fun StyledSliderPreview() {
                     independent = true,
                     description = stringResource(R.string.adaptive_audio_description),
                 )
+                Spacer(modifier = Modifier.height(bottomPadding))
             }
         }
     }

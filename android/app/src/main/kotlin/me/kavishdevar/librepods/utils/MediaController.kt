@@ -30,6 +30,7 @@ import android.util.Log
 import android.view.KeyEvent
 import kotlin.io.encoding.ExperimentalEncodingApi
 
+// TODO: fragile play/pause, don't refactor unless needed. userPlayedMedia and iPaused etc. probably should not be here
 object MediaController {
     private var initialVolume: Int? = null
     private lateinit var audioManager: AudioManager

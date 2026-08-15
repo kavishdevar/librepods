@@ -18,6 +18,8 @@
 
 package me.kavishdevar.librepods.presentation.components
 
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -27,6 +29,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -61,10 +64,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.consumePositionChange
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.kyant.backdrop.backdrops.LayerBackdrop
@@ -75,6 +85,9 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
+import me.kavishdevar.librepods.presentation.navigation.LocalIsCurrentEntry
+import me.kavishdevar.librepods.presentation.navigation.LocalSharedTransitionScope
+import me.kavishdevar.librepods.presentation.navigation.LocalTransitionProgress
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 
@@ -84,11 +97,10 @@ fun StyledScaffold(
     modifier: Modifier = Modifier,
     visible: Boolean = true,
     title: String,
-    showBackButton: Boolean = false,
-    onNavigateBack: () -> Unit = {},
+    navigateBack: (() -> Unit)?,
     actionButtons: List<@Composable (backdrop: LayerBackdrop) -> Unit> = emptyList(),
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
-    content: @Composable () -> Unit
+    content: @Composable (topPadding: Dp, bottomPadding: Dp) -> Unit
 ) {
     val hazeState = rememberHazeState(blurEnabled = true)
 
@@ -105,14 +117,18 @@ fun StyledScaffold(
                     ) {
                         TopAppBar(
                             navigationIcon = {
-                                if (showBackButton) {
+                                if (navigateBack != null) {
                                     Row {
                                         Spacer(modifier = Modifier.width(12.dp))
                                         FilledTonalIconButton(
-                                            onClick = onNavigateBack,
+                                            onClick = navigateBack,
                                             modifier = Modifier
                                                 .minimumInteractiveComponentSize()
-                                                .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Narrow)),
+                                                .size(
+                                                    IconButtonDefaults.mediumContainerSize(
+                                                        IconButtonDefaults.IconButtonWidthOption.Narrow
+                                                    )
+                                                ),
                                             shape = IconButtonDefaults.mediumRoundShape
                                         ) {
                                             Icon(
@@ -130,7 +146,7 @@ fun StyledScaffold(
                                         text = it,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(start = if (showBackButton) 8.dp else 12.dp, end = 12.dp),
+                                        modifier = Modifier.padding(start = if (navigateBack != null) 8.dp else 12.dp, end = 12.dp),
                                         style = MaterialTheme.typography.titleSmall
                                     )
                                 }
@@ -146,15 +162,20 @@ fun StyledScaffold(
                     }
                 },
             ) { paddingValues ->
-                Column(
+                Box(
                     modifier = modifier
-                        .then(if (visible) Modifier.padding(start = paddingValues.calculateStartPadding(LocalLayoutDirection.current), end = paddingValues.calculateEndPadding(LocalLayoutDirection.current)) else Modifier)
+                        .then(
+                            if (visible) Modifier.padding(
+                                start = paddingValues.calculateStartPadding(
+                                    LocalLayoutDirection.current
+                                ),
+                                end = paddingValues.calculateEndPadding(LocalLayoutDirection.current)
+                            ) else Modifier
+                        )
                         .fillMaxSize()
                         .hazeSource(hazeState)
                 ) {
-                    Spacer(modifier = Modifier.height(paddingValues.calculateTopPadding()))
-                    content()
-                    Spacer(modifier = Modifier.height(paddingValues.calculateBottomPadding()))
+                    content(paddingValues.calculateTopPadding(), paddingValues.calculateBottomPadding())
                 }
             }
         }
@@ -173,6 +194,7 @@ fun StyledScaffold(
                     )
             ) { paddingValues ->
                 val topPadding = paddingValues.calculateTopPadding()
+                val bottomPadding = paddingValues.calculateBottomPadding()
                 val startPadding = paddingValues.calculateLeftPadding(LocalLayoutDirection.current)
                 val endPadding = paddingValues.calculateRightPadding(LocalLayoutDirection.current)
 
@@ -184,31 +206,80 @@ fun StyledScaffold(
                 ) {
                     val backdrop = rememberLayerBackdrop()
                     val bgColor = MaterialTheme.colorScheme.surfaceContainer
-                    AnimatedVisibility(
-                        visible = showBackButton,
-                        enter = fadeIn() + scaleIn(
-                            initialScale = 0f,
-                            animationSpec = tween()
-                        ),
-                        exit = fadeOut() + scaleOut(
-                            targetScale = 0.5f,
-                            animationSpec = tween(100)
-                        ),
-                        modifier = Modifier
-                            .zIndex(3f)
-                            .padding(top = topPadding, start = 8.dp)
-                            .align(Alignment.TopStart)
-                    ) {
-                        StyledIconButton(
-                            onClick = onNavigateBack,
-                            backdrop = backdrop
-                        ) {
-                            Icon(
-                                imageVector = LocalIcons.current.ArrowBack,
-                                contentDescription = "Back",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
+
+                    val density = LocalDensity.current
+                    val screenWidthPx = with(density) {
+                        LocalWindowInfo.current.containerDpSize.width.toPx()
+                    }
+                    val isCurrentEntry = LocalIsCurrentEntry.current
+                    val transitionProgress = LocalTransitionProgress.current
+                    val sharedTransitionScope = LocalSharedTransitionScope.current
+
+                    val showBackButton = if (transitionProgress == 0f) navigateBack != null else !isCurrentEntry
+
+                    if (showBackButton) {
+                        with(sharedTransitionScope) {
+                            Box(
+                                modifier = Modifier
+                                    .zIndex(3f)
+                                    .padding(top = topPadding, start = 8.dp)
+                                    .align(Alignment.TopStart)
+                                    .pointerInput(Unit) {
+                                        awaitPointerEventScope {
+                                            while (true) {
+                                                awaitFirstDown(requireUnconsumed = false)
+
+                                                do {
+                                                    val event = awaitPointerEvent()
+
+                                                    event.changes.forEach { change ->
+                                                        change.consumePositionChange()
+                                                    }
+                                                } while (event.changes.any { it.pressed })
+                                            }
+                                        }
+                                    }
+                                    .renderInSharedTransitionScopeOverlay(
+                                        zIndexInOverlay = 3f,
+                                        renderInOverlay = {
+                                            !isCurrentEntry && transitionProgress != 0f
+                                        }
+                                    )
+                                    .graphicsLayer { // AI generated
+                                        if (!isCurrentEntry && navigateBack == null && transitionProgress < 0f) {
+                                            val progress = (-transitionProgress).coerceIn(0f, 1f)
+
+                                            val eased = progress * progress * (3f - 2f * progress)
+
+                                            val scale = 1f - 0.18f * eased
+
+                                            scaleX = scale
+                                            scaleY = scale
+
+                                            alpha = 1f - 0.28f * eased
+
+                                            val blur = 8f * progress
+
+                                            renderEffect = RenderEffect.createBlurEffect(
+                                                blur,
+                                                blur,
+                                                Shader.TileMode.DECAL
+                                            ).asComposeRenderEffect()
+                                        }
+                                    }
+                            ) {
+                                StyledIconButton(
+                                    onClick = { navigateBack?.invoke() },
+                                    backdrop = backdrop // i know, this doesn't capture what's actually beneath it. but it's going to matter just in the transition.
+                                ) {
+                                    Icon(
+                                        imageVector = LocalIcons.current.ArrowBack,
+                                        contentDescription = "Back",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -270,6 +341,21 @@ fun StyledScaffold(
                             .zIndex(3f)
                             .padding(top = topPadding, end = 8.dp)
                             .align(Alignment.TopEnd)
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        awaitFirstDown(requireUnconsumed = false)
+
+                                        do {
+                                            val event = awaitPointerEvent()
+
+                                            event.changes.forEach { change ->
+                                                change.consumePositionChange()
+                                            }
+                                        } while (event.changes.any { it.pressed })
+                                    }
+                                }
+                            }
                     ) {
                         Row{
                             actionButtons.forEach { actionButton ->
@@ -283,7 +369,7 @@ fun StyledScaffold(
                             .hazeSource(hazeState)
                             .fillMaxSize()
                     ) {
-                        content()
+                        content(topPadding + 64.dp, bottomPadding)
                     }
                 }
             }

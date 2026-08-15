@@ -30,20 +30,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.visible
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,7 +67,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
@@ -86,9 +80,9 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.presentation.components.StyledButton
 import me.kavishdevar.librepods.presentation.components.StyledList
 import me.kavishdevar.librepods.presentation.components.StyledListItem
+import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
-import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AppleUiState
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 import kotlin.math.abs
@@ -96,32 +90,23 @@ import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
-fun EqualizerRoute(viewModel: AppleViewModel) {
+fun EqualizerRoute(
+    viewModel: AppleViewModel,
+    navigateBack: (() -> Unit)?
+) {
     val uiState by viewModel.uiState.collectAsState()
 
-    val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
-
-    Box (
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-    ) {
-        EqualizerScreen(
-            uiState = uiState,
-            topPadding = topPadding,
-            bottomPadding = bottomPadding,
-            setCustomEqEnabled = viewModel::setCustomEqEnabled,
-            setCustomEq = viewModel::setCustomEq
-        )
-    }
+    EqualizerScreen(
+        uiState = uiState,
+        navigateBack = navigateBack,
+        setCustomEqEnabled = viewModel::setCustomEqEnabled,
+        setCustomEq = viewModel::setCustomEq
+    )
 }
 @Composable
 fun EqualizerScreen(
     uiState: AppleUiState,
-    topPadding: Dp = 16.dp,
-    bottomPadding: Dp = 16.dp,
+    navigateBack: (() -> Unit)?,
     setCustomEqEnabled: (Boolean) -> Unit,
     setCustomEq: (Int, Int, Int) -> Unit
 ) {
@@ -131,102 +116,107 @@ fun EqualizerScreen(
 
     val scrollState = rememberScrollState()
 
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        val height = 200.dp
-        val maxOffset = with(LocalDensity.current) { height.toPx() } / 2
+    StyledScaffold(
+        title = stringResource(R.string.equalizer),
+        navigateBack = navigateBack
+    ) { topPadding, bottomPadding ->
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            val height = 200.dp
+            val maxOffset = with(LocalDensity.current) { height.toPx() } / 2
 
-        val offsets = remember(state.customEq) {
-            listOf(
-                mutableFloatStateOf(lerp(maxOffset, -maxOffset, customEq.low.toFloat() / 100)),
-                mutableFloatStateOf(lerp(maxOffset, -maxOffset, customEq.mid.toFloat() / 100)),
-                mutableFloatStateOf(lerp(maxOffset, -maxOffset, customEq.high.toFloat() / 100))
-            )
-        }
-
-        LaunchedEffect(offsets) {
-            snapshotFlow {
-                Triple(
-                    offsets[0].floatValue,
-                    offsets[1].floatValue,
-                    offsets[2].floatValue
+            val offsets = remember(state.customEq) {
+                listOf(
+                    mutableFloatStateOf(lerp(maxOffset, -maxOffset, customEq.low.toFloat() / 100)),
+                    mutableFloatStateOf(lerp(maxOffset, -maxOffset, customEq.mid.toFloat() / 100)),
+                    mutableFloatStateOf(lerp(maxOffset, -maxOffset, customEq.high.toFloat() / 100))
                 )
             }
-                .debounce(100.milliseconds) // nice, should've been using this since the very beginning
-                .collect { (lowF, midF, highF) ->
-                    val low =
-                        100 - ((lowF / (2 * maxOffset) + 0.5f) * 100).roundToInt()
-                    val mid =
-                        100 - ((midF / (2 * maxOffset) + 0.5f) * 100).roundToInt()
-                    val high =
-                        100 - ((highF / (2 * maxOffset) + 0.5f) * 100).roundToInt()
 
-                    setCustomEq(low, mid, high)
-                }
-        }
-
-        Spacer(modifier = Modifier.height(topPadding))
-
-        val enabled = customEq.isEnabled()
-
-        StyledList {
-            StyledListItem(
-                contentText = stringResource(R.string.recommended),
-                selected = !enabled,
-                onClick = { setCustomEqEnabled(false) }
-            )
-
-            StyledListItem(
-                contentText = stringResource(R.string.custom),
-                selected = enabled,
-                onClick = { setCustomEqEnabled(true) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Crossfade (
-            customEq.isEnabled()
-        ) { visible ->
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .visible(visible),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-
-                EqualizerCard(
-                    lowOffset = offsets[0],
-                    midOffset = offsets[1],
-                    highOffset = offsets[2]
-                )
-
-                val resetButtonEnabled = remember { derivedStateOf { !offsets.all { it.floatValue == 0f } } }
-
-                StyledButton(
-                    onClick = {
-                        offsets[0].floatValue = 0f
-                        offsets[1].floatValue = 0f
-                        offsets[2].floatValue = 0f
-                    },
-                    backdrop = rememberLayerBackdrop(),
-                    modifier = Modifier.fillMaxWidth(),
-                    isInteractive = false,
-                    enabled = resetButtonEnabled.value
-                ) {
-                    Text(
-                        text = stringResource(R.string.reset),
-                        style = MaterialTheme.typography.bodyMedium
+            LaunchedEffect(offsets) {
+                snapshotFlow {
+                    Triple(
+                        offsets[0].floatValue,
+                        offsets[1].floatValue,
+                        offsets[2].floatValue
                     )
                 }
-            }
-        }
+                    .debounce(100.milliseconds) // nice, should've been using this since the very beginning
+                    .collect { (lowF, midF, highF) ->
+                        val low =
+                            100 - ((lowF / (2 * maxOffset) + 0.5f) * 100).roundToInt()
+                        val mid =
+                            100 - ((midF / (2 * maxOffset) + 0.5f) * 100).roundToInt()
+                        val high =
+                            100 - ((highF / (2 * maxOffset) + 0.5f) * 100).roundToInt()
 
-        Spacer(modifier = Modifier.height(bottomPadding))
+                        setCustomEq(low, mid, high)
+                    }
+            }
+
+            Spacer(modifier = Modifier.height(topPadding))
+
+            val enabled = customEq.isEnabled()
+
+            StyledList {
+                StyledListItem(
+                    contentText = stringResource(R.string.recommended),
+                    selected = !enabled,
+                    onClick = { setCustomEqEnabled(false) }
+                )
+
+                StyledListItem(
+                    contentText = stringResource(R.string.custom),
+                    selected = enabled,
+                    onClick = { setCustomEqEnabled(true) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Crossfade (
+                customEq.isEnabled()
+            ) { visible ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .visible(visible),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+
+                    EqualizerCard(
+                        lowOffset = offsets[0],
+                        midOffset = offsets[1],
+                        highOffset = offsets[2]
+                    )
+
+                    val resetButtonEnabled = remember { derivedStateOf { !offsets.all { it.floatValue == 0f } } }
+
+                    StyledButton(
+                        onClick = {
+                            offsets[0].floatValue = 0f
+                            offsets[1].floatValue = 0f
+                            offsets[2].floatValue = 0f
+                        },
+                        backdrop = rememberLayerBackdrop(),
+                        modifier = Modifier.fillMaxWidth(),
+                        isInteractive = false,
+                        enabled = resetButtonEnabled.value
+                    ) {
+                        Text(
+                            text = stringResource(R.string.reset),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(bottomPadding))
+        }
     }
 }
 
@@ -698,15 +688,12 @@ fun EqualizerScreenPreviewApple() {
     ) {
         val state = remember { mutableStateOf(AppleUiState()) }
 
-        Box (
-            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
-        ) {
-            EqualizerScreen(
-                uiState = state.value,
-                setCustomEqEnabled = { state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(state = if (it) 2 else 1))) },
-                setCustomEq = {low, mid, high -> state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(low = low, mid = mid, high = high)))}
-            )
-        }
+        EqualizerScreen(
+            uiState = state.value,
+            navigateBack = null,
+            setCustomEqEnabled = { state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(state = if (it) 2 else 1))) },
+            setCustomEq = {low, mid, high -> state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(low = low, mid = mid, high = high)))}
+        )
     }
 }
 
@@ -717,16 +704,12 @@ fun EqualizerScreenPreviewMaterial() {
         designSystem = DesignSystem.Material
     ) {
         val state = remember { mutableStateOf(AppleUiState()) }
-        Box (
-            modifier = Modifier
-                .wrapContentHeight()
-                .background(MaterialTheme.colorScheme.surfaceContainer)
-        ) {
-            EqualizerScreen(
-                uiState = state.value,
-                setCustomEqEnabled = { state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(state = if (it) 2 else 1))) },
-                setCustomEq = {low, mid, high -> state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(low = low, mid = mid, high = high)))}
-            )
-        }
+
+        EqualizerScreen(
+            uiState = state.value,
+            navigateBack = null,
+            setCustomEqEnabled = { state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(state = if (it) 2 else 1))) },
+            setCustomEq = {low, mid, high -> state.value = state.value.copy(state = state.value.state.copy(customEq = state.value.state.customEq.copy(low = low, mid = mid, high = high)))}
+        )
     }
 }
