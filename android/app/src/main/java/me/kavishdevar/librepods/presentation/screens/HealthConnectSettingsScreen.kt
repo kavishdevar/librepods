@@ -81,11 +81,11 @@ fun HealthConnectSettingsScreen(viewModel: AirPodsViewModel) {
 
         StyledList(
             title = "Storage mode",
-            description = "Choose how heart-rate readings are stored in Health Connect."
+            description = "Heart-rate monitoring affects AirPods battery life equally in every mode."
         ) {
             StyledListItem(
                 name = "Every second",
-                description = "Write each validated reading as it arrives.",
+                description = "Store readings immediately for live data, using more phone battery.",
                 selected = healthConnect.mode == HealthConnectExportMode.EVERY_SECOND,
                 onClick = {
                     viewModel.setHealthConnectExportMode(HealthConnectExportMode.EVERY_SECOND)
@@ -95,7 +95,7 @@ fun HealthConnectSettingsScreen(viewModel: AirPodsViewModel) {
 
             StyledListItem(
                 name = "Batched",
-                description = "Keep every reading and write them together at intervals.",
+                description = "Keep every reading and write them together to save phone battery.",
                 selected = healthConnect.mode == HealthConnectExportMode.BATCHED,
                 onClick = {
                     viewModel.setHealthConnectExportMode(HealthConnectExportMode.BATCHED)
