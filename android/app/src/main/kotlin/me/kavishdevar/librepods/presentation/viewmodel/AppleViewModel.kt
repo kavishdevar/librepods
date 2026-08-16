@@ -198,5 +198,9 @@ class AppleViewModel(
         _heartRateRange.value = range
     }
 
+    fun updateSettings( transform : (AppleSettings) -> AppleSettings) {
+        device.updateSettings(transform)
+    }
+
     fun sendRawPacket(data: ByteArray): Boolean = device.sendRawPacket(data)
 }

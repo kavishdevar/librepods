@@ -48,9 +48,9 @@ import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.bluetooth.att.types.HearingAidSettings
 import me.kavishdevar.librepods.bluetooth.att.types.parseHearingAidSettingsResponse
 import me.kavishdevar.librepods.bluetooth.att.types.sendHearingAidSettings
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
-import me.kavishdevar.librepods.presentation.components.StyledSlider
-import me.kavishdevar.librepods.presentation.components.StyledToggle
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledSlider
+import me.kavishdevar.librepods.presentation.components.primitives.StyledToggle
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 

@@ -75,6 +75,12 @@ class AppleDevice(
         _metadata.update(transform)
     }
 
+    internal inline fun updateSettings(
+        transform: (AppleSettings) -> AppleSettings
+    ) {
+        _settings.update(transform)
+    }
+
     internal suspend fun emitEvent(event: AppleEvent) {
         _events.emit(event)
     }
@@ -197,12 +203,9 @@ class AppleDevice(
             currentByte or modeBit
         }
         setControlCommand(ControlCommandIdentifier.LISTENING_MODE_CONFIGS, newValue)
-//        sharedPreferences.edit { putInt("long_press_byte", newValue) }
     }
 
     fun setLongPressAction(side: String, action: StemAction) {
-//        val prefKey = if (side.lowercase() == "left") "left_long_press_action" else "right_long_press_action"
-//        sharedPreferences.edit { putString(prefKey, action.name) }
         _settings.update {
             if (side.lowercase() == "left") it.copy(leftLongPressAction = action) else it.copy(rightLongPressAction = action)
         }

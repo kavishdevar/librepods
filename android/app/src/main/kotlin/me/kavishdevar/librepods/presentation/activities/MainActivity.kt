@@ -25,7 +25,6 @@ import android.app.Activity
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
-import android.content.Context.MODE_PRIVATE
 import android.content.Intent
 import android.content.ServiceConnection
 import android.hardware.display.DisplayManager
@@ -46,7 +45,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import com.google.android.play.core.review.ReviewManagerFactory
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
@@ -56,9 +54,11 @@ import me.kavishdevar.librepods.LibrePodsApplication
 import me.kavishdevar.librepods.presentation.navigation.NavigationRoot
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
 import me.kavishdevar.librepods.presentation.theme.NightTheme
+import me.kavishdevar.librepods.repository.AppDataRepository
 import me.kavishdevar.librepods.services.LibrePodsService
 import me.kavishdevar.librepods.utils.XposedState
 import kotlin.io.encoding.ExperimentalEncodingApi
+import kotlin.time.Duration.Companion.hours
 
 private lateinit var serviceConnection: ServiceConnection
 private lateinit var connectionStatusReceiver: BroadcastReceiver
@@ -128,13 +128,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        try {
+        if (::serviceConnection.isInitialized) try {
             unbindService(serviceConnection)
             Log.d("MainActivity", "Unbound service")
         } catch (e: Exception) {
             Log.e("MainActivity", "Error while unbinding service: $e")
         }
-        try {
+        if (::connectionStatusReceiver.isInitialized) try {
             unregisterReceiver(connectionStatusReceiver)
             Log.d("MainActivity", "Unregistered receiver")
         } catch (e: Exception) {
@@ -142,41 +142,24 @@ class MainActivity : ComponentActivity() {
         }
         super.onDestroy()
     }
-
-    override fun onStop() {
-        try {
-            unbindService(serviceConnection)
-            Log.d("MainActivity", "Unbound service")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error while unbinding service: $e")
-        }
-        try {
-            unregisterReceiver(connectionStatusReceiver)
-            Log.d("MainActivity", "Unregistered receiver")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error while unregistering receiver: $e")
-        }
-        super.onStop()
-    }
 }
 
 @Composable
 fun Main() {
     val context = LocalContext.current
-    val sharedPreferences = context.getSharedPreferences("settings", MODE_PRIVATE)
-
     val librepodsService = remember { mutableStateOf<LibrePodsService?>(null) }
+
+    val appDataRepository: AppDataRepository = (LocalContext.current.applicationContext as LibrePodsApplication).appDataRepository
+    val appState by appDataRepository.state.collectAsState()
 
     LaunchedEffect(Unit) {
         if (BuildConfig.PLAY_BUILD) {
             val now = System.currentTimeMillis()
-            val firstConn =
-                sharedPreferences.getLong("first_connection_successful_time", 0L)
+            val firstConn = appState.firstSuccessfulConnectionTime?: 0L
 
-            val alreadyPrompted =
-                sharedPreferences.getBoolean("review_prompted", false)
+            val alreadyPrompted = appState.reviewPrompted
 
-            val oneDay = 24 * 60 * 60 * 1000L
+            val oneDay = 24.hours.inWholeMilliseconds
 
             if (
                 firstConn != 0L &&
@@ -185,17 +168,19 @@ fun Main() {
             ) {
                 triggerReviewFlow(context as? Activity ?: return@LaunchedEffect)
 
-                sharedPreferences.edit {
-                    putBoolean("review_prompted", true)
+                appDataRepository.updateState {
+                    it.copy(reviewPrompted = true)
                 }
             }
         }
     }
 
-    val onboardingComplete = sharedPreferences.getBoolean("onboarding_complete", false)
+    val onboardingComplete = appState.hasCompletedOnboarding
 
-    val releaseNotesShownPrefKey = "release_notes_shown_${BuildConfig.VERSION_NAME.removeSuffix("-debug").removeSuffix("-play")}"
-    val releaseNotesShown = sharedPreferences.getBoolean(releaseNotesShownPrefKey, false)
+    val currentVersion = BuildConfig.VERSION_NAME.removeSuffix("-debug").removeSuffix("-play")
+    val lastVersionShown = appState.lastVersionShown
+
+    val releaseNotesShown = lastVersionShown == currentVersion
 
     val devicesState = remember(librepodsService.value) {
         librepodsService.value?.devices ?: MutableStateFlow(emptyMap())
@@ -241,12 +226,6 @@ fun Main() {
                 val binder = service as LibrePodsService.LocalBinder
                 val service = binder.getService()
                 librepodsService.value = service
-
-                if (!sharedPreferences.contains("first_connection_successful_time")) {
-                    sharedPreferences.edit {
-                        putLong("first_connection_successful_time", System.currentTimeMillis())
-                    }
-                }
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
@@ -263,10 +242,16 @@ fun Main() {
 
     NavigationRoot(
         showReleaseNotes = !releaseNotesShown,
-        updatesShown = { sharedPreferences.edit { putBoolean(releaseNotesShownPrefKey, true) } },
+        updatesShown = {
+            appDataRepository.updateState {
+                it.copy(lastVersionShown = currentVersion)
+            }
+        },
         showOnboarding = !onboardingComplete,
         onboardingComplete = {
-            sharedPreferences.edit { putBoolean("onboarding_complete", true) }
+            appDataRepository.updateState {
+                it.copy(hasCompletedOnboarding = true)
+            }
             bindService()
         },
         devicesState = devicesState

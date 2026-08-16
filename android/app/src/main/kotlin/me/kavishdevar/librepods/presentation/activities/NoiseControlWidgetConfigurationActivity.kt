@@ -37,10 +37,10 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.database.widget.WidgetConfigEntity
 import me.kavishdevar.librepods.devices.Device
-import me.kavishdevar.librepods.presentation.components.StyledButton
-import me.kavishdevar.librepods.presentation.components.StyledList
-import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledButton
+import me.kavishdevar.librepods.presentation.components.primitives.StyledList
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
 import me.kavishdevar.librepods.presentation.theme.NightTheme

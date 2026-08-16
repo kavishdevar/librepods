@@ -18,9 +18,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.presentation.components.AppInfoCard
-import me.kavishdevar.librepods.presentation.components.DeviceInfoCard
-import me.kavishdevar.librepods.presentation.components.StyledListItem
+import me.kavishdevar.librepods.presentation.components.common.AppInfoCard
+import me.kavishdevar.librepods.presentation.components.common.DeviceInfoCard
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
 
 @Composable
 fun NotSupportedPage(

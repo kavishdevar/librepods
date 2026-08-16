@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "7a502eac34ab57e1c12ba8f849e172cf",
+    "identityHash": "c547604d916583c3b94c7bf1ac787fdf",
     "entities": [
       {
         "tableName": "AppleEntity",
@@ -102,11 +102,17 @@
       },
       {
         "tableName": "AppStateEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `hasCompletedOnboarding` INTEGER NOT NULL, `lastVersionShown` TEXT, `hasConnectedToAACP` INTEGER NOT NULL, `firstSuccessfulConnectionTime` INTEGER, `reviewPrompted` INTEGER NOT NULL, `timeUntilFOSSPremiumExpiry` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `isPremium` INTEGER NOT NULL, `hasCompletedOnboarding` INTEGER NOT NULL, `lastVersionShown` TEXT, `hasConnectedToAACP` INTEGER NOT NULL, `firstSuccessfulConnectionTime` INTEGER, `reviewPrompted` INTEGER NOT NULL, `timeUntilFOSSPremiumExpiry` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
             "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPremium",
+            "columnName": "isPremium",
             "affinity": "INTEGER",
             "notNull": true
           },
@@ -209,7 +215,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7a502eac34ab57e1c12ba8f849e172cf')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c547604d916583c3b94c7bf1ac787fdf')"
     ]
   }
 }

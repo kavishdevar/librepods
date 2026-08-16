@@ -18,7 +18,7 @@
 
 @file:OptIn(ExperimentalEncodingApi::class)
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.apple
 
 import android.annotation.SuppressLint
 import androidx.compose.animation.core.AnimationSpec
@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -174,6 +175,7 @@ fun NoiseControlSettings(
                             }
 
                             if (showLabels) {
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = stringResource(labelRes),
                                     style = MaterialTheme.typography.labelSmall,
@@ -181,6 +183,7 @@ fun NoiseControlSettings(
                                     maxLines = 2,
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
                         }
                     }

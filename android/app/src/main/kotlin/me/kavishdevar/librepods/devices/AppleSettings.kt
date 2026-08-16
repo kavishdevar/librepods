@@ -9,6 +9,8 @@ import kotlin.time.Duration.Companion.milliseconds
 data class AppleSettings(
     val disconnectWhenNotWearing: Boolean = true, // disconnect_when_not_wearing
 
+    val earDetectionEnabled: Boolean = true,
+
     val cacheDisconnectedComponentBattery: Boolean = true,
 
     val headGesturesEnabled: Boolean = true, // head_gestures_enabled
@@ -33,6 +35,9 @@ data class AppleSettings(
     val conversationalAwarenessPauseMusicEnabled: Boolean = false, // conversational_awareness_pause_music
     val relativeConversationalAwarenessVolumeEnabled: Boolean = true, // relative_conversational_awareness_volume
 
-    val conversationalAwarenessVolume: Float = 43f, // conversational_awareness_volume
+    val conversationalAwarenessVolume: Float = 43f,
+    val conversationalAwarenessReducedVolume: Float = 20f,
 
+    val hrAlertEnabled: Boolean = true,
+    val hrmAlertThreshold: Int = 120,
 ): DeviceSettings

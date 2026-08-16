@@ -55,11 +55,6 @@ sealed interface Screen: NavKey {
         override val macAddress: MacAddress
     ): DeviceScreen
 
-    @Serializable
-    data class AdaptiveStrength(
-        override val macAddress: MacAddress
-    ): DeviceScreen
-
 //    @Serializable
 //    data object CameraControl: Screen
 

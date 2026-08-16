@@ -21,7 +21,6 @@ package me.kavishdevar.librepods.billing
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import androidx.core.content.edit
 import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,16 +30,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import me.kavishdevar.librepods.LibrePodsApplication
 import me.kavishdevar.librepods.R
+import kotlin.time.Duration.Companion.seconds
 
 class FOSSBillingProvider(context: Context): BillingProvider {
-    private val _isPremium = MutableStateFlow(false)
+    private val appDataRepository = (context.applicationContext as LibrePodsApplication).appDataRepository
+
+    private val _isPremium = MutableStateFlow(appDataRepository.state.value.isPremium)
     override val isPremium: StateFlow<Boolean> = _isPremium
 
     private val _price = MutableStateFlow(context.getString(R.string.name_your_own_price))
     override val price: StateFlow<String> = _price
-
-    private val sharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var purchaseJob: Job? = null
@@ -57,21 +58,18 @@ class FOSSBillingProvider(context: Context): BillingProvider {
         purchaseJob?.cancel()
 
         purchaseJob = scope.launch {
-            delay(5_000)
+            delay(5.seconds)
             _isPremium.value = true
-            sharedPreferences.edit { putBoolean("foss_upgraded", true) }
+            appDataRepository.updateState { it.copy(isPremium = true) }
         }
     }
 
     override fun queryPurchases() {
-        val stored = sharedPreferences.getBoolean("foss_upgraded", false)
-        if (stored != _isPremium.value) {
-            _isPremium.value = stored
-        }
+        _isPremium.value = appDataRepository.state.value.isPremium
     }
 
     override fun restorePurchases() {
         _isPremium.value = true
-        sharedPreferences.edit { putBoolean("foss_upgraded", true) }
+        appDataRepository.updateState { it.copy(isPremium = true) }
     }
 }

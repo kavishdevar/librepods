@@ -45,11 +45,11 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.data.StemAction
-import me.kavishdevar.librepods.presentation.components.StyledButton
-import me.kavishdevar.librepods.presentation.components.StyledList
-import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledButton
+import me.kavishdevar.librepods.presentation.components.primitives.StyledList
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 import kotlin.experimental.and
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -78,6 +78,9 @@ fun LongPress(
 
     val scrollState = rememberScrollState()
 
+    // ik enum would take like 1 minute to implement, idc
+    val side = if (name == stringResource(R.string.left)) "left" else "right"
+
     StyledScaffold(
         title = name,
         navigateBack = navigateBack
@@ -98,7 +101,7 @@ fun LongPress(
                     selected = longPressAction == StemAction.CYCLE_NOISE_CONTROL_MODES,
                     onClick = {
                         viewModel.setLongPressAction(
-                            name,
+                            side,
                             StemAction.CYCLE_NOISE_CONTROL_MODES
                         )
                     }
@@ -109,7 +112,7 @@ fun LongPress(
                     selected = longPressAction == StemAction.DIGITAL_ASSISTANT,
                     onClick = {
                         viewModel.setLongPressAction(
-                            name,
+                            side,
                             StemAction.DIGITAL_ASSISTANT
                         )
                     },

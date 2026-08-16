@@ -18,7 +18,7 @@
 
 @file:OptIn(ExperimentalEncodingApi::class)
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.apple
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background

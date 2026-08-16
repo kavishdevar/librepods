@@ -60,9 +60,9 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.att.types.TransparencySettings
 import me.kavishdevar.librepods.bluetooth.att.types.parseTransparencySettingsResponse
 import me.kavishdevar.librepods.bluetooth.att.types.sendTransparencySettings
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
-import me.kavishdevar.librepods.presentation.components.StyledSlider
-import me.kavishdevar.librepods.presentation.components.StyledToggle
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledSlider
+import me.kavishdevar.librepods.presentation.components.primitives.StyledToggle
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem

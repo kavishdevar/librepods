@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.apple
 
 
 import android.content.res.Configuration

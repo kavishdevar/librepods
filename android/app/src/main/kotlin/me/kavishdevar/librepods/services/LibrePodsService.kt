@@ -27,9 +27,14 @@ import android.os.IBinder
 import android.os.ParcelUuid
 import android.os.ext.SdkExtensions
 import android.provider.Settings
+import android.telecom.TelecomManager
+import android.telecom.VideoProfile
+import android.telephony.TelephonyCallback
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
@@ -111,8 +116,53 @@ class LibrePodsService : Service() {
         (application as LibrePodsApplication).healthConnectClient
     }
 
-    private val hasConnectedToAACP by lazy {
-        appDataRepository.state.value.hasConnectedToAACP
+    private var isCallRinging = false
+
+    private val telephonyCallback = object: TelephonyCallback(), TelephonyCallback.CallStateListener {
+        override fun onCallStateChanged(state: Int) {
+            isCallRinging = state == TelephonyManager.CALL_STATE_RINGING
+
+            if (state == TelephonyManager.CALL_STATE_RINGING) {
+                _devices.value.values.firstOrNull { device ->
+                    device is AppleDevice &&
+                    device.connectionState.value == ConnectionState.CONNECTED &&
+                    device.state.value.componentState.any { it.status == ComponentStatus.IN_EAR }
+                }?.let { device ->
+                    (device as AppleDevice).detectHeadGestures { accept ->
+                        if (!isCallRinging) return@detectHeadGestures
+
+                        try {
+                            val telecomManager = getSystemService(TelecomManager::class.java)
+
+                            @Suppress("DEPRECATION")
+                            if (accept) {
+                                telecomManager?.acceptRingingCall(
+                                    VideoProfile.STATE_AUDIO_ONLY
+                                )
+                                Toast.makeText(
+                                    this@LibrePodsService,
+                                    getString(R.string.call_accepted),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    this@LibrePodsService,
+                                    getString(R.string.call_rejected),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                telecomManager?.endCall()
+                            }
+
+                            isCallRinging = false
+                            device.stopHeadTracking()
+
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error accepting call", e)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onCreate() {
@@ -131,6 +181,14 @@ class LibrePodsService : Service() {
             sharedPreferences = getSharedPreferences("settings", MODE_PRIVATE),
             localMac = null // TODO: smart routing. MAC_ADDRESS message gives host mac?
         )
+
+        val telephonyManager = getSystemService(TelephonyManager::class.java)
+
+        telephonyManager.registerTelephonyCallback(
+            mainExecutor,
+            telephonyCallback
+        )
+
 
         startForegroundNotification()
     }
@@ -538,7 +596,6 @@ class LibrePodsService : Service() {
         return device
     }
 
-
     fun observeAppSettings(): Job {
         var oldAppSettings: AppSettingsEntity = appDataRepository.settings.value
 
@@ -562,8 +619,11 @@ class LibrePodsService : Service() {
 
 
             if (state.aacpPackets != previousState.aacpPackets) {
-                if (!hasConnectedToAACP) {
+                if (!appDataRepository.state.value.hasConnectedToAACP) {
                     appDataRepository.updateState { it.copy(hasConnectedToAACP = true) }
+                }
+                if (appDataRepository.state.value.firstSuccessfulConnectionTime == null) {
+                    appDataRepository.updateState { it.copy(firstSuccessfulConnectionTime = System.currentTimeMillis()) }
                 }
             }
 
@@ -655,7 +715,7 @@ class LibrePodsService : Service() {
                         TAG,
                         "ear detection control command value: ${earDetectionCtrlCmdValue.toHexString()}"
                     )
-                    val earDetectionEnabled = earDetectionCtrlCmdValue[0] == 0x01.toByte()
+                    val earDetectionEnabled = earDetectionCtrlCmdValue[0] == 0x01.toByte() || deviceSettings.earDetectionEnabled // temporary, cache broken (?)
                     Log.d(TAG, "ear detection enabled: $earDetectionEnabled")
                     if (earDetectionEnabled) {
                         processComponentStateChange(
@@ -695,10 +755,29 @@ class LibrePodsService : Service() {
                         "conversational awareness state: ${state.conversationalAwarenessState}"
                     )
 
-                    // TODO: multi-step volume change. implementation exists in linux rewrite; copy from there
                     when (state.conversationalAwarenessState) {
-                        1, 2 -> MediaController.startSpeaking()
-                        6, 8, 9 -> MediaController.stopSpeaking()
+                        1 -> {
+                            MediaController.startSpeaking()
+                            MediaController.setVolume(
+                                deviceSettings.conversationalAwarenessVolume.toInt()
+                            )
+                        }
+
+                        2 -> {
+                            MediaController.setVolume(
+                                deviceSettings.conversationalAwarenessReducedVolume.toInt()
+                            )
+                        }
+
+                        3 -> {
+                            MediaController.setVolume(
+                                deviceSettings.conversationalAwarenessVolume.toInt()
+                            )
+                        }
+
+                        6, 7, 8, 9 -> {
+                            MediaController.stopSpeaking()
+                        }
                     }
                 }
 

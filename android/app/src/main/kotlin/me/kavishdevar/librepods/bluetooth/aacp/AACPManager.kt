@@ -637,8 +637,9 @@ class AACPManager(private val device: AppleDevice) {
         return sendPacket(packet)
     }
 
+    // todo: implement adaptive volume
     fun sendSourceFeatureCapabilities(): Boolean {
-        val payload = byteArrayOf(0xFF.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+        val payload = byteArrayOf(0xd7.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
         val packet = AACPPacket.createUnknownPacket(
             opcode = MessageOpcode.SOURCE_FEATURE_CAPABILITIES,
             payload

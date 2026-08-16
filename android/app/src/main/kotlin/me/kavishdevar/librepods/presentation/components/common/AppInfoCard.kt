@@ -16,12 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.common
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import me.kavishdevar.librepods.BuildConfig
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.presentation.components.primitives.StyledList
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
 
 @Composable
 fun AppInfoCard(
@@ -29,24 +31,24 @@ fun AppInfoCard(
 ) {
     StyledList(title = stringResource(R.string.about)) {
         StyledListItem(
-            contentText =  stringResource(R.string.version),
-            supportingText =  BuildConfig.VERSION_NAME,
+            contentText = stringResource(R.string.version),
+            supportingText = BuildConfig.VERSION_NAME,
             onClick = navigateToReleaseNotesScreen
         )
 
         StyledListItem(
-            contentText =  stringResource(R.string.version_code),
-            supportingText =  BuildConfig.VERSION_CODE.toString(),
+            contentText = stringResource(R.string.version_code),
+            supportingText = BuildConfig.VERSION_CODE.toString(),
         )
 
         StyledListItem(
-            contentText =  stringResource(R.string.flavor),
-            supportingText =  BuildConfig.FLAVOR,
+            contentText = stringResource(R.string.flavor),
+            supportingText = BuildConfig.FLAVOR,
         )
 
         StyledListItem(
-            contentText =  stringResource(R.string.build_type),
-            supportingText =  BuildConfig.BUILD_TYPE,
+            contentText = stringResource(R.string.build_type),
+            supportingText = BuildConfig.BUILD_TYPE,
         )
     }
 }

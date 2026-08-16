@@ -22,7 +22,6 @@ import me.kavishdevar.librepods.presentation.screens.OpenSourceLicensesScreen
 import me.kavishdevar.librepods.presentation.screens.PurchaseScreen
 import me.kavishdevar.librepods.presentation.screens.ReleaseNotesScreen
 import me.kavishdevar.librepods.presentation.screens.apple.AccessibilitySettingsScreen
-import me.kavishdevar.librepods.presentation.screens.apple.AdaptiveStrengthScreen
 import me.kavishdevar.librepods.presentation.screens.apple.AppleSettingsRoute
 import me.kavishdevar.librepods.presentation.screens.apple.CallControlScreen
 import me.kavishdevar.librepods.presentation.screens.apple.DebugRoute
@@ -77,7 +76,7 @@ fun RenderScreenContent(
     updatesShown: () -> Unit,
     onboardingComplete: () -> Unit
 ) {
-    val navigate: (Screen) -> Unit = { target -> backStack.add(target) }
+    val navigate: (Screen) -> Unit = { target -> if (target !in backStack) backStack.add(target) } // prevents multiple clicks while transitioning
     fun navigateToPurchase() = navigate(Screen.Purchase)
 
     val navigateBack: (() -> Unit)? = if (backStack.size > 1) {
@@ -129,7 +128,6 @@ fun RenderScreenContent(
                 navigateToLeftLongPress = { navigate(Screen.LongPress(screen.macAddress, left)) },
                 navigateToRightLongPress = { navigate(Screen.LongPress(screen.macAddress, right)) },
                 navigateToPurchase = ::navigateToPurchase,
-                navigateToAdaptiveStrength = { navigate(Screen.AdaptiveStrength(screen.macAddress)) },
                 navigateToEqualizer = { navigate(Screen.Equalizer(screen.macAddress)) },
                 navigateToHeadTracking = { navigate(Screen.HeadTracking(screen.macAddress)) },
                 navigateToAccessibility = { navigate(Screen.Accessibility(screen.macAddress)) },
@@ -242,20 +240,6 @@ fun RenderScreenContent(
             HearingAidAdjustmentsScreen(
                 viewModel = appleViewModel,
                 navigateBack = navigateBack,
-            )
-        }
-
-        is Screen.AdaptiveStrength -> {
-            val device = devices[screen.macAddress] as? AppleDevice ?: return
-            val factory = createAppleViewModelFactory(device, appDataRepository, recordingRepository, heartRateRepository)
-            val appleViewModel: AppleViewModel = viewModel(
-                key = "${screen.macAddress.value}:${device.connectionNumber}",
-                factory = factory
-            )
-            AdaptiveStrengthScreen(
-                viewModel = appleViewModel,
-                navigateBack = navigateBack,
-                navigateToPurchase = ::navigateToPurchase
             )
         }
 

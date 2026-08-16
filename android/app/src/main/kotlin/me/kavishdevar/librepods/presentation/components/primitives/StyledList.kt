@@ -1,4 +1,4 @@
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.primitives
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box

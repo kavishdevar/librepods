@@ -27,10 +27,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLocale
@@ -41,11 +43,15 @@ import androidx.health.connect.client.records.HeartRateRecord
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import kotlinx.coroutines.flow.debounce
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.presentation.components.StyledIconButton
-import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
+import me.kavishdevar.librepods.devices.AppleSettings
+import me.kavishdevar.librepods.presentation.components.primitives.StyledIconButton
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledSlider
+import me.kavishdevar.librepods.presentation.components.primitives.StyledToggle
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
 import me.kavishdevar.librepods.presentation.icons.MaterialIcons
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
@@ -55,6 +61,8 @@ import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun HeartRateRoute(
@@ -68,7 +76,8 @@ fun HeartRateRoute(
         navigateBack = navigateBack,
         startHr = viewModel::startHr,
         stopHr = viewModel::stopHr,
-        setHrRange = viewModel::setHrRange
+        setHrRange = viewModel::setHrRange,
+        updateSettings = viewModel::updateSettings
     )
 }
 
@@ -79,9 +88,11 @@ fun HeartRateScreen(
     navigateBack: (() -> Unit)?,
     startHr: () -> Unit,
     stopHr: () -> Unit,
-    setHrRange: (ClosedRange<Long>) -> Unit
+    setHrRange: (ClosedRange<Long>) -> Unit,
+    updateSettings: (transform: (AppleSettings) -> AppleSettings) -> Unit,
 ) {
     val state = uiState.state
+    val settings = uiState.settings
 
     val scrollState = rememberScrollState()
 
@@ -129,59 +140,7 @@ fun HeartRateScreen(
         ) {
             Spacer(modifier = Modifier.height(topPadding))
 
-            val sliderValue = remember {
-                mutableFloatStateOf(state.heartRateInterval.inWholeMilliseconds.toFloat())
-            }
-
-            val healthPermissions = rememberPermissionState(
-                HealthPermission.getWritePermission(HeartRateRecord::class)
-            )
-
-            AnimatedVisibility(visible = !healthPermissions.status.isGranted) {
-                if (healthPermissions.status.isGranted) return@AnimatedVisibility
-                StyledListItem(
-                    contentText = stringResource(R.string.permission_healthconnect),
-                    onClick = { healthPermissions.launchPermissionRequest() },
-                    supportingText = stringResource(R.string.permission_description_healthconnect),
-                    leadingContent = {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceContainerLow,
-                                    MaterialShapes.SoftBurst.normalized()
-                                        .toShape()
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = LocalIcons.current.VitalSigns,
-                                contentDescription = "vital signs",
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    },
-                    orientation = StyledListItemOrientation.Vertical
-                )
-            }
-
-            // saw this while using one of the forks. 1 minute doesn't seem to work for me
-//        StyledList(
-//            title = stringResource(R.string.interval),
-//            description = stringResource(R.string.heart_rate_interval_description),
-//        ) {
-//            StyledListItem(
-//                onClick = { setHrInterval(1.seconds) },
-//                contentText = stringResource(R.string.one_second),
-//                selected = state.heartRateInterval == 1.seconds
-//            )
-//            StyledListItem(
-//                onClick = { setHrInterval(1.minutes) },
-//                contentText = stringResource(R.string.one_minute),
-//                selected = state.heartRateInterval == 1.minutes
-//            )
-//        }
+            val healthPermissions = rememberPermissionState(HealthPermission.getWritePermission(HeartRateRecord::class))
 
             AnimatedVisibility(state.currentHeartRate != null) {
                 if (state.currentHeartRate == null) return@AnimatedVisibility
@@ -234,6 +193,66 @@ fun HeartRateScreen(
                     orientation = StyledListItemOrientation.Vertical
                 )
             }
+
+            AnimatedVisibility(visible = !healthPermissions.status.isGranted) {
+                StyledListItem(
+                    contentText = stringResource(R.string.permission_healthconnect),
+                    onClick = { healthPermissions.launchPermissionRequest() },
+                    supportingText = stringResource(R.string.permission_description_healthconnect),
+                    leadingContent = {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerLow,
+                                    MaterialShapes.SoftBurst.normalized()
+                                        .toShape()
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = LocalIcons.current.VitalSigns,
+                                contentDescription = "vital signs",
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    },
+                    orientation = StyledListItemOrientation.Vertical
+                )
+            }
+
+            StyledToggle(
+                label = stringResource(R.string.heart_rate_alert),
+                description = stringResource(R.string.hrm_alert_description),
+                checked = settings.hrAlertEnabled,
+                onCheckedChange = { enabled ->
+                    updateSettings {
+                        it.copy(hrAlertEnabled = enabled)
+                    }
+                }
+            )
+
+            val sliderValue = remember { mutableFloatStateOf(settings.hrmAlertThreshold.toFloat()) }
+
+            LaunchedEffect(sliderValue) {
+                snapshotFlow { sliderValue.floatValue }
+                    .debounce(250.milliseconds)
+                    .collect { value ->
+                        updateSettings {
+                            it.copy(hrmAlertThreshold = value.toInt())
+                        }
+                    }
+            }
+
+            StyledSlider(
+                label = stringResource(R.string.heart_rate_alert_threshold),
+                value = sliderValue.floatValue,
+                onValueChange = { sliderValue.floatValue = it },
+                valueRange = 120f..180f,
+                description = "${sliderValue.floatValue.roundToInt()} bpm",
+                independent = true
+            )
 
             Column(
                 modifier = Modifier

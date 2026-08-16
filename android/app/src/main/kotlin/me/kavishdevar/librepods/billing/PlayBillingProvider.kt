@@ -41,6 +41,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import me.kavishdevar.librepods.LibrePodsApplication
 
 const val TAG = "PlayBillingProvider"
 
@@ -49,10 +50,11 @@ private const val PREMIUM_PRODUCT_ID = "librepods.advanced_features.v2"
 class PlayBillingProvider(
     context: Context
 ) : BillingProvider, PurchasesUpdatedListener {
+    private val appDataRepository = (context.applicationContext as LibrePodsApplication).appDataRepository
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val _isPremium = MutableStateFlow(false)
+    private val _isPremium = MutableStateFlow(appDataRepository.state.value.isPremium)
     override val isPremium: StateFlow<Boolean> = _isPremium
 
     private val _price = MutableStateFlow("unknown")
@@ -176,6 +178,8 @@ class PlayBillingProvider(
 //        }
 
         _isPremium.value = hasPremium
+
+        appDataRepository.updateState { it.copy(isPremium = hasPremium) }
 
         scope.launch {
             purchases

@@ -25,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import me.kavishdevar.librepods.LibrePodsApplication
 import me.kavishdevar.librepods.R
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
 import me.kavishdevar.librepods.presentation.screens.onboarding.PrivacyPolicyPage
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
 import me.kavishdevar.librepods.presentation.theme.NightTheme

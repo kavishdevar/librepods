@@ -18,7 +18,7 @@
 
 @file:OptIn(ExperimentalEncodingApi::class)
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.apple
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,6 +28,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.presentation.components.primitives.StyledList
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
 import me.kavishdevar.librepods.presentation.icons.richText
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
@@ -50,7 +52,7 @@ fun AboutCard(
 
     val serialNumber = remember { mutableIntStateOf(0) }
 
-    StyledList (title = stringResource(R.string.about)) {
+    StyledList(title = stringResource(R.string.about)) {
         StyledListItem(
             contentText = stringResource(R.string.model_name),
             supportingText = modelName
@@ -61,7 +63,7 @@ fun AboutCard(
             supportingText = actualModel
         )
 
-        StyledListItem (
+        StyledListItem(
             contentText = stringResource(R.string.serial_number),
             supportingContent = {
                 Text(

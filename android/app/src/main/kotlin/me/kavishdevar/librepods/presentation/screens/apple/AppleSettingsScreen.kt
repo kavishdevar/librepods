@@ -19,6 +19,11 @@
 package me.kavishdevar.librepods.presentation.screens.apple
 
 import android.annotation.SuppressLint
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
@@ -30,36 +35,45 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import kotlinx.coroutines.flow.debounce
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.devices.AirPodsSpecs
+import me.kavishdevar.librepods.devices.AppleSettings
 import me.kavishdevar.librepods.devices.BaseCapability
-import me.kavishdevar.librepods.presentation.components.AboutCard
-import me.kavishdevar.librepods.presentation.components.AudioSettings
-import me.kavishdevar.librepods.presentation.components.BatteryView
-import me.kavishdevar.librepods.presentation.components.CallControlSettings
-import me.kavishdevar.librepods.presentation.components.ConnectionSettings
-import me.kavishdevar.librepods.presentation.components.HearingHealthSettings
-import me.kavishdevar.librepods.presentation.components.NoiseControlSettings
-import me.kavishdevar.librepods.presentation.components.PressAndHoldSettings
-import me.kavishdevar.librepods.presentation.components.StyledButton
-import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.components.StyledListItemOrientation
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
-import me.kavishdevar.librepods.presentation.components.StyledToggle
+import me.kavishdevar.librepods.presentation.components.apple.AboutCard
+import me.kavishdevar.librepods.presentation.components.apple.AudioSettings
+import me.kavishdevar.librepods.presentation.components.apple.BatteryView
+import me.kavishdevar.librepods.presentation.components.apple.CallControlSettings
+import me.kavishdevar.librepods.presentation.components.apple.ConnectionSettings
+import me.kavishdevar.librepods.presentation.components.apple.HearingHealthSettings
+import me.kavishdevar.librepods.presentation.components.apple.NoiseControlSettings
+import me.kavishdevar.librepods.presentation.components.apple.PressAndHoldSettings
+import me.kavishdevar.librepods.presentation.components.primitives.StyledButton
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItemOrientation
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledSlider
+import me.kavishdevar.librepods.presentation.components.primitives.StyledToggle
+import me.kavishdevar.librepods.presentation.icons.LocalIcons
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
 import me.kavishdevar.librepods.presentation.viewmodel.AppleUiState
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun AppleSettingsRoute(
@@ -71,7 +85,6 @@ fun AppleSettingsRoute(
     navigateToLeftLongPress: () -> Unit,
     navigateToRightLongPress: () -> Unit,
     navigateToPurchase: () -> Unit,
-    navigateToAdaptiveStrength: () -> Unit,
     navigateToEqualizer: () -> Unit,
     navigateToHeadTracking: () -> Unit,
     navigateToAccessibility: () -> Unit,
@@ -94,7 +107,8 @@ fun AppleSettingsRoute(
 
         writeATTCharacteristic = viewModel::writeATTCharacteristic,
 
-//            onAutomaticEarDetectionChanged = viewModel::setAutomaticEarDetectionEnabled,
+        updateSettings = viewModel::updateSettings,
+
 //            onAutomaticConnectionChanged = viewModel::setAutomaticConnectionEnabled,
         disconnect = viewModel::disconnect,
 
@@ -105,7 +119,6 @@ fun AppleSettingsRoute(
         navigateToLeftLongPress = navigateToLeftLongPress,
         navigateToRightLongPress = navigateToRightLongPress,
         navigateToPurchase = navigateToPurchase,
-        navigateToAdaptiveStrength = navigateToAdaptiveStrength,
         navigateToEqualizer = navigateToEqualizer,
         navigateToHeadTracking = navigateToHeadTracking,
         navigateToAccessibility = navigateToAccessibility,
@@ -130,6 +143,8 @@ fun AppleSettingsScreen(
 
     writeATTCharacteristic: (ATTHandle, ByteArray) -> Unit,
 
+    updateSettings: (transform: (AppleSettings) -> AppleSettings) -> Unit,
+
 //    onAutomaticEarDetectionChanged: (Boolean) -> Unit,
 //    onAutomaticConnectionChanged: (Boolean) -> Unit,
 
@@ -142,7 +157,6 @@ fun AppleSettingsScreen(
     navigateToLeftLongPress: () -> Unit,
     navigateToRightLongPress: () -> Unit,
     navigateToPurchase: () -> Unit,
-    navigateToAdaptiveStrength: () -> Unit,
     navigateToEqualizer: () -> Unit,
     navigateToHeadTracking: () -> Unit,
     navigateToAccessibility: () -> Unit,
@@ -209,20 +223,6 @@ fun AppleSettingsScreen(
                 }
             }
 
-            if (metadata.version3.startsWith("8") || metadata.version3.startsWith("9")) {
-                item(key = "spacer_recording") {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-                item(key = "recording") {
-                    StyledListItem(
-                        contentText = stringResource(R.string.recorder),
-                        supportingText = stringResource(R.string.recorder_description),
-                        onClick = navigateToRecordingScreen,
-                        orientation = StyledListItemOrientation.Vertical
-                    )
-                }
-            }
-
             if (baseCapabilities.contains(BaseCapability.LISTENING_MODE)) {
                 item(key = "spacer_noise") {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -236,6 +236,67 @@ fun AppleSettingsScreen(
                                 ControlCommandIdentifier.LISTENING_MODE, it
                             )
                         },
+                    )
+                }
+
+                if (baseCapabilities.contains(BaseCapability.ADAPTIVE_AUDIO)) {
+                    item(key = "adaptive_strength") {
+                        AnimatedVisibility(
+                            visible = state.controlStates[ControlCommandIdentifier.LISTENING_MODE]?.getOrNull(0)?.toInt() == 4,
+                            enter = remember {
+                                fadeIn() + slideInVertically()
+                            },
+                            exit = remember {
+                                fadeOut() + slideOutVertically()
+                            }
+                        ) {
+                            val sliderValue = remember {
+                                mutableFloatStateOf(
+                                    100f - (state.controlStates[ControlCommandIdentifier.AUTO_ANC_STRENGTH]?.getOrNull(
+                                        0
+                                    )?.toFloat() ?: 50f)
+                                )
+                            }
+
+                            LaunchedEffect(sliderValue) {
+                                snapshotFlow { sliderValue.floatValue }
+                                    .debounce(100.milliseconds)
+                                    .collect { value ->
+                                        setControlCommandInt(
+                                            ControlCommandIdentifier.AUTO_ANC_STRENGTH,
+                                            (100 - value).toInt()
+                                        )
+                                    }
+                            }
+
+                            StyledSlider(
+                                value = sliderValue.floatValue,
+                                onValueChange = { sliderValue.floatValue = it },
+                                valueRange = 0f..100f,
+                                snapPoints = listOf(0f, 50f, 100f),
+                                startImageVector = LocalIcons.current.SpeakerMin,
+                                endImageVector = LocalIcons.current.SpeakerMax,
+                                independent = true,
+                                description = stringResource(R.string.adaptive_audio_description),
+                                enabled = uiState.isPremium
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    }
+                }
+            }
+
+            if (metadata.version3.isNotBlank() && metadata.version3.first().digitToInt() >= 8) {
+                item(key = "spacer_recording") {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                item(key = "recording") {
+                    StyledListItem(
+                        contentText = stringResource(R.string.recorder),
+                        supportingText = stringResource(R.string.recorder_description),
+                        onClick = navigateToRecordingScreen,
+                        orientation = StyledListItemOrientation.Vertical
                     )
                 }
             }
@@ -319,30 +380,18 @@ fun AppleSettingsScreen(
 
             item(key = "spacer_audio") { Spacer(modifier = Modifier.height(16.dp)) }
             item(key = "audio") {
-                val adaptiveVolumeCapability =
-                    baseCapabilities.contains(BaseCapability.ADAPTIVE_VOLUME)
-                val conversationalAwarenessCapability =
-                    baseCapabilities.contains(BaseCapability.CONVERSATION_AWARENESS)
-                val loudSoundReductionCapability =
-                    baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION)
-                val adaptiveAudioCapability =
-                    baseCapabilities.contains(BaseCapability.ADAPTIVE_VOLUME)
+                val adaptiveVolumeCapability = baseCapabilities.contains(BaseCapability.ADAPTIVE_VOLUME)
+                val conversationalAwarenessCapability = baseCapabilities.contains(BaseCapability.CONVERSATION_AWARENESS)
+                val loudSoundReductionCapability = baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION)
 
-                val adaptiveVolumeChecked =
-                    state.controlStates[ControlCommandIdentifier.ADAPTIVE_VOLUME_CONFIG]?.getOrNull(
-                        0
-                    ) == 0x01.toByte()
-                val conversationalAwarenessChecked =
-                    state.controlStates[ControlCommandIdentifier.CONVERSATION_DETECT_CONFIG]?.getOrNull(
-                        0
-                    ) == 0x01.toByte()
+                val adaptiveVolumeChecked = state.controlStates[ControlCommandIdentifier.ADAPTIVE_VOLUME_CONFIG]?.getOrNull(0) == 0x01.toByte()
+                val conversationalAwarenessChecked = state.controlStates[ControlCommandIdentifier.CONVERSATION_DETECT_CONFIG]?.getOrNull(0) == 0x01.toByte()
 
                 AudioSettings(
                     adaptiveVolumeCapability = adaptiveVolumeCapability,
                     conversationalAwarenessCapability = conversationalAwarenessCapability,
                     loudSoundReductionCapability = loudSoundReductionCapability,
-                    adaptiveAudioCapability = adaptiveAudioCapability,
-                    customEqCapability = metadata.version3.startsWith("9"),
+                    customEqCapability = metadata.version3.isNotBlank() && metadata.version3.first().digitToInt() >= 9,
                     adaptiveVolumeChecked = adaptiveVolumeChecked,
                     onAdaptiveVolumeCheckedChange = { checked ->
                         setControlCommandBoolean(
@@ -364,7 +413,6 @@ fun AppleSettingsScreen(
                             byteArrayOf(if (checked) 0x01.toByte() else 0x00.toByte())
                         )
                     },
-                    navigateToAdaptiveStrength = navigateToAdaptiveStrength,
                     navigateToEqualizer = navigateToEqualizer,
                     vendorIdHook = uiState.vendorIdHook,
                     isPremium = uiState.isPremium
@@ -374,10 +422,28 @@ fun AppleSettingsScreen(
             item(key = "spacer_connection") { Spacer(modifier = Modifier.height(16.dp)) }
             item(key = "connection") {
                 ConnectionSettings(
-                    automaticEarDetectionEnabled = state.controlStates[ControlCommandIdentifier.EAR_DETECTION_CONFIG]?.getOrNull(0) == 0x01.toByte(),
-                    onAutomaticEarDetectionChanged = { setControlCommandBoolean(ControlCommandIdentifier.EAR_DETECTION_CONFIG, it) },
+                    automaticEarDetectionEnabled = state.controlStates[ControlCommandIdentifier.EAR_DETECTION_CONFIG]?.getOrNull(0) == 0x01.toByte() || settings.earDetectionEnabled,
+                    onAutomaticEarDetectionChanged = { enabled -> setControlCommandBoolean(ControlCommandIdentifier.EAR_DETECTION_CONFIG, enabled); updateSettings { it.copy(earDetectionEnabled = enabled) } },
                     automaticConnectionEnabled = state.controlStates[ControlCommandIdentifier.SMART_ROUTING_MODE]?.getOrNull(0) == 0x01.toByte(),
-                    onAutomaticConnectionChanged = { setControlCommandBoolean(ControlCommandIdentifier.SMART_ROUTING_MODE, it) }
+                    onAutomaticConnectionChanged = { setControlCommandBoolean(ControlCommandIdentifier.SMART_ROUTING_MODE, it) },
+                    disconnectWhenNotWearing = settings.disconnectWhenNotWearing,
+                    onDisconnectWhenNotWearingChanged = { enabled -> updateSettings { it.copy(disconnectWhenNotWearing = enabled) } },
+
+                    takeoverWhenDisconnected = settings.takeoverWhenDisconnected,
+                    onTakeoverWhenDisconnectedChanged = { enabled -> updateSettings { it.copy(takeoverWhenDisconnected = enabled) } },
+                    takeoverWhenIdle = settings.takeoverWhenIdle,
+                    onTakeoverWhenIdleChanged = { enabled -> updateSettings { it.copy(takeoverWhenIdle = enabled) } },
+                    takeoverWhenMusic = settings.takeoverWhenMusic,
+                    onTakeoverWhenMusicChanged = { enabled -> updateSettings { it.copy(takeoverWhenMusic = enabled) } },
+                    takeoverWhenCall = settings.takeoverWhenCall,
+                    onTakeoverWhenCallChanged = { enabled -> updateSettings { it.copy(takeoverWhenCall = enabled) } },
+
+                    takeoverWhenRingingCall = settings.takeoverWhenRingingCall,
+                    onTakeoverWhenRingingCallChanged = { enabled -> updateSettings { it.copy(takeoverWhenRingingCall = enabled) } },
+                    takeoverWhenMediaStart = settings.takeoverWhenMediaStart,
+                    onTakeoverWhenMediaStartChanged = { enabled -> updateSettings { it.copy(takeoverWhenMediaStart = enabled) } },
+
+                    isPremium = uiState.isPremium
                 )
             }
 
@@ -441,7 +507,7 @@ fun AppleSettingsScreen(
                 )
             }
 
-            if (baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION) && (metadata.version3.startsWith("8") || metadata.version3.startsWith("9"))) {
+            if (baseCapabilities.contains(BaseCapability.LOUD_SOUND_REDUCTION) && (metadata.version3.isNotBlank() && metadata.version3.first().digitToInt() >= 8)) {
                 item(key = "spacer_off_listening") { Spacer(modifier = Modifier.height(16.dp)) }
                 item(key = "off_listening") {
                     val id = ControlCommandIdentifier.ALLOW_OFF_OPTION
@@ -487,7 +553,16 @@ fun AppleSettingsScreen(
             item(key = "spacer_debug") { Spacer(modifier = Modifier.height(16.dp)) }
 
             if (uiState.appSettings.debugMode) {
-                item(key = "debug") {
+                item(key = "show_cached_battery") {
+                    StyledToggle(
+                        label = "show cached battery",
+                        checked = settings.cacheDisconnectedComponentBattery,
+                        onCheckedChange = { enabled ->
+                            updateSettings { it.copy(cacheDisconnectedComponentBattery = enabled) }
+                        }
+                    )
+                }
+                item(key = "debug_button") {
                     StyledListItem(
                         contentText = "debug",
                         onClick = navigateToDebugScreen
@@ -517,6 +592,8 @@ fun AppleSettingsScreenPreviewApple() {
                 setControlCommandBoolean = { _, _ -> },
                 writeATTCharacteristic = { _, _ -> },
 
+                updateSettings = { _ -> },
+
                 disconnect = {},
 
                 navigateBack = null,
@@ -526,7 +603,6 @@ fun AppleSettingsScreenPreviewApple() {
                 navigateToLeftLongPress = {},
                 navigateToRightLongPress = {},
                 navigateToPurchase = {},
-                navigateToAdaptiveStrength = {},
                 navigateToEqualizer = {},
                 navigateToHeadTracking = {},
                 navigateToAccessibility = {},
@@ -559,6 +635,8 @@ fun AppleSettingsScreenPreviewMaterial() {
                 setControlCommandBoolean = { _, _ -> },
                 writeATTCharacteristic = { _, _ -> },
 
+                updateSettings = { _ -> },
+
                 disconnect = {},
 
                 navigateBack = null,
@@ -568,7 +646,6 @@ fun AppleSettingsScreenPreviewMaterial() {
                 navigateToLeftLongPress = {},
                 navigateToRightLongPress = {},
                 navigateToPurchase = {},
-                navigateToAdaptiveStrength = {},
                 navigateToEqualizer = {},
                 navigateToHeadTracking = {},
                 navigateToAccessibility = {},

@@ -150,7 +150,7 @@
     <string name="open_dialog_for_controlling">Open dialog for controlling</string>
     <string name="open_dialog_for_controlling_description">If disabled, clicking on the QS will cycle through modes. If enabled, it will show a dialog for controlling noise control mode and conversational awareness</string>
     <string name="disconnect_when_not_wearing">Disconnect AirPods when not wearing</string>
-    <string name="disconnect_when_not_wearing_description">You will still be able to control them with the app - this just disconnects the audio.</string>
+    <string name="disconnect_when_not_wearing_description">You will still be able to control them with the app; this just disconnects the audio.</string>
     <string name="advanced_options">Advanced Options</string>
     <string name="set_identity_resolving_key">Set Identity Resolving Key (IRK)</string>
     <string name="set_identity_resolving_key_description">Manually set the IRK value used for resolving BLE random addresses</string>
@@ -340,4 +340,10 @@
     <string name="use_highest_refresh_rate">Use highest refresh rate available</string>
     <string name="debug_mode_description">Shows extra information and settings.</string>
     <string name="interaction">Interaction</string>
+    <string name="heart_rate_monitoring">Heart Rate Monitoring</string>
+    <string name="hrm_alert_description">Sends a notification when your heart rate is above the threshold. Consumes more battery.</string>
+    <string name="heart_rate_alert">Heart rate alert</string>
+    <string name="heart_rate_alert_threshold">Heart rate threshold</string>
+    <string name="call_rejected">Call rejected</string>
+    <string name="call_accepted">Call accepted</string>
 </resources>

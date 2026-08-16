@@ -8,6 +8,8 @@ data class AppStateEntity(
     @PrimaryKey
     val id: Int = 0,
 
+    val isPremium: Boolean = false,
+
     val hasCompletedOnboarding: Boolean = false,
     val lastVersionShown: String? = null,
 

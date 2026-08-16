@@ -18,7 +18,7 @@
 
 @file:OptIn(ExperimentalEncodingApi::class)
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.apple
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.presentation.components.primitives.StyledList
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 @ExperimentalHazeMaterialsApi
@@ -47,20 +49,20 @@ fun CallControlSettings(
 
     StyledList(title = stringResource(R.string.call_controls)) {
         StyledListItem(
-            contentText =  stringResource(R.string.answer_call),
-            supportingText =  stringResource(R.string.press_once),
+            contentText = stringResource(R.string.answer_call),
+            supportingText = stringResource(R.string.press_once),
             enabled = false
         )
 
         StyledListItem(
-            contentText =  muteUnmuteText,
-            supportingText =  singlePressAction,
-            onClick = { navigateToCallControlScreen(muteUnmuteText) } ,
+            contentText = muteUnmuteText,
+            supportingText = singlePressAction,
+            onClick = { navigateToCallControlScreen(muteUnmuteText) },
         )
 
         StyledListItem(
-            contentText =  hangUpText,
-            supportingText =  doublePressAction,
+            contentText = hangUpText,
+            supportingText = doublePressAction,
             onClick = { navigateToCallControlScreen(hangUpText) }
         )
 

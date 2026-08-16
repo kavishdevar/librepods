@@ -16,12 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.apple
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.data.StemAction
+import me.kavishdevar.librepods.presentation.components.primitives.StyledList
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
 
 @Composable
 fun PressAndHoldSettings(
@@ -46,12 +48,12 @@ fun PressAndHoldSettings(
         title = stringResource(R.string.press_and_hold_airpods)
     ) {
         StyledListItem(
-            contentText =  stringResource(R.string.left),
+            contentText = stringResource(R.string.left),
             supportingText = leftActionText,
             onClick = navigateToLeftLongPress
         )
         StyledListItem(
-            contentText =  stringResource(R.string.right),
+            contentText = stringResource(R.string.right),
             supportingText = rightActionText,
             onClick = navigateToRightLongPress,
         )

@@ -8,6 +8,8 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.room3.Room
 import io.github.libxposed.service.XposedService
 import io.github.libxposed.service.XposedServiceHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import me.kavishdevar.librepods.billing.BillingManager
 import me.kavishdevar.librepods.billing.BillingProviderFactory
 import me.kavishdevar.librepods.database.LibrePodsDatabase
@@ -50,6 +52,11 @@ class LibrePodsApplication: Application(), XposedServiceHelper.OnServiceListener
         ).build()
 
         XposedServiceHelper.registerListener(this)
+
+        runBlocking(Dispatchers.IO) {
+            appDataRepository.awaitInitialized()
+        }
+
         BillingManager.provider = BillingProviderFactory.create(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 

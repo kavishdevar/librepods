@@ -311,38 +311,74 @@ object MediaController {
         }
     }
 
-    @Synchronized
-    fun startSpeaking() {
-        Log.d("MediaController", "Starting speaking max vol: ${audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)}, current vol: ${audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)}, conversationalAwarenessVolume: $conversationalAwarenessVolume, relativeVolume: $relativeVolume")
+//    @Synchronized
+//    fun startSpeaking() {
+//        Log.d("MediaController", "Starting speaking max vol: ${audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)}, current vol: ${audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)}, conversationalAwarenessVolume: $conversationalAwarenessVolume, relativeVolume: $relativeVolume")
+//
+//        if (initialVolume == null) {
+//            initialVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+//            Log.d("MediaController", "Initial Volume: $initialVolume")
+//            val targetVolume = if (relativeVolume) {
+//                (initialVolume!! * conversationalAwarenessVolume / 100)
+//            } else if (initialVolume!! > (audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * conversationalAwarenessVolume / 100)) {
+//                (audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * conversationalAwarenessVolume / 100)
+//            } else {
+//                initialVolume!!
+//            }
+//            smoothVolumeTransition(initialVolume!!, targetVolume)
+//            if (conversationalAwarenessPauseMusic) {
+//                sendPause(force = true)
+//            }
+//        }
+//        Log.d("MediaController", "Initial Volume: $initialVolume")
+//    }
 
-        if (initialVolume == null) {
-            initialVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            Log.d("MediaController", "Initial Volume: $initialVolume")
-            val targetVolume = if (relativeVolume) {
-                (initialVolume!! * conversationalAwarenessVolume / 100)
-            } else if (initialVolume!! > (audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * conversationalAwarenessVolume / 100)) {
-                (audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) * conversationalAwarenessVolume / 100)
-            } else {
-                initialVolume!!
-            }
-            smoothVolumeTransition(initialVolume!!, targetVolume)
-            if (conversationalAwarenessPauseMusic) {
-                sendPause(force = true)
-            }
-        }
-        Log.d("MediaController", "Initial Volume: $initialVolume")
+//    @Synchronized
+//    fun stopSpeaking() {
+//        Log.d("MediaController", "Stopping speaking, initialVolume: $initialVolume")
+//        if (initialVolume != null) {
+//            smoothVolumeTransition(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), initialVolume!!)
+//            if (conversationalAwarenessPauseMusic) {
+//                sendPlay()
+//            }
+//            initialVolume = null
+//        }
+//    }
+
+    @Synchronized
+    fun setVolume(volumePercent: Int) {
+        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val targetVolume = maxVolume * volumePercent / 100
+
+        smoothVolumeTransition(
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC),
+            targetVolume,
+        )
     }
 
     @Synchronized
-    fun stopSpeaking() {
-        Log.d("MediaController", "Stopping speaking, initialVolume: $initialVolume")
-        if (initialVolume != null) {
-            smoothVolumeTransition(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), initialVolume!!)
-            if (conversationalAwarenessPauseMusic) {
-                sendPlay()
-            }
-            initialVolume = null
+    fun startSpeaking() {
+        if (initialVolume == null) {
+            initialVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         }
+
+        Log.d(
+            "MediaController",
+            "Starting speaking, initial volume: $initialVolume",
+        )
+    }
+
+
+    @Synchronized
+    fun stopSpeaking() {
+        val original = initialVolume ?: return
+
+        smoothVolumeTransition(
+            audioManager.getStreamVolume(AudioManager.STREAM_MUSIC),
+            original,
+        )
+
+        initialVolume = null
     }
 
     private fun smoothVolumeTransition(fromVolume: Int, toVolume: Int) {

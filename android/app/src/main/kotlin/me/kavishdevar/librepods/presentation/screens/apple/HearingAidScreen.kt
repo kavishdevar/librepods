@@ -50,11 +50,11 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.att.types.parseTransparencySettingsResponse
 import me.kavishdevar.librepods.bluetooth.att.types.sendTransparencySettings
-import me.kavishdevar.librepods.presentation.components.ConfirmationDialog
-import me.kavishdevar.librepods.presentation.components.StyledList
-import me.kavishdevar.librepods.presentation.components.StyledListItem
-import me.kavishdevar.librepods.presentation.components.StyledScaffold
-import me.kavishdevar.librepods.presentation.components.StyledToggle
+import me.kavishdevar.librepods.presentation.components.primitives.StyledConfirmationDialog
+import me.kavishdevar.librepods.presentation.components.primitives.StyledList
+import me.kavishdevar.librepods.presentation.components.primitives.StyledListItem
+import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffold
+import me.kavishdevar.librepods.presentation.components.primitives.StyledToggle
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 
 private const val TAG = "HearingAidScreen"
@@ -187,7 +187,7 @@ fun HearingAidScreen(
         }
     }
 
-    ConfirmationDialog(
+    StyledConfirmationDialog(
         showDialog = showDialog,
         title = "Enable Hearing Aid",
         message = "Enabling Hearing Aid will disable Headphone Accommodation and Customized Transparency Mode.",

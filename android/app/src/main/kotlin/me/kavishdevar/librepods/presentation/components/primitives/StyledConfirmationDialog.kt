@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-package me.kavishdevar.librepods.presentation.components
+package me.kavishdevar.librepods.presentation.components.primitives
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -62,7 +62,7 @@ import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfirmationDialog(
+fun StyledConfirmationDialog(
     showDialog: MutableState<Boolean>,
     title: String,
     message: String,

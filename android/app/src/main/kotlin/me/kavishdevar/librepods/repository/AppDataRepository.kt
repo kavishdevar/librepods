@@ -1,5 +1,6 @@
 package me.kavishdevar.librepods.repository
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +17,12 @@ class AppDataRepository(
     private val settingsDao: AppSettingsDao,
     private val stateDao: AppStateDao,
 ) {
+    private val initialized = CompletableDeferred<Unit>()
+
+    suspend fun awaitInitialized() {
+        initialized.await()
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _settings = MutableStateFlow(AppSettingsEntity())
@@ -28,6 +35,7 @@ class AppDataRepository(
         scope.launch {
             _settings.value = settingsDao.get() ?: AppSettingsEntity()
             _state.value = stateDao.get() ?: AppStateEntity()
+            initialized.complete(Unit)
         }
     }
 
