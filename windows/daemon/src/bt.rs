@@ -39,19 +39,16 @@ pub fn set_audio_connected(mac: u64, connect: bool) -> bool {
             return false;
         }
         let flags: u32 = if connect { 1 } else { 0 }; // ENABLE / DISABLE
-        // Only manage A2DP (stereo output). We NEVER enable HFP (Handsfree): the
-        // hi-res virtual mic (over L2CAP/AAP) replaces it, and enabling HFP makes
-        // Windows activate the mono headset profile, which competes with / drops the
-        // A2DP stereo output ("mic works but no audio"). Audio + mic are the core of
-        // the AirPods and must stay on the clean A2DP + virtual-mic path. On disconnect
-        // we still tear HFP down, in case something else left it enabled.
+        // Enable BOTH A2DP (stereo output) and Handsfree so at least one audio
+        // endpoint always comes up — enabling only A2DP left the user with NO sound
+        // when A2DP alone failed to connect (no HFP fallback). (The A2DP-vs-HFP
+        // routing / "mic but no audio" concern is better solved by picking the default
+        // output device, not by dropping HFP here.)
         let a = BluetoothSetServiceState(hradio, &dev, &AUDIO_SINK, flags);
-        if !connect {
-            let _ = BluetoothSetServiceState(hradio, &dev, &HANDSFREE, 0);
-        }
+        let b = BluetoothSetServiceState(hradio, &dev, &HANDSFREE, flags);
         CloseHandle(hradio);
         BluetoothFindRadioClose(hfind);
-        a == 0 // A2DP AudioSink state set (ERROR_SUCCESS)
+        a == 0 || b == 0 // ERROR_SUCCESS on either
     }
 }
 
