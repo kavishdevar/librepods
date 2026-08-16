@@ -613,11 +613,9 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
         // never helped); the 0x10 DEVMOTION6 stream is unrelated to HR and dropped.
         let _ = drv.send(&aap::HR_ENABLE);
         thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
-        let _ = drv.send(&aap::sensor_stream(
-            HR_START_SEQ, // exact seq from the working Android constant (e3 46)
-            aap::STREAM_HEART_RATE,
-            aap::PERIOD_HEART_RATE_US,
-        ));
+        // Kavish's confirmed-working start (2026-08-13): service 84, not 19 — the HR
+        // service id moved on newer firmware. See aap::hr_start.
+        let _ = drv.send(&aap::hr_start(next_hr_seq() as u8));
 
         // Wait up to FIRST_SAMPLE_TIMEOUT for a REAL decoded reading. ACKs / a
         // live-but-empty stream are ignored on purpose — they are exactly the state

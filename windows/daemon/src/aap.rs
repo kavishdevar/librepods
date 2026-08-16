@@ -143,6 +143,29 @@ pub fn sensor_stream(seq: u16, stream_id: u8, period_us: u32) -> [u8; 28] {
     ]
 }
 
+/// Kavish's confirmed-working heart-rate START frame (LibrePods maintainer, Discord
+/// 2026-08-13: "this is what finally worked for me"). On newer AirPods Pro 3 firmware
+/// the HR service id MOVED: it's now **84 (0x54)**, not 19 (0x13) — and the top-level
+/// message carries an extra field-2=2 vs the generic `sensor_stream`. 1 Hz (period
+/// 1 000 000 µs, the last 4 bytes = UINT32 LE). `seq` is a plain request counter (its
+/// value is irrelevant); keep it < 128 so it stays a single-byte varint like his.
+pub fn hr_start(seq: u8) -> [u8; 29] {
+    let p = PERIOD_HEART_RATE_US.to_le_bytes();
+    [
+        0x04, 0x00, 0x04, 0x00, // header
+        0x17, 0x00, 0x00, 0x00, // opcode (BuddyCommand)
+        0x10, 0x00, // descriptor (SensorDataWX)
+        0x11, 0x00, // payload length = 17
+        0x08, seq & 0x7F, // sequence, single-byte varint
+        0x10, 0x02, // top-level field 2 = 2
+        0x42, 0x0B, // field 8, 11 bytes
+        0x08, 0x54, //   service = 84 (HEARTRATE on new firmware)
+        0x10, 0x02, //   field 2 = 2
+        0x1A, 0x05, //   field 3, 5 bytes
+        0x01, p[0], p[1], p[2], p[3], // mode 1 + period µs, little-endian
+    ]
+}
+
 /// SensorDataWX `request_all_descriptors` (protobuf field 4, `22 00` = empty
 /// message) on the Sensor Data WX service. A *named discovery call* from the
 /// RTBuddy schema (pabloaul/apple-wireshark): iOS sends it twice at session open —

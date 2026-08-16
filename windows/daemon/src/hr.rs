@@ -33,7 +33,8 @@ const KNOWN_HEART_RATE_STATUS_TAILS: [[u8; 3]; 4] = [
 const FIELD_LOG_TYPE: u32 = 2;
 const FIELD_SERVICE: u32 = 1;
 const FIELD_COMMAND_PAYLOAD: u32 = 3;
-const HEART_RATE_SERVICE: u64 = 19;
+const HEART_RATE_SERVICE: u64 = 84; // new firmware (Kavish, 2026-08-13): HR moved 19 → 84
+const HEART_RATE_SERVICE_LEGACY: u64 = 19; // older firmware
 const HEART_RATE_PAYLOAD_LENGTH: usize = 18;
 const HEART_RATE_BPM_OFFSET: usize = 1;
 const HEART_RATE_STATUS_TAIL_OFFSET: usize = 15;
@@ -226,7 +227,7 @@ fn collect_heart_rate_commands(
     };
     let service = message.first_varint(FIELD_SERVICE);
 
-    if service == Some(HEART_RATE_SERVICE) {
+    if service == Some(HEART_RATE_SERVICE) || service == Some(HEART_RATE_SERVICE_LEGACY) {
         let mut payloads: Vec<Vec<u8>> = Vec::new();
         for field in &message.fields {
             if field.number == FIELD_COMMAND_PAYLOAD && field.wire_type == WIRE_LENGTH_DELIMITED {
