@@ -486,20 +486,6 @@ fn next_hr_seq() -> u16 {
     let n = HR_SEQ.fetch_add(1, Ordering::Relaxed);
     128 + (n % (16_384 - 128))
 }
-/// The maintainer's `startHr` rule: newer AirPods firmware (version3 first digit >= 8)
-/// streams heart rate on service 84 (HEARTRATE_COMMAND); older firmware on 19
-/// (HEARTRATE). Defaults to 84 when the firmware string is empty/unparseable (the
-/// current-generation default).
-fn hr_service(firmware: &str) -> u8 {
-    match firmware
-        .chars()
-        .find(|c| c.is_ascii_digit())
-        .and_then(|c| c.to_digit(10))
-    {
-        Some(d) if d < 8 => aap::STREAM_HEART_RATE_LEGACY, // 19
-        _ => aap::STREAM_HEART_RATE,                        // 84
-    }
-}
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
 /// Consecutive enable attempts (each an ~8 s sample wait) with no reading before we
@@ -537,10 +523,10 @@ fn set_heart_rate(ctx: &Ctx, on: bool) {
         ctx.overlay("Heart rate monitoring on");
     } else if !on && was {
         if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
-            // Stop is the same setting frame with the interval zeroed, on the same
-            // firmware-selected service.
-            let svc = hr_service(&ctx.state.lock().unwrap().firmware);
-            let _ = drv.send(&aap::hr_stream(next_hr_seq() as u8, svc, 0));
+            // Stop = interval 0 on both services (matching the start).
+            let s = next_hr_seq() as u8;
+            let _ = drv.send(&aap::hr_stream(s, aap::STREAM_HEART_RATE, 0));
+            let _ = drv.send(&aap::hr_stream(s.wrapping_add(1), aap::STREAM_HEART_RATE_LEGACY, 0));
         }
         ctx.state.lock().unwrap().heart_rate = None;
         ctx.overlay("Heart rate monitoring off");
@@ -623,11 +609,17 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
         // never helped); the 0x10 DEVMOTION6 stream is unrelated to HR and dropped.
         let _ = drv.send(&aap::HR_ENABLE);
         thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
-        // Kavish's frame: the HR service moved on newer firmware. Pick 84
-        // (HEARTRATE_COMMAND) vs 19 (HEARTRATE) from the firmware version, like his
-        // `startHr`; the decoder accepts both.
-        let svc = hr_service(&ctx.state.lock().unwrap().firmware);
-        let _ = drv.send(&aap::hr_stream(next_hr_seq() as u8, svc, aap::PERIOD_HEART_RATE_US));
+        // The HR "set interval" service differs by firmware (8*: 19; 9*: 84) and
+        // thibaup saw it vary — so set the 1 Hz interval on BOTH 84 and 19; the buds
+        // ignore the wrong one, and the decoder catches the reports on 19/20/84.
+        let s = next_hr_seq() as u8;
+        let _ = drv.send(&aap::hr_stream(s, aap::STREAM_HEART_RATE, aap::PERIOD_HEART_RATE_US)); // 84
+        thread::sleep(Duration::from_millis(120));
+        let _ = drv.send(&aap::hr_stream(
+            s.wrapping_add(1),
+            aap::STREAM_HEART_RATE_LEGACY,
+            aap::PERIOD_HEART_RATE_US,
+        )); // 19
 
         // Wait up to FIRST_SAMPLE_TIMEOUT for a REAL decoded reading. ACKs / a
         // live-but-empty stream are ignored on purpose — they are exactly the state
