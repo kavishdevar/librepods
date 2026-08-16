@@ -486,12 +486,20 @@ fn next_hr_seq() -> u16 {
     let n = HR_SEQ.fetch_add(1, Ordering::Relaxed);
     128 + (n % (16_384 - 128))
 }
-/// Fixed sequence number for the heart-rate START frame, matching the exact
-/// constant the working Android client bakes in (`08 e3 46` = varint 9059). The PR
-/// author flagged our incrementing seq as the one remaining difference from his
-/// packet; a request/sequence id shouldn't matter, but on Windows it's worth ruling
-/// out, and using a constant also mirrors his client re-sending the same bytes.
-const HR_START_SEQ: u16 = 9059; // 0x2363 → varint e3 46
+/// The maintainer's `startHr` rule: newer AirPods firmware (version3 first digit >= 8)
+/// streams heart rate on service 84 (HEARTRATE_COMMAND); older firmware on 19
+/// (HEARTRATE). Defaults to 84 when the firmware string is empty/unparseable (the
+/// current-generation default).
+fn hr_service(firmware: &str) -> u8 {
+    match firmware
+        .chars()
+        .find(|c| c.is_ascii_digit())
+        .and_then(|c| c.to_digit(10))
+    {
+        Some(d) if d < 8 => aap::STREAM_HEART_RATE_LEGACY, // 19
+        _ => aap::STREAM_HEART_RATE,                        // 84
+    }
+}
 /// Backoff between attempts, indexed by attempt number (last value repeats).
 const HR_RETRY_BACKOFF_MS: [u64; 3] = [500, 1_000, 2_000];
 /// Consecutive enable attempts (each an ~8 s sample wait) with no reading before we
@@ -529,8 +537,10 @@ fn set_heart_rate(ctx: &Ctx, on: bool) {
         ctx.overlay("Heart rate monitoring on");
     } else if !on && was {
         if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
-            // Stop is the same control frame with the sampling period zeroed.
-            let _ = drv.send(&aap::sensor_stream(next_hr_seq(), aap::STREAM_HEART_RATE, 0));
+            // Stop is the same setting frame with the interval zeroed, on the same
+            // firmware-selected service.
+            let svc = hr_service(&ctx.state.lock().unwrap().firmware);
+            let _ = drv.send(&aap::hr_stream(next_hr_seq() as u8, svc, 0));
         }
         ctx.state.lock().unwrap().heart_rate = None;
         ctx.overlay("Heart rate monitoring off");
@@ -613,9 +623,11 @@ fn hr_retry_campaign(ctx: &Ctx) -> HrOutcome {
         // never helped); the 0x10 DEVMOTION6 stream is unrelated to HR and dropped.
         let _ = drv.send(&aap::HR_ENABLE);
         thread::sleep(Duration::from_millis(HR_START_COMMAND_DELAY_MS));
-        // Kavish's confirmed-working start (2026-08-13): service 84, not 19 — the HR
-        // service id moved on newer firmware. See aap::hr_start.
-        let _ = drv.send(&aap::hr_start(next_hr_seq() as u8));
+        // Kavish's frame: the HR service moved on newer firmware. Pick 84
+        // (HEARTRATE_COMMAND) vs 19 (HEARTRATE) from the firmware version, like his
+        // `startHr`; the decoder accepts both.
+        let svc = hr_service(&ctx.state.lock().unwrap().firmware);
+        let _ = drv.send(&aap::hr_stream(next_hr_seq() as u8, svc, aap::PERIOD_HEART_RATE_US));
 
         // Wait up to FIRST_SAMPLE_TIMEOUT for a REAL decoded reading. ACKs / a
         // live-but-empty stream are ignored on purpose — they are exactly the state
