@@ -145,7 +145,11 @@ async fn async_main(
             command_tx: None,
             ui_tx: Some(ui_tx.clone()),
         };
-        let handle = tray.spawn().await.unwrap();
+        // LibrePods can be started by the session manager before the desktop's
+        // StatusNotifierWatcher is ready. Keep the tray service alive in that
+        // case so it can register when the watcher appears instead of aborting
+        // the entire process during login.
+        let handle = tray.assume_sni_available(true).spawn().await.unwrap();
         Some(handle)
     };
 
