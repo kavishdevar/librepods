@@ -2,7 +2,9 @@ package me.kavishdevar.librepods.wear.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -15,7 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.wear.core.AirPodsController
 
-/** First-build status screen. Protocol controls are added after transport stabilizes. */
+/**
+ * First useful diagnostic screen: connection state plus the three battery
+ * components. Unknown values stay visible as "--" so protocol problems are
+ * distinguishable from a real zero-percent reading.
+ */
 @Composable
 fun AirPodsHomeScreen(
     controller: AirPodsController,
@@ -27,7 +33,7 @@ fun AirPodsHomeScreen(
     Column(
         modifier = modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
     ) {
         Text("LibrePods Wear", style = MaterialTheme.typography.titleLarge)
         Text(state.deviceName)
@@ -39,7 +45,12 @@ fun AirPodsHomeScreen(
                 else -> "Disconnected"
             },
         )
-        state.address?.let { Text(it) }
+
+        BatteryRow("Left", state.leftBattery, state.leftCharging)
+        BatteryRow("Right", state.rightBattery, state.rightCharging)
+        BatteryRow("Case", state.caseBattery, state.caseCharging)
+
+        state.address?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
 
         Button(
             onClick = onConnect,
@@ -53,5 +64,23 @@ fun AirPodsHomeScreen(
                 Text("Disconnect")
             }
         }
+    }
+}
+
+@Composable
+private fun BatteryRow(label: String, level: Int?, charging: Boolean) {
+    val value = when {
+        level == null -> "--"
+        level == 255 -> "--"
+        level in 0..100 -> "$level%"
+        else -> "?"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label)
+        Text(if (charging && value != "--") "$value  ⚡" else value)
     }
 }
