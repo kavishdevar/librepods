@@ -43,8 +43,11 @@ AirPods
 - Added `AACPTransportBridge` for transitional packet writes/dispatch against the Wear-owned transport.
 - Initialized AACP/BLE managers inside the Wear service.
 - Kept existing AACP/BLE parsing and command logic intact while migrating lifecycle ownership.
+- Added strict AACP handshake sequencing: handshake -> ACK -> feature flags -> feature ACK -> notification request.
+- Started the AACP reader before the handshake write so a fast AirPods ACK cannot be lost.
 - Reverted an unverified packet-framing abstraction rather than guessing AACP framing rules.
-- Kept UI intentionally thin while the core is being stabilized.
+- Added a diagnostic Wear UI showing connection state and Left/Right/Case battery values.
+- Treat battery value `255` as unknown in the UI instead of displaying an invalid percentage.
 
 ## Phase 1 — autonomous transport/core — IN PROGRESS
 
@@ -61,7 +64,9 @@ AirPods
 
 ## Phase 2 — state and controls
 
-- Parse battery notifications into `AirPodsState`.
+- Parse L2CAP battery notifications into `AirPodsState` — NEXT.
+- Verify component mapping: Right=`0x02`, Left=`0x04`, Case=`0x08`.
+- Map battery charging/disconnected status into the state model.
 - Parse ear detection.
 - Parse listening mode.
 - Implement ANC / Transparency / Off commands.
@@ -77,8 +82,8 @@ AirPods
 
 ## Phase 4 — UI
 
+- Diagnostic connection + battery screen — DONE.
 - Main AirPods screen.
-- Battery display.
 - ANC / Transparency / Off.
 - Ear detection.
 - Conversational awareness.
