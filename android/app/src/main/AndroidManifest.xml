@@ -34,7 +34,7 @@
         </activity>
 
         <service
-            android:name=".services.AirPodsService"
+            android:name=".wear.service.LibrePodsWearService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
