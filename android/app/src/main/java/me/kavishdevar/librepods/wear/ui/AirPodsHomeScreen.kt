@@ -19,6 +19,7 @@ import me.kavishdevar.librepods.wear.core.AirPodsController
 @Composable
 fun AirPodsHomeScreen(
     controller: AirPodsController,
+    onConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by controller.state.collectAsState()
@@ -29,7 +30,7 @@ fun AirPodsHomeScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text("LibrePods Wear", style = MaterialTheme.typography.titleLarge)
-        Text(state.deviceName ?: "No AirPods selected")
+        Text(state.deviceName)
         Text(
             when {
                 state.connecting -> "Connecting…"
@@ -41,8 +42,8 @@ fun AirPodsHomeScreen(
         state.address?.let { Text(it) }
 
         Button(
-            onClick = { controller.connectToBondedAirPods() },
-            enabled = !state.connecting,
+            onClick = onConnect,
+            enabled = !state.connecting && !state.connected,
         ) {
             Text(if (state.connected) "Connected" else "Connect")
         }
