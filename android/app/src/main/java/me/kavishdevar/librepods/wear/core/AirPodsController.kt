@@ -44,13 +44,21 @@ class AirPodsController(
     fun initialize(aacpManager: AACPManager, bleManager: BLEManager) {
         aacp = aacpManager
         ble = bleManager
-        aacpManager.bindTransport(transport)
+        // Bind the protocol engine directly to the Wear-owned transport.
+        aacpManager.bindTransport(transportSession())
         bleManager.setAirPodsStatusListener(bleListener)
         runCatching { bleManager.startScanning() }
             .onFailure { Log.w(tag, "BLE status scanner could not start", it) }
-        Log.d(tag, "Autonomous Wear protocol core initialized")
+        Log.d(tag, "Protocol core initialized; BLE status monitoring started")
     }
 
+    /** Return the protocol transport owned by the Wear connection facade. */
+    private fun transportSession() = transport.protocolTransport()
+
+    /**
+     * Find the paired AirPods and establish the AACP control channel.
+     * BLE telemetry runs in parallel for battery/ear/case state.
+     */
     @SuppressLint("MissingPermission")
     fun connectToBondedAirPods(): Boolean {
         markConnecting()
@@ -60,7 +68,6 @@ class AirPodsController(
                 onError("Bluetooth is disabled or unavailable")
                 return false
             }
-
             val device = adapter.bondedDevices.firstOrNull { device ->
                 val name = device.name.orEmpty()
                 name.contains("AirPods", ignoreCase = true) || name.contains("Pods", ignoreCase = true)
@@ -69,18 +76,14 @@ class AirPodsController(
                 onError("No paired AirPods found")
                 return false
             }
-
             connectedDevice = device
-            stateStore.update {
-                it.copy(deviceName = device.name ?: "AirPods", address = device.address, connecting = true, connected = false, lastError = null)
-            }
+            stateStore.update { it.copy(deviceName = device.name ?: "AirPods", address = device.address, connecting = true, connected = false, lastError = null) }
 
             scope.launch {
                 try {
                     transport.connectAacp(device)
                     val manager = aacp ?: error("AACP manager is not initialized")
-                    // AACPManager owns framing; WearBluetoothConnection owns the socket.
-                    if (!manager.startSession()) error("AACP handshake could not be sent")
+                    check(manager.startSession()) { "AACP handshake/notification request was rejected" }
                     startAacpReader(manager)
                     stateStore.update { it.copy(connecting = false, connected = true, lastError = null) }
                     Log.i(tag, "AirPods AACP connection established")
@@ -102,7 +105,7 @@ class AirPodsController(
     private fun startAacpReader(manager: AACPManager) {
         aacpReaderJob?.cancel()
         aacpReaderJob = scope.launch {
-            val input = transport.aacpInput
+            val input = transport.aacpInput()
             val buffer = ByteArray(4096)
             while (true) {
                 val count = input.read(buffer)
@@ -114,44 +117,20 @@ class AirPodsController(
     }
 
     private fun applyBleStatus(device: BLEManager.AirPodsStatus) {
-        stateStore.update {
-            it.copy(
-                deviceName = if (device.model != "Unknown") device.model else it.deviceName,
-                address = device.address,
-                leftBattery = device.leftBattery,
-                rightBattery = device.rightBattery,
-                caseBattery = device.caseBattery,
-                leftCharging = device.isLeftCharging,
-                rightCharging = device.isRightCharging,
-                caseCharging = device.isCaseCharging,
-                caseLidOpen = device.lidOpen,
-                leftInEar = device.isLeftInEar,
-                rightInEar = device.isRightInEar,
-            )
-        }
+        stateStore.update { it.copy(deviceName = if (device.model != "Unknown") device.model else it.deviceName, address = device.address, leftBattery = device.leftBattery, rightBattery = device.rightBattery, caseBattery = device.caseBattery, leftCharging = device.isLeftCharging, rightCharging = device.isRightCharging, caseCharging = device.isCaseCharging, caseLidOpen = device.lidOpen, leftInEar = device.isLeftInEar, rightInEar = device.isRightInEar) }
     }
 
     fun markConnecting() { stateStore.update { it.copy(connecting = true, lastError = null) } }
-
-    fun attachDevice(device: BluetoothDevice, name: String? = null) {
-        connectedDevice = device
-        stateStore.update { it.copy(deviceName = name ?: "AirPods", address = runCatching { device.address }.getOrNull(), connecting = false, connected = true, lastError = null) }
-    }
-
+    fun attachDevice(device: BluetoothDevice, name: String? = null) { connectedDevice = device; stateStore.update { it.copy(deviceName = name ?: "AirPods", address = runCatching { device.address }.getOrNull(), connecting = false, connected = true, lastError = null) } }
     fun onBattery(left: Int?, right: Int?, caseBattery: Int?) { stateStore.update { it.copy(leftBattery = left, rightBattery = right, caseBattery = caseBattery) } }
     fun onEarDetection(leftInEar: Boolean, rightInEar: Boolean) { stateStore.update { it.copy(leftInEar = leftInEar, rightInEar = rightInEar) } }
     fun onListeningModeChanged(mode: ListeningMode) { stateStore.update { it.copy(listeningMode = mode) } }
-
-    fun onError(message: String, cause: Throwable? = null) {
-        Log.e(tag, message, cause)
-        stateStore.update { it.copy(connecting = false, connected = false, lastError = message) }
-    }
+    fun onError(message: String, cause: Throwable? = null) { Log.e(tag, message, cause); stateStore.update { it.copy(connecting = false, connected = false, lastError = message) } }
 
     fun disconnect() {
         connectedDevice = null
         aacpReaderJob?.cancel()
         aacpReaderJob = null
-        runCatching { aacp?.unbindTransport() }
         runCatching { transport.close() }
         stateStore.update { it.copy(connected = false, connecting = false) }
     }
@@ -159,6 +138,7 @@ class AirPodsController(
     fun shutdown() {
         disconnect()
         runCatching { ble?.stopScanning() }
+        aacp?.unbindTransport()
         scope.cancel()
         aacp = null
         ble = null
