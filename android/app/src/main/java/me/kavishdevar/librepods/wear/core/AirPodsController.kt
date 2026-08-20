@@ -44,21 +44,14 @@ class AirPodsController(
     fun initialize(aacpManager: AACPManager, bleManager: BLEManager) {
         aacp = aacpManager
         ble = bleManager
-        // Bind the protocol engine directly to the Wear-owned transport.
-        aacpManager.bindTransport(transportSession())
+        // WearBluetoothConnection itself is the protocol transport facade.
+        aacpManager.bindTransport(transport)
         bleManager.setAirPodsStatusListener(bleListener)
         runCatching { bleManager.startScanning() }
             .onFailure { Log.w(tag, "BLE status scanner could not start", it) }
         Log.d(tag, "Protocol core initialized; BLE status monitoring started")
     }
 
-    /** Return the protocol transport owned by the Wear connection facade. */
-    private fun transportSession() = transport.protocolTransport()
-
-    /**
-     * Find the paired AirPods and establish the AACP control channel.
-     * BLE telemetry runs in parallel for battery/ear/case state.
-     */
     @SuppressLint("MissingPermission")
     fun connectToBondedAirPods(): Boolean {
         markConnecting()
@@ -105,7 +98,7 @@ class AirPodsController(
     private fun startAacpReader(manager: AACPManager) {
         aacpReaderJob?.cancel()
         aacpReaderJob = scope.launch {
-            val input = transport.aacpInput()
+            val input = transport.aacpInput
             val buffer = ByteArray(4096)
             while (true) {
                 val count = input.read(buffer)
