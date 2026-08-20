@@ -40,6 +40,7 @@ AirPods
 - Added `LibrePodsWearService` and moved transport ownership into the service.
 - Converted `BluetoothConnectionManager` into a deprecated compatibility facade bound to the owned session.
 - Injected `AirPodsProtocolTransport` into `ATTManager`; ATT no longer owns or looks up a global socket.
+- Added `AACPTransportBridge` for transitional packet writes/dispatch against the Wear-owned transport.
 - Initialized AACP/BLE managers inside the Wear service.
 - Kept existing AACP/BLE parsing and command logic intact while migrating lifecycle ownership.
 - Reverted an unverified packet-framing abstraction rather than guessing AACP framing rules.
