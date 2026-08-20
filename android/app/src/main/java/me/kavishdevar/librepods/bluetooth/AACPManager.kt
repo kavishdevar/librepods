@@ -21,34 +21,29 @@ import android.util.Log
 import me.kavishdevar.librepods.data.Capability
 import me.kavishdevar.librepods.data.CustomEq
 import me.kavishdevar.librepods.wear.bluetooth.AirPodsProtocolTransport
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
- * Manager class for Apple Accessory Communication Protocol (AACP).
+ * Wear-facing AACP packet engine.
  *
- * The inherited protocol implementation is now transport-neutral: Wear OS
- * supplies the active L2CAP transport instead of AACP reaching into the
- * legacy global BluetoothConnectionManager.
+ * Transport ownership stays outside this class. The Wear session owns the
+ * L2CAP socket while this class owns the AACP handshake and packet framing.
  */
 class AACPManager {
-    private val TAG = "AACPManager[${System.identityHashCode(this)}]"
+    private val tag = "AACPManager[${System.identityHashCode(this)}]"
     private var transport: AirPodsProtocolTransport? = null
 
-    /** Bind the active Wear transport before sending or receiving AACP data. */
     fun bindTransport(protocolTransport: AirPodsProtocolTransport) {
         transport = protocolTransport
-        Log.d(TAG, "AACP transport bound")
+        Log.d(tag, "AACP transport bound")
     }
 
     fun unbindTransport() {
         transport = null
-        Log.d(TAG, "AACP transport unbound")
+        Log.d(tag, "AACP transport unbound")
     }
 
     companion object {
-        @Suppress("unused")
         object Opcodes {
             const val SET_FEATURE_FLAGS: Byte = 0x4D
             const val REQUEST_NOTIFICATIONS: Byte = 0x0F
@@ -73,19 +68,23 @@ class AACPManager {
             const val CUSTOM_EQ: Byte = 0x63
         }
 
-        private val HEADER_BYTES = byteArrayOf(0x04, 0x00, 0x04, 0x00)
+        private val header = byteArrayOf(0x04, 0x00, 0x04, 0x00)
+        private val handshake = byteArrayOf(
+            0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        )
 
         data class ControlCommandStatus(
-            val identifier: ControlCommandIdentifiers, val value: ByteArray
+            val identifier: ControlCommandIdentifiers,
+            val value: ByteArray,
         ) {
             override fun equals(other: Any?): Boolean {
                 if (this === other) return true
                 if (javaClass != other?.javaClass) return false
                 other as ControlCommandStatus
-                if (identifier != other.identifier) return false
-                if (!value.contentEquals(other.value)) return false
-                return true
+                return identifier == other.identifier && value.contentEquals(other.value)
             }
+
             override fun hashCode(): Int = 31 * identifier.hashCode() + value.contentHashCode()
         }
 
@@ -102,50 +101,48 @@ class AACPManager {
             SLEEP_DETECTION_CONFIG(0x35), ALLOW_AUTO_CONNECT(0x36), EAR_DETECTION_CONFIG(0x0A),
             AUTOMATIC_CONNECTION_CONFIG(0x20), OWNS_CONNECTION(0x06), PPE_TOGGLE_CONFIG(0x37),
             PPE_CAP_LEVEL_CONFIG(0x38), DYNAMIC_END_OF_CHARGE(0x3B);
-            companion object { fun fromByte(byte: Byte): ControlCommandIdentifiers? = entries.find { it.value == byte } }
+
+            companion object {
+                fun fromByte(byte: Byte): ControlCommandIdentifiers? = entries.find { it.value == byte }
+            }
         }
 
         enum class ProximityKeyType(val value: Byte) {
             IRK(0x01), ENC_KEY(0x04);
-            companion object { fun fromByte(byte: Byte): ProximityKeyType = entries.find { it.value == byte } ?: throw IllegalArgumentException("Unknown ProximityKeyType: $byte") }
+            companion object {
+                fun fromByte(byte: Byte): ProximityKeyType = entries.find { it.value == byte }
+                    ?: throw IllegalArgumentException("Unknown ProximityKeyType: $byte")
+            }
         }
+
         enum class StemPressType(val value: Byte) {
-            SINGLE_PRESS(0x05), DOUBLE_PRESS(0x06), TRIPLE_PRESS(0x07), LONG_PRESS(0x08);
-            companion object { fun fromByte(byte: Byte): StemPressType? = entries.find { it.value == byte } }
+            SINGLE_PRESS(0x05), DOUBLE_PRESS(0x06), TRIPLE_PRESS(0x07), LONG_PRESS(0x08)
         }
-        enum class StemPressBudType(val value: Byte) {
-            LEFT(0x01), RIGHT(0x02);
-            companion object { fun fromByte(byte: Byte): StemPressBudType? = entries.find { it.value == byte } }
-        }
-        enum class AudioSourceType(val value: Byte) {
-            NONE(0x00), CALL(0x01), MEDIA(0x02);
-            companion object { fun fromByte(byte: Byte): AudioSourceType? = entries.find { it.value == byte } }
-        }
+
+        enum class StemPressBudType(val value: Byte) { LEFT(0x01), RIGHT(0x02) }
+        enum class AudioSourceType(val value: Byte) { NONE(0x00), CALL(0x01), MEDIA(0x02) }
+
         data class AudioSource(val mac: String, val type: AudioSourceType)
         data class ConnectedDevice(val mac: String, val info1: Byte, val info2: Byte, var type: String?)
-        data class AirPodsInformation(val name: String, val modelNumber: String, val manufacturer: String, val serialNumber: String, val version1: String, val version2: String, val hardwareRevision: String, val updaterIdentifier: String, val leftSerialNumber: String, val rightSerialNumber: String, val version3: String)
+        data class AirPodsInformation(
+            val name: String,
+            val modelNumber: String,
+            val manufacturer: String,
+            val serialNumber: String,
+            val version1: String,
+            val version2: String,
+            val hardwareRevision: String,
+            val updaterIdentifier: String,
+            val leftSerialNumber: String,
+            val rightSerialNumber: String,
+            val version3: String,
+        )
     }
 
     var controlCommandStatusList: MutableList<ControlCommandStatus> = mutableListOf()
     var controlCommandListeners: MutableMap<ControlCommandIdentifiers, MutableList<ControlCommandListener>> = mutableMapOf()
-    var owns: Boolean = false; private set
-    var oldConnectedDevices: List<ConnectedDevice> = listOf(); private set
-    var connectedDevices: List<ConnectedDevice> = listOf(); private set
-    var audioSource: AudioSource? = null; private set
-    var eqData = FloatArray(8); private set
-    var eqOnPhone: Boolean = false; private set
-    var eqOnMedia: Boolean = false; private set
-    var customEq: CustomEq = CustomEq(state = 1, low = 50, mid = 50, high = 50); private set
-    var customEqCallback: ((CustomEq) -> Unit)? = null
-
-    fun getControlCommandStatus(identifier: ControlCommandIdentifiers): ControlCommandStatus? = controlCommandStatusList.find { it.identifier == identifier }
-    private fun setControlCommandStatusValue(identifier: ControlCommandIdentifiers, value: ByteArray) {
-        val existingStatus = getControlCommandStatus(identifier)
-        if (existingStatus?.value.contentEquals(value) == true) controlCommandStatusList.remove(existingStatus)
-        controlCommandListeners[identifier]?.forEach { it.onControlCommandReceived(ControlCommand(identifier.value, value)) }
-        controlCommandStatusList.add(ControlCommandStatus(identifier, value))
-        if (identifier == ControlCommandIdentifiers.OWNS_CONNECTION) owns = value.isNotEmpty() && value[0] == 0x01.toByte()
-    }
+    var owns: Boolean = false
+        private set
 
     interface PacketCallback {
         fun onBatteryInfoReceived(batteryInfo: ByteArray)
@@ -166,58 +163,104 @@ class AACPManager {
         fun onCustomEqReceived(customEq: CustomEq)
         fun onCapabilitiesReceived(capabilities: List<Capability>)
     }
-    interface ControlCommandListener { fun onControlCommandReceived(controlCommand: ControlCommand) }
-    fun registerControlCommandListener(identifier: ControlCommandIdentifiers, callback: ControlCommandListener) { controlCommandListeners.getOrPut(identifier) { mutableListOf() }.add(callback) }
-    fun unregisterControlCommandListener(identifier: ControlCommandIdentifiers, callback: ControlCommandListener) { controlCommandListeners[identifier]?.remove(callback) }
-    private var callback: PacketCallback? = null
-    fun setPacketCallback(callback: PacketCallback) { this.callback = callback }
-    fun createDataPacket(data: ByteArray): ByteArray = HEADER_BYTES + data
-    fun createControlCommandPacket(identifier: Byte, data: ByteArray): ByteArray { val payload = ByteArray(7); payload[0] = Opcodes.CONTROL_COMMAND; payload[2] = identifier; System.arraycopy(data, 0, payload, 3, minOf(data.size, 4)); return payload }
-    fun sendDataPacket(data: ByteArray): Boolean = sendPacket(createDataPacket(data))
-    fun sendControlCommand(identifier: Byte, value: ByteArray): Boolean { val id = ControlCommandIdentifiers.fromByte(identifier) ?: return false; setControlCommandStatusValue(id, value); return sendDataPacket(createControlCommandPacket(identifier, value)) }
-    fun sendNotificationRequest(): Boolean = sendDataPacket(createRequestNotificationPacket())
-    fun createRequestNotificationPacket(): ByteArray = byteArrayOf(Opcodes.REQUEST_NOTIFICATIONS, 0x00, 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte())
-    fun createHandshakePacket(): ByteArray = byteArrayOf(0x00,0x00,0x04,0x00,0x01,0x00,0x02,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00)
 
-    /** Feed one complete AACP packet from the Wear L2CAP reader. */
-    fun receivePacket(packet: ByteArray) {
-        if (packet.size < 6 || !packet.copyOfRange(0, 4).contentEquals(HEADER_BYTES)) { callback?.onUnknownPacketReceived(packet); return }
-        when (packet[4]) {
-            Opcodes.BATTERY_INFO -> callback?.onBatteryInfoReceived(packet)
-            Opcodes.EAR_DETECTION -> callback?.onEarDetectionReceived(packet)
-            Opcodes.CONTROL_COMMAND -> runCatching {
-                val command = ControlCommand.fromByteArray(packet)
-                ControlCommandIdentifiers.fromByte(command.identifier)?.let { setControlCommandStatusValue(it, command.value) }
-                callback?.onControlCommandReceived(packet)
-            }.onFailure { callback?.onUnknownPacketReceived(packet) }
-            else -> callback?.onUnknownPacketReceived(packet)
-        }
+    interface ControlCommandListener {
+        fun onControlCommandReceived(controlCommand: ControlCommand)
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
-    fun sendPacket(packet: ByteArray): Boolean {
+    private var callback: PacketCallback? = null
+
+    fun setPacketCallback(callback: PacketCallback) {
+        this.callback = callback
+    }
+
+    /** Send the documented 16-byte AACP session handshake. */
+    fun startSession(): Boolean {
+        if (!sendRaw(handshake)) return false
+        Log.i(tag, "AACP handshake sent")
+        return sendNotificationRequest()
+    }
+
+    fun createDataPacket(data: ByteArray): ByteArray = header + data
+
+    fun createRequestNotificationPacket(): ByteArray = byteArrayOf(
+        Opcodes.REQUEST_NOTIFICATIONS, 0x00,
+        0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(),
+    )
+
+    fun sendNotificationRequest(): Boolean = sendDataPacket(createRequestNotificationPacket())
+
+    fun sendDataPacket(data: ByteArray): Boolean = sendPacket(createDataPacket(data))
+
+    fun sendPacket(packet: ByteArray): Boolean = sendRaw(packet)
+
+    private fun sendRaw(packet: ByteArray): Boolean {
         return try {
             val output = transport?.aacpOutput ?: BluetoothConnectionManager.aacpSocket?.outputStream ?: return false
             output.write(packet)
             output.flush()
             true
         } catch (error: Exception) {
-            Log.e(TAG, "Error sending AACP packet", error)
+            Log.e(tag, "Error sending AACP packet", error)
             false
         }
     }
 
+    fun createControlCommandPacket(identifier: Byte, data: ByteArray): ByteArray {
+        val payload = ByteArray(7)
+        payload[0] = Opcodes.CONTROL_COMMAND
+        payload[2] = identifier
+        System.arraycopy(data, 0, payload, 3, minOf(data.size, 4))
+        return payload
+    }
+
+    fun sendControlCommand(identifier: Byte, value: ByteArray): Boolean {
+        val id = ControlCommandIdentifiers.fromByte(identifier) ?: return false
+        controlCommandStatusList.add(ControlCommandStatus(id, value))
+        return sendDataPacket(createControlCommandPacket(identifier, value))
+    }
+
+    /** Feed one complete AACP packet from the Wear reader. */
+    fun receivePacket(packet: ByteArray) {
+        if (packet.size < 6 || !packet.copyOfRange(0, 4).contentEquals(header)) {
+            callback?.onUnknownPacketReceived(packet)
+            return
+        }
+        when (packet[4]) {
+            Opcodes.BATTERY_INFO -> callback?.onBatteryInfoReceived(packet)
+            Opcodes.EAR_DETECTION -> callback?.onEarDetectionReceived(packet)
+            Opcodes.CONTROL_COMMAND -> runCatching {
+                val command = ControlCommand.fromByteArray(packet)
+                ControlCommandIdentifiers.fromByte(command.identifier)?.let { id ->
+                    controlCommandStatusList.add(ControlCommandStatus(id, command.value))
+                }
+                callback?.onControlCommandReceived(packet)
+            }.onFailure { callback?.onUnknownPacketReceived(packet) }
+            else -> callback?.onUnknownPacketReceived(packet)
+        }
+    }
+
+    fun registerControlCommandListener(identifier: ControlCommandIdentifiers, callback: ControlCommandListener) {
+        controlCommandListeners.getOrPut(identifier) { mutableListOf() }.add(callback)
+    }
+
+    fun unregisterControlCommandListener(identifier: ControlCommandIdentifiers, callback: ControlCommandListener) {
+        controlCommandListeners[identifier]?.remove(callback)
+    }
+
     data class ControlCommand(val identifier: Byte, val value: ByteArray) {
-        override fun equals(other: Any?): Boolean { if (this === other) return true; if (javaClass != other?.javaClass) return false; other as ControlCommand; return identifier == other.identifier && value.contentEquals(other.value) }
-        override fun hashCode(): Int = 31 * identifier.toInt() + value.contentHashCode()
         companion object {
             fun fromByteArray(data: ByteArray): ControlCommand {
                 var offset = 0
-                while (data.size - offset >= 4 && data[offset] == 0x04.toByte() && data[offset + 1] == 0x00.toByte() && data[offset + 2] == 0x04.toByte() && data[offset + 3] == 0x00.toByte()) offset += 4
-                if (data.size - offset < 7 || data[offset] != Opcodes.CONTROL_COMMAND) throw IllegalArgumentException("Invalid ControlCommand packet")
+                while (data.size - offset >= 4 && data[offset] == 0x04.toByte() && data[offset + 1] == 0x00.toByte() && data[offset + 2] == 0x04.toByte() && data[offset + 3] == 0x00.toByte()) {
+                    offset += 4
+                }
+                if (data.size - offset < 7 || data[offset] != Opcodes.CONTROL_COMMAND) {
+                    throw IllegalArgumentException("Invalid ControlCommand packet")
+                }
                 val identifier = data[offset + 2]
-                val value = data.copyOfRange(offset + 3, offset + 7).dropLastWhile { it == 0x00.toByte() }.toByteArray()
-                return ControlCommand(identifier, if (value.isEmpty()) byteArrayOf(0x00) else value)
+                val value = data.copyOfRange(offset + 3, offset + 7)
+                return ControlCommand(identifier, value)
             }
         }
     }
