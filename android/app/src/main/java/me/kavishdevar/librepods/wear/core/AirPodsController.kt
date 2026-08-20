@@ -17,15 +17,12 @@ import me.kavishdevar.librepods.bluetooth.BLEManager
 import me.kavishdevar.librepods.wear.bluetooth.WearBluetoothConnection
 
 /** Wear-facing controller for the autonomous AirPods stack. */
-class AirPodsController(
-    private val context: Context,
-    private val transport: WearBluetoothConnection,
-) {
+class AirPodsController(private val context: Context, private val transport: WearBluetoothConnection) {
     private val tag = "AirPodsController"
     private val stateStore = AirPodsStateStore()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val prefs = context.getSharedPreferences("librepods_wear", Context.MODE_PRIVATE)
     val state: StateFlow<AirPodsState> = stateStore.state
-
     private var aacp: AACPManager? = null
     private var ble: BLEManager? = null
     private var connectedDevice: BluetoothDevice? = null
@@ -37,7 +34,7 @@ class AirPodsController(
         override fun onLidStateChanged(lidOpen: Boolean) { stateStore.update { it.copy(caseLidOpen = lidOpen) } }
         override fun onEarStateChanged(device: BLEManager.AirPodsStatus, leftInEar: Boolean, rightInEar: Boolean) = applyBleStatus(device)
         override fun onBatteryChanged(device: BLEManager.AirPodsStatus) = applyBleStatus(device)
-        override fun onDeviceDisappeared() { Log.d(tag, "AirPods BLE advertisement disappeared") }
+        override fun onDeviceDisappeared() = Log.d(tag, "AirPods BLE advertisement disappeared")
     }
 
     fun initialize(aacpManager: AACPManager, bleManager: BLEManager) {
@@ -45,52 +42,46 @@ class AirPodsController(
         ble = bleManager
         aacpManager.bindTransport(transport)
         bleManager.setAirPodsStatusListener(bleListener)
-        runCatching { bleManager.startScanning() }
-            .onFailure { Log.w(tag, "BLE status scanner could not start", it) }
-        Log.d(tag, "Protocol core initialized; BLE status monitoring started")
+        runCatching { bleManager.startScanning() }.onFailure { Log.w(tag, "BLE status scanner could not start", it) }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun connectToDevice(address: String, name: String = "AirPods"): Boolean {
+        markConnecting()
+        return try {
+            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+                ?: return fail("Bluetooth is unavailable")
+            if (!adapter.isEnabled) return fail("Bluetooth is disabled")
+            val device = adapter.getRemoteDevice(address)
+            connectedDevice = device
+            prefs.edit().putString("selected_address", address).putString("selected_name", name).apply()
+            stateStore.update { it.copy(deviceName = name, address = address, connecting = true, connected = false, lastError = null) }
+            scope.launch { connectTransport(device) }
+            true
+        } catch (e: SecurityException) { fail("Bluetooth permission is required", e) }
+        catch (e: IllegalArgumentException) { fail("Invalid Bluetooth device", e) }
     }
 
     @SuppressLint("MissingPermission")
     fun connectToBondedAirPods(): Boolean {
-        markConnecting()
-        try {
-            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
-            if (adapter == null || !adapter.isEnabled) {
-                onError("Bluetooth is disabled or unavailable")
-                return false
-            }
-            val device = adapter.bondedDevices.firstOrNull { device ->
-                val name = device.name.orEmpty()
-                name.contains("AirPods", ignoreCase = true) || name.contains("Pods", ignoreCase = true)
-            }
-            if (device == null) {
-                onError("No paired AirPods found")
-                return false
-            }
-            connectedDevice = device
-            stateStore.update { it.copy(deviceName = device.name ?: "AirPods", address = device.address, connecting = true, connected = false, lastError = null) }
+        val saved = prefs.getString("selected_address", null)
+        if (saved != null) return connectToDevice(saved, prefs.getString("selected_name", "AirPods") ?: "AirPods")
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+        val device = adapter?.bondedDevices?.firstOrNull { it.name.orEmpty().contains("AirPods", true) || it.name.orEmpty().contains("Pods", true) }
+            ?: return fail("No paired AirPods found")
+        return connectToDevice(device.address, device.name ?: "AirPods")
+    }
 
-            scope.launch {
-                try {
-                    transport.connectAacp(device)
-                    val manager = aacp ?: error("AACP manager is not initialized")
-                    // Start the reader before the first handshake packet so a fast ACK cannot be lost.
-                    startAacpReader(manager)
-                    check(manager.startSession()) { "AACP handshake could not be sent" }
-                    stateStore.update { it.copy(connecting = false, connected = true, lastError = null) }
-                    Log.i(tag, "AirPods AACP transport connected; handshake in progress")
-                } catch (error: Throwable) {
-                    onError("AACP connection failed: ${error.message ?: error.javaClass.simpleName}", error)
-                    runCatching { transport.close() }
-                }
-            }
-            return true
-        } catch (security: SecurityException) {
-            onError("Bluetooth permission is required", security)
-            return false
-        } catch (error: Throwable) {
-            onError("Bluetooth discovery failed: ${error.message ?: error.javaClass.simpleName}", error)
-            return false
+    private suspend fun connectTransport(device: BluetoothDevice) {
+        try {
+            transport.connectAacp(device)
+            val manager = aacp ?: error("AACP manager is not initialized")
+            startAacpReader(manager)
+            check(manager.startSession()) { "AACP handshake could not be sent" }
+            stateStore.update { it.copy(connecting = false, connected = true, lastError = null) }
+        } catch (e: Throwable) {
+            onError("AACP connection failed: ${e.message ?: e.javaClass.simpleName}", e)
+            runCatching { transport.close() }
         }
     }
 
@@ -99,12 +90,7 @@ class AirPodsController(
         aacpReaderJob = scope.launch {
             val input = transport.aacpInput
             val buffer = ByteArray(4096)
-            while (true) {
-                val count = input.read(buffer)
-                if (count <= 0) break
-                manager.receivePacket(buffer.copyOf(count))
-            }
-            Log.d(tag, "AACP reader stopped")
+            while (true) { val count = input.read(buffer); if (count <= 0) break; manager.receivePacket(buffer.copyOf(count)) }
         }
     }
 
@@ -113,29 +99,19 @@ class AirPodsController(
     }
 
     fun markConnecting() { stateStore.update { it.copy(connecting = true, lastError = null) } }
-    fun attachDevice(device: BluetoothDevice, name: String? = null) { connectedDevice = device; stateStore.update { it.copy(deviceName = name ?: "AirPods", address = runCatching { device.address }.getOrNull(), connecting = false, connected = true, lastError = null) } }
     fun onBattery(left: Int?, right: Int?, caseBattery: Int?) { stateStore.update { it.copy(leftBattery = left, rightBattery = right, caseBattery = caseBattery) } }
     fun onEarDetection(leftInEar: Boolean, rightInEar: Boolean) { stateStore.update { it.copy(leftInEar = leftInEar, rightInEar = rightInEar) } }
     fun onListeningModeChanged(mode: ListeningMode) { stateStore.update { it.copy(listeningMode = mode) } }
     fun onError(message: String, cause: Throwable? = null) { Log.e(tag, message, cause); stateStore.update { it.copy(connecting = false, connected = false, lastError = message) } }
+    private fun fail(message: String, cause: Throwable? = null): Boolean { onError(message, cause); return false }
 
     fun disconnect() {
         connectedDevice = null
-        aacpReaderJob?.cancel()
-        aacpReaderJob = null
+        aacpReaderJob?.cancel(); aacpReaderJob = null
         runCatching { transport.close() }
         aacp?.let { if (it.sessionState != AACPManager.SessionState.IDLE) it.unbindTransport() }
         stateStore.update { it.copy(connected = false, connecting = false) }
     }
 
-    fun shutdown() {
-        disconnect()
-        runCatching { ble?.stopScanning() }
-        aacp?.unbindTransport()
-        scope.cancel()
-        aacp = null
-        ble = null
-        stateStore.reset()
-        Log.d(tag, "Protocol core shut down")
-    }
+    fun shutdown() { disconnect(); runCatching { ble?.stopScanning() }; aacp?.unbindTransport(); scope.cancel(); aacp = null; ble = null; stateStore.reset() }
 }
