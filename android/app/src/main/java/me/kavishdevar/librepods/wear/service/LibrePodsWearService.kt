@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.bluetooth.BLEManager
+import me.kavishdevar.librepods.bluetooth.BluetoothConnectionManager
 import me.kavishdevar.librepods.wear.bluetooth.AirPodsConnectionSession
 import me.kavishdevar.librepods.wear.bluetooth.WearBluetoothConnection
 import me.kavishdevar.librepods.wear.core.AirPodsController
@@ -13,12 +14,13 @@ import me.kavishdevar.librepods.wear.core.AirPodsController
 /**
  * Background lifecycle boundary for direct AirPods control on Wear OS.
  *
- * The service owns long-lived protocol state; the Activity remains a thin UI
- * entry point and does not own Bluetooth resources.
+ * The session owns the sockets. The legacy BluetoothConnectionManager is only
+ * bound as a temporary compatibility facade for the inherited AACP code.
  */
 class LibrePodsWearService : Service() {
     private lateinit var controller: AirPodsController
     private lateinit var transport: WearBluetoothConnection
+    private lateinit var session: AirPodsConnectionSession
 
     override fun onCreate() {
         super.onCreate()
@@ -26,7 +28,9 @@ class LibrePodsWearService : Service() {
         val adapter = getSystemService(BluetoothManager::class.java)?.adapter
             ?: error("Bluetooth adapter is unavailable")
 
-        val session = AirPodsConnectionSession(adapter)
+        session = AirPodsConnectionSession(adapter)
+        BluetoothConnectionManager.bind(session)
+
         transport = WearBluetoothConnection(this)
         transport.attachSession(session)
 
@@ -41,6 +45,7 @@ class LibrePodsWearService : Service() {
 
     override fun onDestroy() {
         controller.shutdown()
+        BluetoothConnectionManager.unbind(session)
         transport.close()
         super.onDestroy()
     }
