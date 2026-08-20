@@ -32,6 +32,7 @@ fun AirPodsHomeScreen(
     val state by controller.state.collectAsState()
     val devices by scanner.devices.collectAsState()
     val scanning by scanner.scanning.collectAsState()
+    val scanError by scanner.scanError.collectAsState()
 
     Column(
         modifier = modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -45,47 +46,36 @@ fun AirPodsHomeScreen(
                 state.connecting -> "Connecting…"
                 state.connected -> "Connected"
                 state.lastError != null -> state.lastError!!
+                scanError != null -> "Scan error: $scanError"
                 else -> "Disconnected"
             },
             style = MaterialTheme.typography.labelSmall
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             BatteryRow("L", state.leftBattery, state.leftCharging)
             BatteryRow("R", state.rightBattery, state.rightCharging)
             BatteryRow("Case", state.caseBattery, state.caseCharging)
         }
 
         if (devices.isNotEmpty() || scanning) {
-            Text(
-                if (scanning) "Scanning…" else "Devices",
-                style = MaterialTheme.typography.labelMedium
-            )
+            Text(if (scanning) "Scanning…" else "Devices", style = MaterialTheme.typography.labelMedium)
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 items(devices, key = { it.address }) { device ->
-                    DeviceRow(device) {
-                        controller.connectToDevice(device.address, device.name)
-                    }
+                    DeviceRow(device) { controller.connectToDevice(device.address, device.name) }
                 }
             }
             Button(onClick = { if (scanning) scanner.stopScan() else scanner.startScan() }) {
                 Text(if (scanning) "Stop" else "Scan")
             }
         } else {
-            Button(onClick = onConnect, enabled = !state.connecting && !state.connected) {
-                Text("Scan")
-            }
+            Button(onClick = onConnect, enabled = !state.connecting && !state.connected) { Text("Scan") }
         }
 
-        if (state.connected) {
-            Button(onClick = controller::disconnect) { Text("Disconnect") }
-        }
+        if (state.connected) Button(onClick = controller::disconnect) { Text("Disconnect") }
     }
 }
 
@@ -98,10 +88,7 @@ private fun DeviceRow(device: AirPodsDevice, onClick: () -> Unit) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(device.name, style = MaterialTheme.typography.bodySmall)
-            Text(
-                if (device.bonded) "Paired" else "Available",
-                style = MaterialTheme.typography.labelSmall
-            )
+            Text(if (device.bonded) "Paired" else "Available", style = MaterialTheme.typography.labelSmall)
         }
         Text(device.rssi?.let { "${it} dBm" } ?: "", style = MaterialTheme.typography.labelSmall)
     }
@@ -116,9 +103,6 @@ private fun BatteryRow(label: String, level: Int?, charging: Boolean) {
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, style = MaterialTheme.typography.labelSmall)
-        Text(
-            if (charging && value != "--") "$value ⚡" else value,
-            style = MaterialTheme.typography.bodySmall
-        )
+        Text(if (charging && value != "--") "$value ⚡" else value, style = MaterialTheme.typography.bodySmall)
     }
 }
