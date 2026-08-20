@@ -1,7 +1,5 @@
 package me.kavishdevar.librepods.wear.bluetooth
 
-import android.bluetooth.BluetoothDevice
-import android.os.ParcelUuid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -9,8 +7,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Small bounded reconnect coordinator. It never owns protocol state; it only
- * asks the connection session to establish the transport again.
+ * Small bounded reconnect coordinator. It owns retry timing only; transport
+ * and protocol state remain inside the connection session.
  */
 class AirPodsReconnectManager(
     private val scope: CoroutineScope,
@@ -19,13 +17,7 @@ class AirPodsReconnectManager(
 ) {
     private var job: Job? = null
 
-    fun start(
-        device: BluetoothDevice,
-        aacpUuid: ParcelUuid,
-        aacpPsm: Int,
-        attUuid: ParcelUuid,
-        attPsm: Int,
-    ) {
+    fun start(target: AirPodsConnectionTarget) {
         job?.cancel()
         job = scope.launch {
             var attempt = 0
@@ -34,7 +26,13 @@ class AirPodsReconnectManager(
             while (attempt < maxAttempts) {
                 attempt++
                 try {
-                    session.connect(device, aacpUuid, aacpPsm, attUuid, attPsm)
+                    session.connect(
+                        device = target.device,
+                        aacpUuid = target.aacpUuid,
+                        aacpPsm = target.aacpPsm,
+                        attUuid = target.attUuid,
+                        attPsm = target.attPsm,
+                    )
                     return@launch
                 } catch (_: Throwable) {
                     if (attempt >= maxAttempts) return@launch
