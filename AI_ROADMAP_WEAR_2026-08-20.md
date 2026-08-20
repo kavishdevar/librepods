@@ -1,106 +1,92 @@
-# LibrePods Wear OS — AI Development Roadmap
+# LibrePods Wear — AI Roadmap
 
 Date: 2026-08-20
 
 ## Goal
 
-Turn this fork of LibrePods into a fully autonomous Wear OS application for direct AirPods control. The watch must communicate with AirPods directly; a phone companion must not be required for normal operation.
+Turn this fork of LibrePods into a fully autonomous Wear OS application for direct AirPods control. The watch communicates with AirPods directly; a phone companion is not required for normal operation.
 
 ## Architecture target
 
 ```text
-Wear OS UI
-    |
-Wear connection/service layer
-    |
-Bluetooth transport
-    |
-ATT / AACP protocol core
-    |
+Wear UI
+   |
+AirPodsController
+   |
+State / Commands
+   |
+Wear Bluetooth transport
+   |
+ATT / BLE / AACP protocol core
+   |
 AirPods
 ```
 
-The phone is not part of the normal control path.
+## Completed
 
-## Phase 0 — Cleanup status
-
-Completed in `wearos/initial-cleanup`:
-
-- Preserved GPL-3.0 and upstream attribution.
 - Removed Linux product code from the Wear branch.
-- Removed Android-specific issue templates and funding metadata.
-- Removed the boot receiver and boot-completion requirement.
-- Removed phone media-control utility.
-- Removed phone UI gesture/sensor helpers.
-- Removed native-module/reverse-engineering helper utilities from the Wear target.
-- Removed the rootless workaround helper from the Wear target.
-- Reduced the Gradle version catalog to dependencies currently relevant to the Wear target.
-- Kept the AirPods protocol implementation intact for the next isolation pass.
+- Removed phone-only boot, media, gesture, sensor, billing and root/Xposed plumbing.
+- Added `AirPodsController` as the Wear-facing core boundary.
+- Added `AirPodsState` / `AirPodsStateStore`.
+- Added typed `AirPodsCommand` boundary.
+- Added `WearBluetoothScanner`.
+- Added `WearBluetoothConnection` transport boundary.
+- Added `LibrePodsWearService` lifecycle boundary.
+- Kept the existing AACP/ATT/BLE implementations intact for incremental migration.
+- Simplified the Wear Gradle target.
 
-Still to audit before deletion:
+## Phase 1 — Finish autonomous core
 
-- `AirPodsService.kt` — split lifecycle/service code from protocol logic instead of deleting it wholesale.
-- Remaining `utils/` classes — keep only protocol/debug/security helpers that are actually referenced.
-- `res/` — remove phone-only assets/resources after checking references.
-- Native/root/Xposed remnants — remove only after confirming no protocol dependency remains.
+- Audit AACP, ATT, BLE and connection dependencies.
+- Replace phone-owned socket/service lifecycle with Wear-owned lifecycle.
+- Implement AirPods discovery filtering.
+- Implement direct connect/disconnect.
+- Wire ATT notifications into AACP packet parsing.
+- Map battery notifications to `AirPodsState`.
+- Map listening modes to state and commands.
+- Add ear detection and conversational awareness state/commands.
+- Implement reconnect/backoff and connection-loss recovery.
+- Migrate required logic out of legacy `AirPodsService`.
+- Delete legacy `AirPodsService` only after migration is complete.
 
-## Phase 1 — Protocol/core isolation
-
-- Keep `AACPManager.kt`.
-- Keep `ATTManager.kt`.
-- Keep `BLEManager.kt`.
-- Keep `BluetoothConnectionManager.kt` as the starting point for the Wear transport.
-- Keep AirPods data models and command definitions.
-- Move reusable protocol code away from phone-specific application lifecycle.
-- Remove phone-only APIs from the core.
-
-## Phase 2 — Wear OS Bluetooth
-
-- Implement Wear-specific Bluetooth adapter layer.
-- Discover AirPods.
-- Connect directly from the watch.
-- Establish BLE/ATT and AACP channels.
-- Add timeout, retry and reconnect handling.
-- No phone relay.
-
-## Phase 3 — First useful controls
+## Phase 2 — First controls
 
 - AirPods identification.
 - Left/right/case battery.
 - Connection state.
-- Listening mode: Noise Cancellation / Transparency / Off where supported.
+- ANC / Transparency / Off.
 - Ear detection.
 
-## Phase 4 — Advanced protocol features
+## Phase 3 — Advanced protocol
 
 - Conversational Awareness.
-- Head gestures where the AirPods protocol supports them.
+- Head gestures where supported.
 - Press/hold configuration.
 - Custom EQ/accessibility controls where supported.
 - Rename/configuration.
-- Additional notifications/state synchronization.
+- Additional state synchronization.
 
-## Phase 5 — Wear OS UX
+## Phase 4 — UI
 
-- Round and rectangular watch layouts.
+- Main AirPods screen.
+- Round/rectangular layouts.
 - Large touch targets.
 - Fast connection screen.
-- Tile for quick listening-mode control.
+- Tile for listening-mode control.
 - Optional complication.
-- Battery-efficient background service.
-- Keep the screen usable during pairing/connection flows without unnecessary timeout behavior.
+- Battery-efficient background operation.
 
-## Phase 6 — Compatibility and hardening
+## Phase 5 — Compatibility
 
-- Test Wear OS 3/4/5/6 where practical.
-- Test Samsung Galaxy Watch hardware first.
-- Test direct connection without phone.
-- Test reconnect after Bluetooth toggles, watch restart, AirPods case open/close and range loss.
-- Add protocol logging suitable for reverse-engineering/debugging without leaking private keys.
+- Direct connection without phone.
+- Reconnect after Bluetooth toggle, watch restart, AirPods case open/close and range loss.
+- Samsung Galaxy Watch hardware first.
+- Wear OS 3/4/5/6 where practical.
+- Safe protocol logging without exposing private keys.
 
-## Future projects
+## Future
 
-- Extract a reusable protocol core for Android, Wear OS, Linux and Windows where practical.
+- Extract reusable protocol core for Android, Wear OS, Linux and Windows where practical.
 - Build a native LibrePods Windows client after the Wear OS port is stable.
 
 ## Development rules
@@ -108,5 +94,5 @@ Still to audit before deletion:
 - Code comments: English.
 - Roadmap and architecture documentation: English.
 - Focused commits for cleanup and architecture changes.
-- Do not delete protocol code merely because it is not used by the current UI; verify dependencies first.
+- Never delete protocol code without checking dependencies first.
 - Do not mix protocol changes with large UI refactors.
