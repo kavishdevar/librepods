@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.os.ParcelUuid
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,9 +13,9 @@ import java.io.IOException
 /**
  * Owns the direct AirPods L2CAP transport for the Wear application.
  *
- * Keeping socket ownership in one session removes the legacy global socket
- * lifecycle from the application-facing layer and gives reconnect logic one
- * place to operate on.
+ * The legacy project creates L2CAP sockets through a compatibility constructor
+ * helper. This session keeps that compatibility logic local to the Wear
+ * transport instead of exposing global sockets to protocol managers.
  */
 class AirPodsConnectionSession(
     private val adapter: BluetoothAdapter,
@@ -43,16 +44,14 @@ class AirPodsConnectionSession(
         closeSockets()
 
         try {
-            // The existing LibrePods protocol uses fixed L2CAP PSMs. The
-            // actual values are supplied by the protocol discovery layer.
-            val newAacp = createBluetoothSocket(adapter, device, aacpUuid, aacpPsm)
-            val newAtt = createBluetoothSocket(adapter, device, attUuid, attPsm)
+            val newAacp = createL2capSocket(device, aacpUuid, aacpPsm)
+            val newAtt = createL2capSocket(device, attUuid, attPsm)
 
             newAacp.connect()
             try {
                 newAtt.connect()
             } catch (attError: IOException) {
-                newAacp.close()
+                runCatching { newAacp.close() }
                 throw attError
             }
 
@@ -82,5 +81,39 @@ class AirPodsConnectionSession(
         runCatching { attSocket?.close() }
         aacpSocket = null
         attSocket = null
+    }
+
+    @Suppress("DEPRECATION")
+    private fun createL2capSocket(
+        device: BluetoothDevice,
+        uuid: ParcelUuid,
+        psm: Int,
+    ): BluetoothSocket {
+        val type = 3 // L2CAP
+        val constructorSpecs: List<Array<Any>> = listOf(
+            arrayOf(adapter, device, type, true, true, psm, uuid),
+            arrayOf(device, type, true, true, psm, uuid),
+            arrayOf(device, type, 1, true, true, psm, uuid),
+            arrayOf(type, 1, true, true, device, psm, uuid),
+            arrayOf(type, true, true, device, psm, uuid),
+        )
+
+        var lastException: Exception? = null
+        for ((index, params) in constructorSpecs.withIndex()) {
+            try {
+                val parameterTypes = params.map {
+                    it::class.javaPrimitiveType ?: it::class.java
+                }.toTypedArray()
+                val constructor = BluetoothSocket::class.java.getDeclaredConstructor(*parameterTypes)
+                constructor.isAccessible = true
+                Log.d("AirPodsConnection", "Using L2CAP socket constructor #${index + 1}")
+                return constructor.newInstance(*params) as BluetoothSocket
+            } catch (error: Exception) {
+                lastException = error
+                Log.d("AirPodsConnection", "L2CAP constructor #${index + 1} unavailable: ${error.message}")
+            }
+        }
+
+        throw lastException ?: IllegalStateException("No compatible L2CAP BluetoothSocket constructor")
     }
 }
