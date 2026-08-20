@@ -19,7 +19,7 @@ import java.io.IOException
  */
 class AirPodsConnectionSession(
     private val adapter: BluetoothAdapter,
-) {
+) : AirPodsProtocolTransport {
     enum class State { IDLE, CONNECTING, CONNECTED, DISCONNECTING, FAILED }
 
     private val mutableState = MutableStateFlow(State.IDLE)
@@ -29,6 +29,11 @@ class AirPodsConnectionSession(
         private set
     var attSocket: BluetoothSocket? = null
         private set
+
+    override val aacpInput get() = requireSocket(aacpSocket).inputStream
+    override val aacpOutput get() = requireSocket(aacpSocket).outputStream
+    override val attInput get() = requireSocket(attSocket).inputStream
+    override val attOutput get() = requireSocket(attSocket).outputStream
 
     @Synchronized
     fun connect(
@@ -46,7 +51,6 @@ class AirPodsConnectionSession(
         try {
             val newAacp = createL2capSocket(device, aacpUuid, aacpPsm)
             val newAtt = createL2capSocket(device, attUuid, attPsm)
-
             newAacp.connect()
             try {
                 newAtt.connect()
@@ -54,7 +58,6 @@ class AirPodsConnectionSession(
                 runCatching { newAacp.close() }
                 throw attError
             }
-
             aacpSocket = newAacp
             attSocket = newAtt
             mutableState.value = State.CONNECTED
@@ -75,6 +78,9 @@ class AirPodsConnectionSession(
 
     @Synchronized
     fun close() = disconnect()
+
+    private fun requireSocket(socket: BluetoothSocket?): BluetoothSocket =
+        socket ?: throw IllegalStateException("AirPods transport is not connected")
 
     private fun closeSockets() {
         runCatching { aacpSocket?.close() }
@@ -97,13 +103,10 @@ class AirPodsConnectionSession(
             arrayOf(type, 1, true, true, device, psm, uuid),
             arrayOf(type, true, true, device, psm, uuid),
         )
-
         var lastException: Exception? = null
         for ((index, params) in constructorSpecs.withIndex()) {
             try {
-                val parameterTypes = params.map {
-                    it::class.javaPrimitiveType ?: it::class.java
-                }.toTypedArray()
+                val parameterTypes = params.map { it::class.javaPrimitiveType ?: it::class.java }.toTypedArray()
                 val constructor = BluetoothSocket::class.java.getDeclaredConstructor(*parameterTypes)
                 constructor.isAccessible = true
                 Log.d("AirPodsConnection", "Using L2CAP socket constructor #${index + 1}")
@@ -113,7 +116,6 @@ class AirPodsConnectionSession(
                 Log.d("AirPodsConnection", "L2CAP constructor #${index + 1} unavailable: ${error.message}")
             }
         }
-
         throw lastException ?: IllegalStateException("No compatible L2CAP BluetoothSocket constructor")
     }
 }
