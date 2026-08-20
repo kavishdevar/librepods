@@ -34,7 +34,7 @@ class LibrePodsWearService : Service() {
         transport = WearBluetoothConnection(this)
         transport.attachSession(session)
 
-        controller = AirPodsController(transport)
+        controller = AirPodsController(this, transport)
         controller.initialize(
             aacpManager = AACPManager(),
             bleManager = BLEManager(this),
