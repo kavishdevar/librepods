@@ -1,11 +1,10 @@
 import java.util.Properties
 
-val appVersionName = "1.0.0-wear-dev"
+val appVersionName = "0.1.0-wear-dev"
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.aboutLibraries)
     id("kotlin-parcelize")
 }
 
@@ -23,12 +22,6 @@ val releaseSigningAvailable = listOf(
     "RELEASE_KEY_PASSWORD"
 ).all { props[it]?.toString()?.isNotBlank() == true }
 
-kotlin {
-    compilerOptions {
-        optIn.add("androidx.compose.material3.ExperimentalMaterial3ExpressiveApi")
-    }
-}
-
 android {
     signingConfigs {
         if (releaseSigningAvailable) {
@@ -45,11 +38,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "me.kavishdevar.librepods"
+        applicationId = "me.kavishdevar.librepods.wear"
         targetSdk = 37
+        minSdk = 30
         versionCode = 1
         versionName = appVersionName
-        minSdk = 30
     }
 
     buildTypes {
@@ -79,70 +72,19 @@ android {
 
     buildFeatures {
         compose = true
-        viewBinding = true
         buildConfig = true
-    }
-
-    androidResources {
-        generateLocaleConfig = true
-    }
-
-    sourceSets {
-        getByName("main") {
-            res.directories += "src/main/res-apple"
-        }
-    }
-
-    flavorDimensions += "env"
-    productFlavors {
-        create("foss") {
-            dimension = "env"
-            buildConfigField("Boolean", "PLAY_BUILD", "false")
-        }
     }
 }
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.accompanist.permissions)
-    implementation(libs.androidx.compose.ui.text.google.fonts)
     implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.process)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.annotations)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.constraintlayout)
-    implementation(libs.haze)
-    implementation(libs.haze.materials)
-    implementation(libs.androidx.dynamicanimation)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    implementation(libs.androidx.compose.foundation.layout)
-    implementation(libs.aboutlibraries)
-    implementation(libs.aboutlibraries.compose.m3)
-    implementation(libs.backdrop)
-    implementation(libs.androidx.navigation3.ui)
-    implementation(libs.androidx.navigation3.runtime)
-    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
-    implementation(libs.androidx.navigationevent)
-
-    // Kept temporarily while the Android protocol code is being isolated from
-    // the old phone-only implementation. This dependency will be removed in
-    // the Wear OS conversion once Xposed-specific code is deleted.
-    compileOnly(libs.libxposed.api)
-    implementation(libs.libxposed.service)
-}
-
-aboutLibraries {
-    export {
-        prettyPrint = true
-        excludeFields = listOf("generated")
-        outputFile = file("src/main/res/raw/aboutlibraries.json")
-    }
 }
