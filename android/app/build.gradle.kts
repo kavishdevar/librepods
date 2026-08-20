@@ -1,7 +1,3 @@
-import java.util.Properties
-
-val appVersionName = "0.1.0-wear-dev"
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -13,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "me.kavishdevar.librepods.wear"
-        targetSdk = 37
         minSdk = 30
+        targetSdk = 37
         versionCode = 1
-        versionName = appVersionName
+        versionName = "0.1.0-wear-dev"
     }
 
     buildTypes {
@@ -25,7 +21,7 @@ android {
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
         debug {
