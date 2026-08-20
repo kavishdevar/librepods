@@ -13,9 +13,9 @@ Wear UI
    |
 AirPodsController
    |
-AirPodsState / AirPodsCommand / AirPodsEvent
+State / Commands / Events
    |
-Wear Bluetooth transport
+AirPodsConnectionSession
    |
 ATT / BLE / AACP protocol
    |
@@ -30,23 +30,26 @@ AirPods
 - Added observable `AirPodsState` / `AirPodsStateStore`.
 - Added typed `AirPodsCommand` and `AirPodsEvent` boundaries.
 - Added `WearBluetoothScanner`.
-- Added `WearBluetoothConnection` transport boundary.
-- Added `LibrePodsWearService` lifecycle boundary.
+- Added `WearBluetoothConnection` facade.
+- Added `AirPodsConnectionSession` with owned AACP/ATT socket lifecycle.
+- Added bounded `AirPodsReconnectManager` with exponential backoff.
+- Added `LibrePodsWearService` and moved transport ownership into the service.
 - Initialized AACP/BLE managers inside the Wear service.
 - Kept the existing ATT/AACP/BLE protocol implementation intact while migrating lifecycle ownership.
 - Kept UI intentionally thin while the core is being stabilized.
 
-## Phase 1 — autonomous transport/core
+## Phase 1 — autonomous transport/core — IN PROGRESS
 
-- Audit all AACP/ATT/BLE assumptions about `BluetoothConnectionManager`.
-- Replace global phone socket ownership with a Wear-owned connection session.
-- Connect ATT reader to the Wear transport session.
-- Connect AACP reader/writer to the same session.
-- Implement AirPods discovery filtering and candidate selection.
-- Implement direct L2CAP connect for AACP and ATT.
-- Implement clean disconnect and resource ownership.
-- Implement connection state events.
-- Implement reconnect/backoff after range loss and Bluetooth restart.
+- Replace global `BluetoothConnectionManager` socket access in ATT/AACP.
+- Route ATT reads/writes through the connection session.
+- Route AACP reads/writes through the connection session.
+- Implement AirPods protocol discovery and candidate selection.
+- Implement direct L2CAP connect using protocol UUID/PSM values.
+- Emit connection events from the session.
+- Attach ATT reader lifecycle to session start/stop.
+- Attach AACP reader lifecycle to session start/stop.
+- Handle connection loss and invoke bounded reconnect.
+- Remove remaining phone-owned connection lifecycle.
 
 ## Phase 2 — state and controls
 
