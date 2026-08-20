@@ -4,20 +4,20 @@ Date: 2026-08-20
 
 ## Goal
 
-Turn this fork of LibrePods into a fully autonomous Wear OS application for direct AirPods control. The watch communicates with AirPods directly; a phone companion is not required for normal operation.
+Build a fully autonomous Wear OS AirPods client. The watch communicates with AirPods directly; the phone is not required for normal operation.
 
-## Architecture target
+## Current architecture
 
 ```text
 Wear UI
    |
 AirPodsController
    |
-State / Commands
+AirPodsState / AirPodsCommand / AirPodsEvent
    |
 Wear Bluetooth transport
    |
-ATT / BLE / AACP protocol core
+ATT / BLE / AACP protocol
    |
 AirPods
 ```
@@ -27,62 +27,53 @@ AirPods
 - Removed Linux product code from the Wear branch.
 - Removed phone-only boot, media, gesture, sensor, billing and root/Xposed plumbing.
 - Added `AirPodsController` as the Wear-facing core boundary.
-- Added `AirPodsState` / `AirPodsStateStore`.
-- Added typed `AirPodsCommand` boundary.
+- Added observable `AirPodsState` / `AirPodsStateStore`.
+- Added typed `AirPodsCommand` and `AirPodsEvent` boundaries.
 - Added `WearBluetoothScanner`.
 - Added `WearBluetoothConnection` transport boundary.
 - Added `LibrePodsWearService` lifecycle boundary.
-- Kept the existing AACP/ATT/BLE implementations intact for incremental migration.
-- Simplified the Wear Gradle target.
+- Initialized AACP/BLE managers inside the Wear service.
+- Kept the existing ATT/AACP/BLE protocol implementation intact while migrating lifecycle ownership.
+- Kept UI intentionally thin while the core is being stabilized.
 
-## Phase 1 — Finish autonomous core
+## Phase 1 — autonomous transport/core
 
-- Audit AACP, ATT, BLE and connection dependencies.
-- Replace phone-owned socket/service lifecycle with Wear-owned lifecycle.
-- Implement AirPods discovery filtering.
-- Implement direct connect/disconnect.
-- Wire ATT notifications into AACP packet parsing.
-- Map battery notifications to `AirPodsState`.
-- Map listening modes to state and commands.
-- Add ear detection and conversational awareness state/commands.
-- Implement reconnect/backoff and connection-loss recovery.
-- Migrate required logic out of legacy `AirPodsService`.
-- Delete legacy `AirPodsService` only after migration is complete.
+- Audit all AACP/ATT/BLE assumptions about `BluetoothConnectionManager`.
+- Replace global phone socket ownership with a Wear-owned connection session.
+- Connect ATT reader to the Wear transport session.
+- Connect AACP reader/writer to the same session.
+- Implement AirPods discovery filtering and candidate selection.
+- Implement direct L2CAP connect for AACP and ATT.
+- Implement clean disconnect and resource ownership.
+- Implement connection state events.
+- Implement reconnect/backoff after range loss and Bluetooth restart.
 
-## Phase 2 — First controls
+## Phase 2 — state and controls
 
-- AirPods identification.
-- Left/right/case battery.
-- Connection state.
-- ANC / Transparency / Off.
-- Ear detection.
+- Parse battery notifications into `AirPodsState`.
+- Parse ear detection.
+- Parse listening mode.
+- Implement ANC / Transparency / Off commands.
+- Implement ear detection command.
+- Implement conversational awareness command/state.
+- Refresh state after connection.
 
-## Phase 3 — Advanced protocol
+## Phase 3 — legacy service migration
 
-- Conversational Awareness.
-- Head gestures where supported.
-- Press/hold configuration.
-- Custom EQ/accessibility controls where supported.
-- Rename/configuration.
-- Additional state synchronization.
+- Move required callbacks and packet routing from legacy `AirPodsService`.
+- Remove phone media, notification, telephony, widget, takeover and root-specific branches.
+- Delete the legacy service only after all required protocol paths are migrated.
 
 ## Phase 4 — UI
 
 - Main AirPods screen.
-- Round/rectangular layouts.
-- Large touch targets.
-- Fast connection screen.
-- Tile for listening-mode control.
-- Optional complication.
-- Battery-efficient background operation.
-
-## Phase 5 — Compatibility
-
-- Direct connection without phone.
-- Reconnect after Bluetooth toggle, watch restart, AirPods case open/close and range loss.
-- Samsung Galaxy Watch hardware first.
-- Wear OS 3/4/5/6 where practical.
-- Safe protocol logging without exposing private keys.
+- Battery display.
+- ANC / Transparency / Off.
+- Ear detection.
+- Conversational awareness.
+- Device selection.
+- Connection/reconnect screen.
+- Tile and optional complication.
 
 ## Future
 
@@ -96,3 +87,4 @@ AirPods
 - Focused commits for cleanup and architecture changes.
 - Never delete protocol code without checking dependencies first.
 - Do not mix protocol changes with large UI refactors.
+- The phone must never become a required runtime dependency of the Wear core.
