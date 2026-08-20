@@ -17,11 +17,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.kavishdevar.librepods.wear.bluetooth.WearBluetoothScanner
 import me.kavishdevar.librepods.wear.core.AirPodsController
 import me.kavishdevar.librepods.wear.core.AirPodsDevice
 
+/** Compact diagnostic-first Wear screen; protocol controls are added after discovery is reliable. */
 @Composable
 fun AirPodsHomeScreen(
     controller: AirPodsController,
@@ -33,64 +35,96 @@ fun AirPodsHomeScreen(
     val devices by scanner.devices.collectAsState()
     val scanning by scanner.scanning.collectAsState()
     val scanError by scanner.scanError.collectAsState()
+    val callbackCount by scanner.callbackCount.collectAsState()
+    val scanLog by scanner.log.collectAsState()
 
     Column(
-        modifier = modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
+        modifier = modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
+        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)
     ) {
-        Text("LibrePods", style = MaterialTheme.typography.titleMedium)
-        Text(state.deviceName, style = MaterialTheme.typography.labelMedium)
+        Text("LibrePods", style = MaterialTheme.typography.titleSmall)
         Text(
             when {
                 state.connecting -> "Connecting…"
                 state.connected -> "Connected"
                 state.lastError != null -> state.lastError!!
-                scanError != null -> "Scan error: $scanError"
-                else -> "Disconnected"
+                scanning -> "Scanning…"
+                else -> "Ready"
             },
-            style = MaterialTheme.typography.labelSmall
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            BatteryRow("L", state.leftBattery, state.leftCharging)
-            BatteryRow("R", state.rightBattery, state.rightCharging)
-            BatteryRow("Case", state.caseBattery, state.caseCharging)
+        if (state.connected || state.leftBattery != null || state.rightBattery != null || state.caseBattery != null) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                BatteryRow("L", state.leftBattery, state.leftCharging)
+                BatteryRow("R", state.rightBattery, state.rightCharging)
+                BatteryRow("C", state.caseBattery, state.caseCharging)
+            }
         }
 
-        if (devices.isNotEmpty() || scanning) {
-            Text(if (scanning) "Scanning…" else "Devices", style = MaterialTheme.typography.labelMedium)
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                items(devices, key = { it.address }) { device ->
-                    DeviceRow(device) { controller.connectToDevice(device.address, device.name) }
-                }
+        Text(
+            if (scanning) "BLE ${devices.size} · callbacks $callbackCount" else scanLog,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        if (scanError != null) {
+            Text("Scan error ${scanError}", style = MaterialTheme.typography.labelSmall)
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            items(devices, key = { it.address }) { device ->
+                DeviceRow(device) { controller.connectToDevice(device.address, device.name) }
             }
-            Button(onClick = { if (scanning) scanner.stopScan() else scanner.startScan() }) {
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Button(
+                onClick = { if (scanning) scanner.stopScan() else onConnect() },
+                enabled = !state.connecting
+            ) {
                 Text(if (scanning) "Stop" else "Scan")
             }
-        } else {
-            Button(onClick = onConnect, enabled = !state.connecting && !state.connected) { Text("Scan") }
+            if (state.connected) {
+                Button(onClick = controller::disconnect, enabled = true) { Text("Disconnect") }
+            }
         }
-
-        if (state.connected) Button(onClick = controller::disconnect) { Text("Disconnect") }
     }
 }
 
 @Composable
 private fun DeviceRow(device: AirPodsDevice, onClick: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(device.name, style = MaterialTheme.typography.bodySmall)
-            Text(if (device.bonded) "Paired" else "Available", style = MaterialTheme.typography.labelSmall)
+            Text(
+                if (device.appleManufacturer) " ${device.name}" else device.name,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                buildString {
+                    append(if (device.bonded) "Paired" else "BLE")
+                    if (device.serviceUuids.isNotEmpty()) append(" · ${device.serviceUuids.size} svc")
+                },
+                style = MaterialTheme.typography.labelSmall
+            )
         }
-        Text(device.rssi?.let { "${it} dBm" } ?: "", style = MaterialTheme.typography.labelSmall)
+        Text(device.rssi?.let { "${it} dBm" } ?: "—", style = MaterialTheme.typography.labelSmall)
     }
 }
 
