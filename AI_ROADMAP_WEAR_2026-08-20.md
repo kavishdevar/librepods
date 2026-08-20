@@ -17,6 +17,8 @@ State / Commands / Events
    |
 AirPodsConnectionSession
    |
+AirPodsProtocolTransport
+   |
 ATT / BLE / AACP protocol
    |
 AirPods
@@ -36,23 +38,24 @@ AirPods
 - Added `AirPodsConnectionTarget` for negotiated UUID/PSM transport parameters.
 - Added bounded `AirPodsReconnectManager` with exponential backoff using the negotiated target.
 - Added `LibrePodsWearService` and moved transport ownership into the service.
+- Converted `BluetoothConnectionManager` into a deprecated compatibility facade bound to the owned session.
+- Injected `AirPodsProtocolTransport` into `ATTManager`; ATT no longer owns or looks up a global socket.
 - Initialized AACP/BLE managers inside the Wear service.
-- Kept existing ATT/AACP/BLE protocol parsing intact while migrating lifecycle ownership.
+- Kept existing AACP/BLE parsing and command logic intact while migrating lifecycle ownership.
 - Reverted an unverified packet-framing abstraction rather than guessing AACP framing rules.
 - Kept UI intentionally thin while the core is being stabilized.
 
 ## Phase 1 — autonomous transport/core — IN PROGRESS
 
-- Replace global `BluetoothConnectionManager` socket access in ATT/AACP.
-- Inject `AirPodsProtocolTransport` into protocol managers.
-- Route ATT reads/writes through the connection session.
-- Route AACP reads/writes through the connection session.
-- Implement AirPods protocol discovery and candidate selection.
-- Resolve model-compatible L2CAP UUID/PSM parameters.
-- Emit connection events from the session.
-- Attach ATT reader lifecycle to session start/stop.
-- Attach AACP reader lifecycle to session start/stop.
+- Migrate `AACPManager.sendPacket()` from the compatibility facade to `AirPodsProtocolTransport`.
+- Add an AACP reader loop owned by the connection session/controller.
+- Route AACP received packets into `AACPManager.receivePacket()`.
+- Resolve model-compatible L2CAP UUID/PSM parameters from existing discovery logic.
+- Connect ATT reader lifecycle to session start/stop.
+- Connect AACP reader lifecycle to session start/stop.
+- Emit connection/protocol events from the session.
 - Handle connection loss and invoke bounded reconnect.
+- Remove `BluetoothConnectionManager` after AACP migration is complete.
 - Remove remaining phone-owned connection lifecycle.
 
 ## Phase 2 — state and controls
