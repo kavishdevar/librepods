@@ -24,7 +24,6 @@ class AirPodsController(
     private val tag = "AirPodsController"
     private val stateStore = AirPodsStateStore()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     val state: StateFlow<AirPodsState> = stateStore.state
 
     private var aacp: AACPManager? = null
@@ -44,7 +43,6 @@ class AirPodsController(
     fun initialize(aacpManager: AACPManager, bleManager: BLEManager) {
         aacp = aacpManager
         ble = bleManager
-        // WearBluetoothConnection itself is the protocol transport facade.
         aacpManager.bindTransport(transport)
         bleManager.setAirPodsStatusListener(bleListener)
         runCatching { bleManager.startScanning() }
@@ -76,10 +74,11 @@ class AirPodsController(
                 try {
                     transport.connectAacp(device)
                     val manager = aacp ?: error("AACP manager is not initialized")
-                    check(manager.startSession()) { "AACP handshake/notification request was rejected" }
+                    // Start the reader before the first handshake packet so a fast ACK cannot be lost.
                     startAacpReader(manager)
+                    check(manager.startSession()) { "AACP handshake could not be sent" }
                     stateStore.update { it.copy(connecting = false, connected = true, lastError = null) }
-                    Log.i(tag, "AirPods AACP connection established")
+                    Log.i(tag, "AirPods AACP transport connected; handshake in progress")
                 } catch (error: Throwable) {
                     onError("AACP connection failed: ${error.message ?: error.javaClass.simpleName}", error)
                     runCatching { transport.close() }
@@ -125,6 +124,7 @@ class AirPodsController(
         aacpReaderJob?.cancel()
         aacpReaderJob = null
         runCatching { transport.close() }
+        aacp?.let { if (it.sessionState != AACPManager.SessionState.IDLE) it.unbindTransport() }
         stateStore.update { it.copy(connected = false, connecting = false) }
     }
 
