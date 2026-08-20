@@ -8,7 +8,6 @@ import android.util.Log
 import kotlinx.coroutines.flow.StateFlow
 import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.bluetooth.BLEManager
-import me.kavishdevar.librepods.wear.bluetooth.AirPodsConnectionSession
 import me.kavishdevar.librepods.wear.bluetooth.WearBluetoothConnection
 
 /** Wear-facing controller for the autonomous AirPods stack. */
@@ -31,39 +30,47 @@ class AirPodsController(
         Log.d(tag, "Protocol core initialized")
     }
 
+    /** Discover a paired AirPods device without claiming protocol connectivity. */
     @SuppressLint("MissingPermission")
     fun connectToBondedAirPods(): Boolean {
         markConnecting()
-        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
-        if (adapter == null || !adapter.isEnabled) {
-            onError("Bluetooth is disabled or unavailable")
+        try {
+            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+            if (adapter == null || !adapter.isEnabled) {
+                onError("Bluetooth is disabled or unavailable")
+                return false
+            }
+
+            val device = adapter.bondedDevices.firstOrNull { device ->
+                val name = device.name.orEmpty()
+                name.contains("AirPods", ignoreCase = true) ||
+                    name.contains("Pods", ignoreCase = true)
+            }
+
+            if (device == null) {
+                onError("No paired AirPods found")
+                return false
+            }
+
+            // Discovery is deliberately separated from protocol connection.
+            // A device is not marked connected until AACP/ATT succeeds.
+            stateStore.update {
+                it.copy(
+                    deviceName = device.name ?: "AirPods",
+                    address = device.address,
+                    connected = false,
+                    connecting = false,
+                    lastError = "AirPods found; protocol connection is next",
+                )
+            }
+            return true
+        } catch (security: SecurityException) {
+            onError("Bluetooth permission is required")
+            return false
+        } catch (error: Throwable) {
+            onError("Bluetooth discovery failed: ${error.message ?: error.javaClass.simpleName}", error)
             return false
         }
-
-        val device = adapter.bondedDevices.firstOrNull { device ->
-            val name = device.name.orEmpty()
-            name.contains("AirPods", ignoreCase = true) ||
-                name.contains("Pods", ignoreCase = true)
-        }
-
-        if (device == null) {
-            onError("No paired AirPods found")
-            return false
-        }
-
-        // Discovery of the exact AACP/ATT PSM values remains protocol work.
-        // For the first build we expose the real bonded-device status without
-        // pretending that a protocol connection succeeded.
-        stateStore.update {
-            it.copy(
-                deviceName = device.name ?: "AirPods",
-                address = device.address,
-                connected = false,
-                connecting = false,
-                lastError = "AirPods found: protocol connection is not wired yet",
-            )
-        }
-        return true
     }
 
     fun markConnecting() {
@@ -74,8 +81,8 @@ class AirPodsController(
         connectedDevice = device
         stateStore.update {
             it.copy(
-                deviceName = name ?: device.name ?: "AirPods",
-                address = device.address,
+                deviceName = name ?: "AirPods",
+                address = runCatching { device.address }.getOrNull(),
                 connecting = false,
                 connected = true,
                 lastError = null,
@@ -102,7 +109,7 @@ class AirPodsController(
 
     fun disconnect() {
         connectedDevice = null
-        transport.close()
+        runCatching { transport.close() }
         stateStore.update { it.copy(connected = false, connecting = false) }
     }
 
