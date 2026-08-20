@@ -34,7 +34,10 @@ class AirPodsController(private val context: Context, private val transport: Wea
         override fun onLidStateChanged(lidOpen: Boolean) { stateStore.update { it.copy(caseLidOpen = lidOpen) } }
         override fun onEarStateChanged(device: BLEManager.AirPodsStatus, leftInEar: Boolean, rightInEar: Boolean) = applyBleStatus(device)
         override fun onBatteryChanged(device: BLEManager.AirPodsStatus) = applyBleStatus(device)
-        override fun onDeviceDisappeared() = Log.d(tag, "AirPods BLE advertisement disappeared")
+        override fun onDeviceDisappeared() {
+            // Listener contract is Unit; keep disappearance as a diagnostic event only.
+            Log.d(tag, "AirPods BLE advertisement disappeared")
+        }
     }
 
     fun initialize(aacpManager: AACPManager, bleManager: BLEManager) {
