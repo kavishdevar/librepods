@@ -7,8 +7,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.bluetooth.BLEManager
 import me.kavishdevar.librepods.wear.bluetooth.WearBluetoothConnection
@@ -21,60 +19,25 @@ class MainActivity : ComponentActivity() {
     private lateinit var controller: AirPodsController
     private lateinit var scanner: WearBluetoothScanner
 
-    private val bluetoothPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { result ->
-        val granted = android.os.Build.VERSION.SDK_INT < 31 ||
-            (result[Manifest.permission.BLUETOOTH_CONNECT] == true &&
-                result[Manifest.permission.BLUETOOTH_SCAN] == true)
-        if (granted) scanner.startScan()
-        else controller.onError("Bluetooth permission was denied")
+    private val bluetoothPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val granted = android.os.Build.VERSION.SDK_INT < 31 || (result[Manifest.permission.BLUETOOTH_CONNECT] == true && result[Manifest.permission.BLUETOOTH_SCAN] == true)
+        if (granted) scanner.startScan() else controller.onError("Bluetooth permission was denied")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         val transport = WearBluetoothConnection(this)
-        controller = AirPodsController(this, transport).also {
-            it.initialize(AACPManager(), BLEManager(this))
-        }
+        controller = AirPodsController(this, transport).also { it.initialize(AACPManager(), BLEManager(this)) }
         scanner = WearBluetoothScanner(this)
-
-        setContent {
-            AirPodsHomeScreen(
-                controller = controller,
-                onConnect = ::requestBluetoothAndScan,
-            )
-        }
+        setContent { AirPodsHomeScreen(controller = controller, scanner = scanner, onConnect = ::requestBluetoothAndScan) }
     }
 
     private fun requestBluetoothAndScan() {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.S) {
-            scanner.startScan()
-            return
-        }
-
-        val connectGranted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.BLUETOOTH_CONNECT,
-        ) == PackageManager.PERMISSION_GRANTED
-        val scanGranted = ContextCompat.checkSelfPermission(
-            this,
-            Manifest.permission.BLUETOOTH_SCAN,
-        ) == PackageManager.PERMISSION_GRANTED
-
-        if (connectGranted && scanGranted) scanner.startScan()
-        else bluetoothPermissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.BLUETOOTH_SCAN,
-            ),
-        )
+        if (android.os.Build.VERSION.SDK_INT < 31) { scanner.startScan(); return }
+        val connectGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        val scanGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+        if (connectGranted && scanGranted) scanner.startScan() else bluetoothPermissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN))
     }
 
-    override fun onDestroy() {
-        if (::scanner.isInitialized) scanner.stopScan()
-        controller.shutdown()
-        super.onDestroy()
-    }
+    override fun onDestroy() { if (::scanner.isInitialized) scanner.stopScan(); controller.shutdown(); super.onDestroy() }
 }
