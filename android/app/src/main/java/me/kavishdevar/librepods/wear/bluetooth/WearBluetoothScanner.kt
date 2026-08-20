@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
@@ -19,8 +20,9 @@ import me.kavishdevar.librepods.wear.core.AirPodsDevice
 /**
  * Thin boundary over the platform BLE scanner.
  *
- * Android/Wear OS owns discovery. We only normalize results and expose a
- * selectable device list to the Wear UI.
+ * Wear OS owns discovery. We deliberately use an unfiltered low-latency scan:
+ * AirPods can advertise without a useful local name, so filtering by name or
+ * service UUID here would make discovery unreliable.
  */
 class WearBluetoothScanner(context: Context) {
     private val appContext = context.applicationContext
@@ -40,9 +42,7 @@ class WearBluetoothScanner(context: Context) {
     val scanError: StateFlow<Int?> = mutableScanError.asStateFlow()
 
     private val callback = object : ScanCallback() {
-        override fun onScanResult(callbackType: Int, result: ScanResult) {
-            addResult(result)
-        }
+        override fun onScanResult(callbackType: Int, result: ScanResult) = addResult(result)
 
         override fun onBatchScanResults(results: MutableList<ScanResult>) {
             results.forEach(::addResult)
@@ -80,11 +80,29 @@ class WearBluetoothScanner(context: Context) {
 
     @SuppressLint("MissingPermission")
     fun startScan() {
-        if (!hasScanPermission() || !isEnabled() || mutableScanning.value) return
+        if (!hasScanPermission()) {
+            mutableScanError.value = -1
+            return
+        }
+        if (!isEnabled() || mutableScanning.value) return
+
         mutableScanError.value = null
-        mutableDevices.value = emptyList()
-        scanner?.startScan(callback)
-        mutableScanning.value = true
+        // Keep already paired devices visible while doing a fresh BLE scan.
+        mutableDevices.value = bondedDevices().distinctBy { it.address }
+
+        val bleScanner = scanner
+        if (bleScanner == null) {
+            mutableScanError.value = -2
+            return
+        }
+
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        runCatching { bleScanner.startScan(null, settings, callback) }
+            .onSuccess { mutableScanning.value = true }
+            .onFailure { mutableScanError.value = -3 }
     }
 
     @SuppressLint("MissingPermission")
@@ -99,7 +117,7 @@ class WearBluetoothScanner(context: Context) {
         if (!hasConnectPermission()) return emptyList()
         return adapter?.bondedDevices?.map { device ->
             AirPodsDevice(
-                name = runCatching { device.name }.getOrNull() ?: "Unknown device",
+                name = runCatching { device.name }.getOrNull() ?: "Paired device",
                 address = device.address,
                 bonded = true,
             )
