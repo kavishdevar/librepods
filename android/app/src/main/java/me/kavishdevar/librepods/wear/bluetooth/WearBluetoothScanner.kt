@@ -1,6 +1,7 @@
 package me.kavishdevar.librepods.wear.bluetooth
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -13,13 +14,13 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.kavishdevar.librepods.wear.core.AirPodsDevice
 
 /**
  * Thin boundary over the platform BLE scanner.
  *
- * Device discovery is deliberately owned by Android/Wear OS. This class only
- * normalizes scan results for the Wear UI and never implements AirPods
- * protocol detection itself.
+ * Android/Wear OS owns discovery. We only normalize results and expose a
+ * selectable device list to the Wear UI.
  */
 class WearBluetoothScanner(context: Context) {
     private val appContext = context.applicationContext
@@ -29,8 +30,8 @@ class WearBluetoothScanner(context: Context) {
     private val scanner: BluetoothLeScanner?
         get() = adapter?.bluetoothLeScanner
 
-    private val mutableDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
-    val devices: StateFlow<List<BluetoothDevice>> = mutableDevices.asStateFlow()
+    private val mutableDevices = MutableStateFlow<List<AirPodsDevice>>(emptyList())
+    val devices: StateFlow<List<AirPodsDevice>> = mutableDevices.asStateFlow()
 
     private val mutableScanning = MutableStateFlow(false)
     val scanning: StateFlow<Boolean> = mutableScanning.asStateFlow()
@@ -40,16 +41,11 @@ class WearBluetoothScanner(context: Context) {
 
     private val callback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            if (!hasScanPermission()) return
-            val device = result.device
-            val current = mutableDevices.value.toMutableList()
-            val index = current.indexOfFirst { it.address == device.address }
-            if (index >= 0) current[index] = device else current += device
-            mutableDevices.value = current
+            addResult(result)
         }
 
         override fun onBatchScanResults(results: MutableList<ScanResult>) {
-            results.forEach { onScanResult(0, it) }
+            results.forEach(::addResult)
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -61,6 +57,28 @@ class WearBluetoothScanner(context: Context) {
     fun isSupported(): Boolean = adapter != null
     fun isEnabled(): Boolean = adapter?.isEnabled == true
 
+    @SuppressLint("MissingPermission")
+    private fun addResult(result: ScanResult) {
+        if (!hasScanPermission()) return
+        val device = result.device
+        val name = runCatching { device.name }.getOrNull()
+            ?: result.scanRecord?.deviceName
+            ?: "Unknown device"
+        val item = AirPodsDevice(
+            name = name,
+            address = device.address,
+            rssi = result.rssi,
+            bonded = isBonded(device),
+        )
+        mutableDevices.value = (mutableDevices.value.filterNot { it.address == item.address } + item)
+            .sortedWith(compareByDescending<AirPodsDevice> { it.bonded }.thenByDescending { it.rssi ?: -127 })
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun isBonded(device: BluetoothDevice): Boolean =
+        hasConnectPermission() && runCatching { device.bondState == BluetoothDevice.BOND_BONDED }.getOrDefault(false)
+
+    @SuppressLint("MissingPermission")
     fun startScan() {
         if (!hasScanPermission() || !isEnabled() || mutableScanning.value) return
         mutableScanError.value = null
@@ -69,20 +87,23 @@ class WearBluetoothScanner(context: Context) {
         mutableScanning.value = true
     }
 
+    @SuppressLint("MissingPermission")
     fun stopScan() {
         if (!mutableScanning.value) return
         if (hasScanPermission()) runCatching { scanner?.stopScan(callback) }
         mutableScanning.value = false
     }
 
-    fun bondedDevices(): List<BluetoothDevice> {
+    @SuppressLint("MissingPermission")
+    fun bondedDevices(): List<AirPodsDevice> {
         if (!hasConnectPermission()) return emptyList()
-        return adapter?.bondedDevices?.toList().orEmpty()
-    }
-
-    fun remember(device: BluetoothDevice) {
-        if (!hasConnectPermission()) return
-        mutableDevices.value = (mutableDevices.value + device).distinctBy { it.address }
+        return adapter?.bondedDevices?.map { device ->
+            AirPodsDevice(
+                name = runCatching { device.name }.getOrNull() ?: "Unknown device",
+                address = device.address,
+                bonded = true,
+            )
+        }.orEmpty()
     }
 
     private fun hasConnectPermission(): Boolean =
