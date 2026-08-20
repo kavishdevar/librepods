@@ -32,6 +32,12 @@ class WearBluetoothScanner(context: Context) {
     private val mutableDevices = MutableStateFlow<List<BluetoothDevice>>(emptyList())
     val devices: StateFlow<List<BluetoothDevice>> = mutableDevices.asStateFlow()
 
+    private val mutableScanning = MutableStateFlow(false)
+    val scanning: StateFlow<Boolean> = mutableScanning.asStateFlow()
+
+    private val mutableScanError = MutableStateFlow<Int?>(null)
+    val scanError: StateFlow<Int?> = mutableScanError.asStateFlow()
+
     private val callback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             if (!hasScanPermission()) return
@@ -43,23 +49,14 @@ class WearBluetoothScanner(context: Context) {
         }
 
         override fun onBatchScanResults(results: MutableList<ScanResult>) {
-            results.forEach { onScanResult(ScanSettingsCallbackType.BATCH, it) }
+            results.forEach { onScanResult(0, it) }
         }
 
         override fun onScanFailed(errorCode: Int) {
-            scanError.value = errorCode
+            mutableScanError.value = errorCode
+            mutableScanning.value = false
         }
     }
-
-    private object ScanSettingsCallbackType { const val BATCH = 1 }
-
-    private val mutableScanning = MutableStateFlow(false)
-    val scanning: StateFlow<Boolean> = mutableScanning.asStateFlow()
-
-    private val mutableScanError = MutableStateFlow<Int?>(null)
-    val scanError: StateFlow<Int?> = mutableScanError.asStateFlow()
-
-    private val scanErrorAlias get() = mutableScanError
 
     fun isSupported(): Boolean = adapter != null
     fun isEnabled(): Boolean = adapter?.isEnabled == true
