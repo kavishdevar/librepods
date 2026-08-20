@@ -13,9 +13,9 @@ import java.io.IOException
 /**
  * Owns the direct AirPods L2CAP transport for the Wear application.
  *
- * The legacy project creates L2CAP sockets through a compatibility constructor
- * helper. This session keeps that compatibility logic local to the Wear
- * transport instead of exposing global sockets to protocol managers.
+ * The session deliberately separates transport establishment from protocol
+ * handshake. A CONNECTED transport means both sockets are open; protocol code
+ * must still perform its own AACP initialization before exposing features.
  */
 class AirPodsConnectionSession(
     private val adapter: BluetoothAdapter,
@@ -44,28 +44,45 @@ class AirPodsConnectionSession(
         attPsm: Int,
     ) {
         if (mutableState.value == State.CONNECTING || mutableState.value == State.CONNECTED) return
-
         mutableState.value = State.CONNECTING
         closeSockets()
 
         try {
+            adapter.cancelDiscovery()
             val newAacp = createL2capSocket(device, aacpUuid, aacpPsm)
-            val newAtt = createL2capSocket(device, attUuid, attPsm)
             newAacp.connect()
+            aacpSocket = newAacp
+
             try {
+                val newAtt = createL2capSocket(device, attUuid, attPsm)
                 newAtt.connect()
+                attSocket = newAtt
             } catch (attError: IOException) {
-                runCatching { newAacp.close() }
+                closeSockets()
                 throw attError
             }
-            aacpSocket = newAacp
-            attSocket = newAtt
+
             mutableState.value = State.CONNECTED
         } catch (error: Throwable) {
             closeSockets()
             mutableState.value = State.FAILED
             throw error
         }
+    }
+
+    /**
+     * Reconnect is transport-only. The caller owns protocol re-initialization.
+     */
+    @Synchronized
+    fun reconnect(
+        device: BluetoothDevice,
+        aacpUuid: ParcelUuid,
+        aacpPsm: Int,
+        attUuid: ParcelUuid,
+        attPsm: Int,
+    ) {
+        disconnect()
+        connect(device, aacpUuid, aacpPsm, attUuid, attPsm)
     }
 
     @Synchronized
