@@ -26,8 +26,9 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 /**
  * Wear-facing AACP packet engine.
  *
- * Transport ownership stays outside this class. The Wear session owns the
- * L2CAP socket while this class owns the AACP handshake and packet framing.
+ * The Wear transport is mandatory. There is deliberately no fallback to the
+ * legacy phone-side BluetoothConnectionManager: the Wear app owns the entire
+ * AirPods connection stack.
  */
 class AACPManager {
     private val tag = "AACPManager[${System.identityHashCode(this)}]"
@@ -196,7 +197,10 @@ class AACPManager {
 
     private fun sendRaw(packet: ByteArray): Boolean {
         return try {
-            val output = transport?.aacpOutput ?: BluetoothConnectionManager.aacpSocket?.outputStream ?: return false
+            val output = transport?.aacpOutput ?: run {
+                Log.e(tag, "Cannot send AACP packet: Wear transport is not bound")
+                return false
+            }
             output.write(packet)
             output.flush()
             true
