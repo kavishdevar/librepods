@@ -23,44 +23,102 @@ import me.kavishdevar.librepods.wear.core.AirPodsController
 import me.kavishdevar.librepods.wear.core.AirPodsDevice
 
 @Composable
-fun AirPodsHomeScreen(controller: AirPodsController, scanner: WearBluetoothScanner, onConnect: () -> Unit, modifier: Modifier = Modifier) {
+fun AirPodsHomeScreen(
+    controller: AirPodsController,
+    scanner: WearBluetoothScanner,
+    onConnect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val state by controller.state.collectAsState()
     val devices by scanner.devices.collectAsState()
     val scanning by scanner.scanning.collectAsState()
 
-    Column(modifier = modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)) {
-        Text("LibrePods Wear", style = MaterialTheme.typography.titleLarge)
-        Text(state.deviceName)
-        Text(when { state.connecting -> "Connecting…"; state.connected -> "Connected"; state.lastError != null -> state.lastError!!; else -> "Disconnected" })
+    Column(
+        modifier = modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically)
+    ) {
+        Text("LibrePods", style = MaterialTheme.typography.titleMedium)
+        Text(state.deviceName, style = MaterialTheme.typography.labelMedium)
+        Text(
+            when {
+                state.connecting -> "Connecting…"
+                state.connected -> "Connected"
+                state.lastError != null -> state.lastError!!
+                else -> "Disconnected"
+            },
+            style = MaterialTheme.typography.labelSmall
+        )
 
-        BatteryRow("Left", state.leftBattery, state.leftCharging)
-        BatteryRow("Right", state.rightBattery, state.rightCharging)
-        BatteryRow("Case", state.caseBattery, state.caseCharging)
-
-        if (devices.isNotEmpty() || scanning) {
-            Text(if (scanning) "Scanning…" else "Nearby devices", style = MaterialTheme.typography.titleMedium)
-            LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(devices, key = { it.address }) { device -> DeviceRow(device) { controller.connectToDevice(device.address, device.name) } }
-            }
-            Button(onClick = { if (scanning) scanner.stopScan() else scanner.startScan() }) { Text(if (scanning) "Stop scan" else "Scan again") }
-        } else {
-            Button(onClick = onConnect, enabled = !state.connecting && !state.connected) { Text("Scan for AirPods") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            BatteryRow("L", state.leftBattery, state.leftCharging)
+            BatteryRow("R", state.rightBattery, state.rightCharging)
+            BatteryRow("Case", state.caseBattery, state.caseCharging)
         }
 
-        if (state.connected) Button(onClick = controller::disconnect) { Text("Disconnect") }
+        if (devices.isNotEmpty() || scanning) {
+            Text(
+                if (scanning) "Scanning…" else "Devices",
+                style = MaterialTheme.typography.labelMedium
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                items(devices, key = { it.address }) { device ->
+                    DeviceRow(device) {
+                        controller.connectToDevice(device.address, device.name)
+                    }
+                }
+            }
+            Button(onClick = { if (scanning) scanner.stopScan() else scanner.startScan() }) {
+                Text(if (scanning) "Stop" else "Scan")
+            }
+        } else {
+            Button(onClick = onConnect, enabled = !state.connecting && !state.connected) {
+                Text("Scan")
+            }
+        }
+
+        if (state.connected) {
+            Button(onClick = controller::disconnect) { Text("Disconnect") }
+        }
     }
 }
 
 @Composable
 private fun DeviceRow(device: AirPodsDevice, onClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Column { Text(device.name); Text(if (device.bonded) "Paired • ${device.address}" else device.address, style = MaterialTheme.typography.labelSmall) }
-        Text(device.rssi?.let { "${it} dBm" } ?: "")
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(device.name, style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (device.bonded) "Paired" else "Available",
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
+        Text(device.rssi?.let { "${it} dBm" } ?: "", style = MaterialTheme.typography.labelSmall)
     }
 }
 
 @Composable
 private fun BatteryRow(label: String, level: Int?, charging: Boolean) {
-    val value = when { level == null || level == 255 -> "--"; level in 0..100 -> "$level%"; else -> "?" }
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(label); Text(if (charging && value != "--") "$value  ⚡" else value) }
+    val value = when {
+        level == null || level == 255 -> "--"
+        level in 0..100 -> "$level%"
+        else -> "?"
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall)
+        Text(
+            if (charging && value != "--") "$value ⚡" else value,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
 }
