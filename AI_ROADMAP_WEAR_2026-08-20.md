@@ -32,19 +32,23 @@ AirPods
 - Added `WearBluetoothScanner`.
 - Added `WearBluetoothConnection` facade.
 - Added `AirPodsConnectionSession` with owned AACP/ATT socket lifecycle.
-- Added bounded `AirPodsReconnectManager` with exponential backoff.
+- Added `AirPodsProtocolTransport` so protocol code can consume streams without owning Android Bluetooth sockets.
+- Added `AirPodsConnectionTarget` for negotiated UUID/PSM transport parameters.
+- Added bounded `AirPodsReconnectManager` with exponential backoff using the negotiated target.
 - Added `LibrePodsWearService` and moved transport ownership into the service.
 - Initialized AACP/BLE managers inside the Wear service.
-- Kept the existing ATT/AACP/BLE protocol implementation intact while migrating lifecycle ownership.
+- Kept existing ATT/AACP/BLE protocol parsing intact while migrating lifecycle ownership.
+- Reverted an unverified packet-framing abstraction rather than guessing AACP framing rules.
 - Kept UI intentionally thin while the core is being stabilized.
 
 ## Phase 1 — autonomous transport/core — IN PROGRESS
 
 - Replace global `BluetoothConnectionManager` socket access in ATT/AACP.
+- Inject `AirPodsProtocolTransport` into protocol managers.
 - Route ATT reads/writes through the connection session.
 - Route AACP reads/writes through the connection session.
 - Implement AirPods protocol discovery and candidate selection.
-- Implement direct L2CAP connect using protocol UUID/PSM values.
+- Resolve model-compatible L2CAP UUID/PSM parameters.
 - Emit connection events from the session.
 - Attach ATT reader lifecycle to session start/stop.
 - Attach AACP reader lifecycle to session start/stop.
@@ -91,3 +95,4 @@ AirPods
 - Never delete protocol code without checking dependencies first.
 - Do not mix protocol changes with large UI refactors.
 - The phone must never become a required runtime dependency of the Wear core.
+- Do not invent protocol framing, UUIDs or PSM values; extract them from the existing implementation or protocol discovery.
