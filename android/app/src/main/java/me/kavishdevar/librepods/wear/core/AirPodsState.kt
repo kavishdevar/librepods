@@ -22,6 +22,9 @@ data class AirPodsState(
     val rightInEar: Boolean? = null,
     val earDetectionEnabled: Boolean? = null,
     val conversationalAwarenessEnabled: Boolean? = null,
+    val protocolStage: String = "IDLE",
+    val lastPacketOpcode: String? = null,
+    val lastPacketHex: String? = null,
     val lastError: String? = null,
 )
 
