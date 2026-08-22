@@ -23,6 +23,7 @@ use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Sub
 use log::{debug, error};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{Mutex, RwLock};
 
@@ -74,6 +75,8 @@ pub struct App {
     device_type_state: combo_box::State<DeviceType>,
     selected_device_type: Option<DeviceType>,
     recording_hotkey: Option<HotkeyAction>,
+    hotkey_conflict: bool,
+    hotkey_conflict_generation: u64,
 }
 
 pub struct BluetoothState {
@@ -113,6 +116,7 @@ pub enum Message {
         keyboard::Modifiers,
         event::Status,
     ),
+    HotkeyConflictExpired(HotkeyAction, u64),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,6 +222,8 @@ impl App {
                 selected_device_type: None,
                 device_managers,
                 recording_hotkey: None,
+                hotkey_conflict: false,
+                hotkey_conflict_generation: 0,
             },
             Task::batch(vec![open_task, wait_task]),
         )
@@ -243,6 +249,9 @@ impl App {
             }
             Message::WindowClosed(id) => {
                 handle_window_closed(&mut self.window, &mut self.recording_hotkey, id);
+                if self.recording_hotkey.is_none() {
+                    self.hotkey_conflict = false;
+                }
                 Task::none()
             }
             Message::Resized(event) => {
@@ -251,6 +260,9 @@ impl App {
             }
             Message::SelectTab(tab) => {
                 select_tab(&mut self.selected_tab, &mut self.recording_hotkey, tab);
+                if self.recording_hotkey.is_none() {
+                    self.hotkey_conflict = false;
+                }
                 Task::none()
             }
             Message::ThemeSelected(theme) => {
@@ -632,6 +644,7 @@ impl App {
             }
             Message::StartHotkeyRecording(action) => {
                 self.recording_hotkey = Some(action);
+                self.hotkey_conflict = false;
                 Task::none()
             }
             Message::HotkeyPressed(key, physical_key, modifiers, status) => {
@@ -643,20 +656,49 @@ impl App {
                     modifiers,
                     status,
                 ) {
-                    HotkeyOutcome::None => Task::none(),
+                    HotkeyOutcome::None => {
+                        if self.recording_hotkey.is_none() {
+                            self.hotkey_conflict = false;
+                        }
+                        Task::none()
+                    }
                     HotkeyOutcome::SettingsChanged => {
+                        self.hotkey_conflict = false;
                         self.save_settings();
                         Task::none()
                     }
                     HotkeyOutcome::Conflict => {
-                        self.recording_hotkey = None;
-                        Task::none()
+                        self.hotkey_conflict = true;
+                        self.hotkey_conflict_generation =
+                            self.hotkey_conflict_generation.wrapping_add(1);
+                        let generation = self.hotkey_conflict_generation;
+                        if let Some(action) = self.recording_hotkey {
+                            Task::perform(
+                                async {
+                                    tokio::time::sleep(Duration::from_secs(2)).await;
+                                },
+                                move |_| Message::HotkeyConflictExpired(action, generation),
+                            )
+                        } else {
+                            error!("Hotkey conflict without an active recording");
+                            Task::none()
+                        }
                     }
                     HotkeyOutcome::CloseWindow => {
                         self.window.map_or_else(Task::none, window::close)
                     }
                     HotkeyOutcome::QuitApplication => iced::exit(),
                 }
+            }
+            Message::HotkeyConflictExpired(action, generation) => {
+                expire_hotkey_conflict(
+                    &mut self.recording_hotkey,
+                    &mut self.hotkey_conflict,
+                    self.hotkey_conflict_generation,
+                    action,
+                    generation,
+                );
+                Task::none()
             }
         }
     }
@@ -1118,13 +1160,11 @@ impl App {
                             ]
                             .spacing(12);
 
-                            let close_hotkey_label = if self.recording_hotkey == Some(HotkeyAction::CloseWindow) {
-                                "Press shortcut...".to_string()
-                            } else {
-                                self.settings.close_window_hotkey.as_ref()
-                                    .map(Hotkey::display)
-                                    .unwrap_or_else(|| "Not set".to_string())
-                            };
+                            let close_hotkey_label = hotkey_label(
+                                self.settings.close_window_hotkey.as_ref(),
+                                self.recording_hotkey == Some(HotkeyAction::CloseWindow),
+                                self.hotkey_conflict,
+                            );
                             let close_window_hotkey_setting = container(
                                 row![
                                     column![
@@ -1174,13 +1214,11 @@ impl App {
                                 style
                             });
 
-                            let quit_hotkey_label = if self.recording_hotkey == Some(HotkeyAction::QuitApplication) {
-                                "Press shortcut...".to_string()
-                            } else {
-                                self.settings.quit_application_hotkey.as_ref()
-                                    .map(Hotkey::display)
-                                    .unwrap_or_else(|| "Not set".to_string())
-                            };
+                            let quit_hotkey_label = hotkey_label(
+                                self.settings.quit_application_hotkey.as_ref(),
+                                self.recording_hotkey == Some(HotkeyAction::QuitApplication),
+                                self.hotkey_conflict,
+                            );
                             let quit_application_hotkey_setting = container(
                                 row![
                                     column![
@@ -1489,6 +1527,39 @@ fn select_tab(selected_tab: &mut Tab, recording_hotkey: &mut Option<HotkeyAction
         *recording_hotkey = None;
     }
     *selected_tab = tab;
+}
+
+fn hotkey_label(hotkey: Option<&Hotkey>, recording: bool, conflict: bool) -> String {
+    if recording {
+        if conflict {
+            "Already in use".to_string()
+        } else {
+            "Press shortcut...".to_string()
+        }
+    } else {
+        hotkey
+            .map(Hotkey::display)
+            .unwrap_or_else(|| "Not set".to_string())
+    }
+}
+
+fn expire_hotkey_conflict(
+    recording_hotkey: &mut Option<HotkeyAction>,
+    hotkey_conflict: &mut bool,
+    current_generation: u64,
+    action: HotkeyAction,
+    generation: u64,
+) -> bool {
+    if *hotkey_conflict
+        && *recording_hotkey == Some(action)
+        && current_generation == generation
+    {
+        *hotkey_conflict = false;
+        *recording_hotkey = None;
+        true
+    } else {
+        false
+    }
 }
 
 fn process_hotkey_press(
@@ -1884,6 +1955,49 @@ mod tests {
 
         assert_eq!(outcome, HotkeyOutcome::Conflict);
         assert_eq!(recording, Some(HotkeyAction::QuitApplication));
+    }
+
+    #[test]
+    fn conflicting_hotkey_label_reports_error() {
+        assert_eq!(hotkey_label(None, true, true), "Already in use");
+        assert_eq!(hotkey_label(None, true, false), "Press shortcut...");
+    }
+
+    #[test]
+    fn conflict_expiry_restores_previous_hotkey_label() {
+        let hotkey = Hotkey::new("w".to_string(), true, false, false, false);
+        let mut recording = Some(HotkeyAction::CloseWindow);
+        let mut conflict = true;
+
+        assert_eq!(hotkey_label(Some(&hotkey), true, conflict), "Already in use");
+        assert!(expire_hotkey_conflict(
+            &mut recording,
+            &mut conflict,
+            4,
+            HotkeyAction::CloseWindow,
+            4,
+        ));
+
+        assert_eq!(recording, None);
+        assert!(!conflict);
+        assert_eq!(hotkey_label(Some(&hotkey), false, conflict), "Ctrl+W");
+    }
+
+    #[test]
+    fn stale_conflict_expiry_does_not_clear_newer_warning() {
+        let mut recording = Some(HotkeyAction::QuitApplication);
+        let mut conflict = true;
+
+        assert!(!expire_hotkey_conflict(
+            &mut recording,
+            &mut conflict,
+            5,
+            HotkeyAction::QuitApplication,
+            4,
+        ));
+
+        assert_eq!(recording, Some(HotkeyAction::QuitApplication));
+        assert!(conflict);
     }
 }
 
