@@ -106,7 +106,7 @@ impl Hotkey {
         shift: bool,
         logo: bool,
     ) -> bool {
-        self.key == key
+        self.key.to_lowercase() == key.to_lowercase()
             && self.control == control
             && self.alt == alt
             && self.shift == shift
@@ -178,6 +178,7 @@ mod tests {
 
         assert_eq!(hotkey.display(), "Ctrl+Alt+Shift+K");
         assert!(hotkey.matches("k", true, true, true, false));
+        assert!(hotkey.matches("K", true, true, true, false));
     }
 
     #[test]

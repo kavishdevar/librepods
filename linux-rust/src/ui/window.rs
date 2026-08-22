@@ -107,7 +107,12 @@ pub enum Message {
     TrayTextModeChanged(bool),
     StemControlChanged(bool),
     StartHotkeyRecording(HotkeyAction),
-    HotkeyPressed(keyboard::Key, keyboard::Modifiers, event::Status),
+    HotkeyPressed(
+        keyboard::Key,
+        keyboard::key::Physical,
+        keyboard::Modifiers,
+        event::Status,
+    ),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -630,11 +635,12 @@ impl App {
                 self.recording_hotkey = Some(action);
                 Task::none()
             }
-            Message::HotkeyPressed(key, modifiers, status) => {
+            Message::HotkeyPressed(key, physical_key, modifiers, status) => {
                 match process_hotkey_press(
                     &mut self.settings,
                     &mut self.recording_hotkey,
                     &key,
+                    physical_key,
                     modifiers,
                     status,
                 ) {
@@ -1432,21 +1438,24 @@ impl App {
             event::listen_with(|event, status, _window| match event {
                 event::Event::Keyboard(keyboard::Event::KeyPressed {
                     key,
+                    physical_key,
                     modifiers,
                     repeat: false,
                     ..
-                }) => Some(Message::HotkeyPressed(key, modifiers, status)),
+                }) => Some(Message::HotkeyPressed(key, physical_key, modifiers, status)),
                 _ => None,
             }),
         ])
     }
 }
 
-fn hotkey_key(key: &keyboard::Key) -> Option<String> {
+fn hotkey_key(key: &keyboard::Key, physical_key: keyboard::key::Physical) -> Option<String> {
     match key.as_ref() {
-        keyboard::Key::Character(character) if !character.is_empty() => {
-            Some(character.to_lowercase())
-        }
+        keyboard::Key::Character(character) if !character.is_empty() => Some(
+            key.to_latin(physical_key)
+                .map(|character| character.to_lowercase().collect())
+                .unwrap_or_else(|| character.to_lowercase()),
+        ),
         keyboard::Key::Named(
             keyboard::key::Named::Alt
             | keyboard::key::Named::AltGraph
@@ -1465,6 +1474,7 @@ fn process_hotkey_press(
     settings: &mut AppSettings,
     recording_hotkey: &mut Option<HotkeyAction>,
     key: &keyboard::Key,
+    physical_key: keyboard::key::Physical,
     modifiers: keyboard::Modifiers,
     status: event::Status,
 ) -> HotkeyOutcome {
@@ -1489,7 +1499,7 @@ fn process_hotkey_press(
         return HotkeyOutcome::SettingsChanged;
     }
 
-    let Some(key) = hotkey_key(key) else {
+    let Some(key) = hotkey_key(key, physical_key) else {
         return HotkeyOutcome::None;
     };
 
@@ -1544,6 +1554,7 @@ async fn wait_for_message(ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::keyboard::key::{Code, Physical};
 
     #[test]
     fn records_named_shortcut() {
@@ -1555,6 +1566,7 @@ mod tests {
             &mut settings,
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Enter),
+            Physical::Code(Code::Enter),
             keyboard::Modifiers::NONE,
             event::Status::Ignored,
         );
@@ -1574,6 +1586,7 @@ mod tests {
             &mut settings,
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Escape),
+            Physical::Code(Code::Escape),
             keyboard::Modifiers::NONE,
             event::Status::Ignored,
         );
@@ -1592,6 +1605,7 @@ mod tests {
             &mut settings,
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Backspace),
+            Physical::Code(Code::Backspace),
             keyboard::Modifiers::NONE,
             event::Status::Ignored,
         );
@@ -1609,6 +1623,7 @@ mod tests {
             &mut settings,
             &mut None,
             &keyboard::Key::Character("q".into()),
+            Physical::Code(Code::KeyQ),
             keyboard::Modifiers::CTRL,
             event::Status::Ignored,
         );
@@ -1625,6 +1640,7 @@ mod tests {
             &mut settings,
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Control),
+            Physical::Code(Code::ControlLeft),
             keyboard::Modifiers::CTRL,
             event::Status::Ignored,
         );
@@ -1650,6 +1666,7 @@ mod tests {
             &mut settings,
             &mut None,
             &keyboard::Key::Named(keyboard::key::Named::Enter),
+            Physical::Code(Code::Enter),
             keyboard::Modifiers::NONE,
             event::Status::Captured,
         );
@@ -1667,6 +1684,7 @@ mod tests {
             &mut settings,
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Enter),
+            Physical::Code(Code::Enter),
             keyboard::Modifiers::NONE,
             event::Status::Captured,
         );
@@ -1674,6 +1692,64 @@ mod tests {
         assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
         assert_eq!(settings.close_window_hotkey, Some(expected));
         assert_eq!(recording, None);
+    }
+
+    #[test]
+    fn latin_shortcuts_work_with_non_latin_layouts() {
+        let mut settings = AppSettings::default();
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Character("ц".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::CloseWindow);
+    }
+
+    #[test]
+    fn latin_shortcuts_are_case_insensitive() {
+        let mut settings = AppSettings::default();
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Character("W".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::CloseWindow);
+    }
+
+    #[test]
+    fn recorded_shortcuts_survive_keyboard_layout_changes() {
+        let mut settings = AppSettings::default();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let recorded = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("ц".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+        let matched = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("w".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(recorded, HotkeyOutcome::SettingsChanged);
+        assert_eq!(matched, HotkeyOutcome::CloseWindow);
     }
 }
 
