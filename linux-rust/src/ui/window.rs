@@ -241,9 +241,7 @@ impl App {
                 Task::none()
             }
             Message::WindowClosed(id) => {
-                if self.window == Some(id) {
-                    self.window = None;
-                }
+                handle_window_closed(&mut self.window, &mut self.recording_hotkey, id);
                 Task::none()
             }
             Message::Resized(event) => {
@@ -251,7 +249,7 @@ impl App {
                 Task::none()
             }
             Message::SelectTab(tab) => {
-                self.selected_tab = tab;
+                select_tab(&mut self.selected_tab, &mut self.recording_hotkey, tab);
                 Task::none()
             }
             Message::ThemeSelected(theme) => {
@@ -1470,6 +1468,24 @@ fn hotkey_key(key: &keyboard::Key, physical_key: keyboard::key::Physical) -> Opt
     }
 }
 
+fn handle_window_closed(
+    window: &mut Option<window::Id>,
+    recording_hotkey: &mut Option<HotkeyAction>,
+    closed_window: window::Id,
+) {
+    if *window == Some(closed_window) {
+        *window = None;
+        *recording_hotkey = None;
+    }
+}
+
+fn select_tab(selected_tab: &mut Tab, recording_hotkey: &mut Option<HotkeyAction>, tab: Tab) {
+    if !matches!(tab, Tab::Settings) {
+        *recording_hotkey = None;
+    }
+    *selected_tab = tab;
+}
+
 fn process_hotkey_press(
     settings: &mut AppSettings,
     recording_hotkey: &mut Option<HotkeyAction>,
@@ -1750,6 +1766,33 @@ mod tests {
 
         assert_eq!(recorded, HotkeyOutcome::SettingsChanged);
         assert_eq!(matched, HotkeyOutcome::CloseWindow);
+    }
+
+    #[test]
+    fn leaving_settings_cancels_hotkey_recording() {
+        let mut selected_tab = Tab::Settings;
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        select_tab(
+            &mut selected_tab,
+            &mut recording,
+            Tab::Device("device".to_string()),
+        );
+
+        assert_eq!(recording, None);
+        assert_eq!(selected_tab, Tab::Device("device".to_string()));
+    }
+
+    #[test]
+    fn closing_window_cancels_hotkey_recording() {
+        let window = window::Id::unique();
+        let mut current_window = Some(window);
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        handle_window_closed(&mut current_window, &mut recording, window);
+
+        assert_eq!(current_window, None);
+        assert_eq!(recording, None);
     }
 }
 
