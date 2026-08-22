@@ -9,8 +9,8 @@ use crate::devices::enums::{
 use crate::ui::airpods::airpods_view;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::nothing::nothing_view;
-use crate::utils::{MyTheme, get_app_settings_path, get_devices_path};
-use bluer::{Address};
+use crate::utils::{AppSettings, Hotkey, MyTheme, get_app_settings_path, get_devices_path};
+use bluer::Address;
 use iced::border::Radius;
 use iced::overlay::menu;
 use iced::widget::button::Style;
@@ -19,11 +19,11 @@ use iced::widget::{
     Space, button, column, combo_box, container, pane_grid, row, rule, scrollable, text,
     text_input, toggler
 };
-use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Subscription, Task, Theme, daemon, window, Settings, Program};
+use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Subscription, Task, Theme, daemon, event, keyboard, window, Settings};
 use log::{debug, error};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{Mutex, RwLock};
 
@@ -65,7 +65,7 @@ pub struct App {
     panes: pane_grid::State<Pane>,
     selected_tab: Tab,
     theme_state: combo_box::State<MyTheme>,
-    selected_theme: MyTheme,
+    settings: AppSettings,
     ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>>>,
     bluetooth_state: BluetoothState,
     paired_devices: HashMap<String, Address>,
@@ -74,8 +74,9 @@ pub struct App {
     pending_add_device: Option<(String, Address)>,
     device_type_state: combo_box::State<DeviceType>,
     selected_device_type: Option<DeviceType>,
-    tray_text_mode: bool,
-    stem_control: bool,
+    recording_hotkey: Option<HotkeyAction>,
+    hotkey_conflict: bool,
+    hotkey_conflict_generation: u64,
 }
 
 pub struct BluetoothState {
@@ -106,8 +107,31 @@ pub enum Message {
     ConfirmAddDevice,
     CancelAddDevice,
     StateChanged(String, DeviceState),
-    TrayTextModeChanged(bool), // yes, I know I should add all settings to a struct, but I'm lazy
+    TrayTextModeChanged(bool),
     StemControlChanged(bool),
+    StartHotkeyRecording(HotkeyAction),
+    HotkeyPressed(
+        keyboard::Key,
+        keyboard::key::Physical,
+        keyboard::Modifiers,
+        event::Status,
+    ),
+    HotkeyConflictExpired(HotkeyAction, u64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotkeyAction {
+    CloseWindow,
+    QuitApplication,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HotkeyOutcome {
+    None,
+    SettingsChanged,
+    Conflict,
+    CloseWindow,
+    QuitApplication,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -147,25 +171,7 @@ impl App {
             (Some(id), open.map(Message::WindowOpened))
         };
 
-        let app_settings_path = get_app_settings_path();
-        let settings = std::fs::read_to_string(&app_settings_path)
-            .ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-        let selected_theme = settings
-            .clone()
-            .and_then(|v| v.get("theme").cloned())
-            .and_then(|t| serde_json::from_value(t).ok())
-            .unwrap_or(MyTheme::Dark);
-        let tray_text_mode = settings
-            .clone()
-            .and_then(|v| v.get("tray_text_mode").cloned())
-            .and_then(|ttm| serde_json::from_value(ttm).ok())
-            .unwrap_or(false);
-        let stem_control = settings
-            .clone()
-            .and_then(|v| v.get("stem_control").cloned())
-            .and_then(|s| serde_json::from_value(s).ok())
-            .unwrap_or(false);
+        let settings = AppSettings::load();
 
         let bluetooth_state = BluetoothState::new();
 
@@ -206,7 +212,7 @@ impl App {
                     MyTheme::Oxocarbon,
                     MyTheme::Ferra,
                 ]),
-                selected_theme,
+                settings,
                 ui_rx,
                 bluetooth_state,
                 paired_devices: HashMap::new(),
@@ -215,8 +221,9 @@ impl App {
                 device_type_state: combo_box::State::new(vec![DeviceType::Nothing]),
                 selected_device_type: None,
                 device_managers,
-                tray_text_mode,
-                stem_control,
+                recording_hotkey: None,
+                hotkey_conflict: false,
+                hotkey_conflict_generation: 0,
             },
             Task::batch(vec![open_task, wait_task]),
         )
@@ -226,6 +233,14 @@ impl App {
         "LibrePods".to_string()
     }
 
+    fn save_settings(&self) {
+        let path = get_app_settings_path();
+        debug!("Writing settings to {}: {:?}", path.display(), self.settings);
+        if let Err(error) = self.settings.save() {
+            error!("Failed to write settings to {}: {}", path.display(), error);
+        }
+    }
+
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::WindowOpened(id) => {
@@ -233,8 +248,9 @@ impl App {
                 Task::none()
             }
             Message::WindowClosed(id) => {
-                if self.window == Some(id) {
-                    self.window = None;
+                handle_window_closed(&mut self.window, &mut self.recording_hotkey, id);
+                if self.recording_hotkey.is_none() {
+                    self.hotkey_conflict = false;
                 }
                 Task::none()
             }
@@ -243,23 +259,15 @@ impl App {
                 Task::none()
             }
             Message::SelectTab(tab) => {
-                self.selected_tab = tab;
+                select_tab(&mut self.selected_tab, &mut self.recording_hotkey, tab);
+                if self.recording_hotkey.is_none() {
+                    self.hotkey_conflict = false;
+                }
                 Task::none()
             }
             Message::ThemeSelected(theme) => {
-                self.selected_theme = theme;
-                let app_settings_path = get_app_settings_path();
-                let settings = serde_json::json!({
-                    "theme": self.selected_theme,
-                    "tray_text_mode": self.tray_text_mode,
-                    "stem_control": self.stem_control,
-                });
-                debug!(
-                    "Writing settings to {}: {}",
-                    app_settings_path.to_str().unwrap(),
-                    settings
-                );
-                std::fs::write(app_settings_path, settings.to_string()).ok();
+                self.settings.theme = theme;
+                self.save_settings();
                 Task::none()
             }
             Message::CopyToClipboard(data) => iced::clipboard::write(data),
@@ -625,35 +633,71 @@ impl App {
                 Task::none()
             }
             Message::TrayTextModeChanged(is_enabled) => {
-                self.tray_text_mode = is_enabled;
-                let app_settings_path = get_app_settings_path();
-                let settings = serde_json::json!({
-                    "theme": self.selected_theme,
-                    "tray_text_mode": self.tray_text_mode,
-                    "stem_control": self.stem_control,
-                });
-                debug!(
-                    "Writing settings to {}: {}",
-                    app_settings_path.to_str().unwrap(),
-                    settings
-                );
-                std::fs::write(app_settings_path, settings.to_string()).ok();
+                self.settings.tray_text_mode = is_enabled;
+                self.save_settings();
                 Task::none()
             }
             Message::StemControlChanged(is_enabled) => {
-                self.stem_control = is_enabled;
-                let app_settings_path = get_app_settings_path();
-                let settings = serde_json::json!({
-                    "theme": self.selected_theme,
-                    "tray_text_mode": self.tray_text_mode,
-                    "stem_control": self.stem_control,
-                });
-                debug!(
-                    "Writing settings to {}: {}",
-                    app_settings_path.to_str().unwrap(),
-                    settings
+                self.settings.stem_control = is_enabled;
+                self.save_settings();
+                Task::none()
+            }
+            Message::StartHotkeyRecording(action) => {
+                self.recording_hotkey = Some(action);
+                self.hotkey_conflict = false;
+                Task::none()
+            }
+            Message::HotkeyPressed(key, physical_key, modifiers, status) => {
+                match process_hotkey_press(
+                    &mut self.settings,
+                    &mut self.recording_hotkey,
+                    &key,
+                    physical_key,
+                    modifiers,
+                    status,
+                ) {
+                    HotkeyOutcome::None => {
+                        if self.recording_hotkey.is_none() {
+                            self.hotkey_conflict = false;
+                        }
+                        Task::none()
+                    }
+                    HotkeyOutcome::SettingsChanged => {
+                        self.hotkey_conflict = false;
+                        self.save_settings();
+                        Task::none()
+                    }
+                    HotkeyOutcome::Conflict => {
+                        self.hotkey_conflict = true;
+                        self.hotkey_conflict_generation =
+                            self.hotkey_conflict_generation.wrapping_add(1);
+                        let generation = self.hotkey_conflict_generation;
+                        if let Some(action) = self.recording_hotkey {
+                            Task::perform(
+                                async {
+                                    tokio::time::sleep(Duration::from_secs(2)).await;
+                                },
+                                move |_| Message::HotkeyConflictExpired(action, generation),
+                            )
+                        } else {
+                            error!("Hotkey conflict without an active recording");
+                            Task::none()
+                        }
+                    }
+                    HotkeyOutcome::CloseWindow => {
+                        self.window.map_or_else(Task::none, window::close)
+                    }
+                    HotkeyOutcome::QuitApplication => iced::exit(),
+                }
+            }
+            Message::HotkeyConflictExpired(action, generation) => {
+                expire_hotkey_conflict(
+                    &mut self.recording_hotkey,
+                    &mut self.hotkey_conflict,
+                    self.hotkey_conflict_generation,
+                    action,
+                    generation,
                 );
-                std::fs::write(app_settings_path, settings.to_string()).ok();
                 Task::none()
             }
         }
@@ -939,7 +983,7 @@ impl App {
                                             }
                                         ).width(Length::Fill)
                                     ].width(Length::Fill),
-                                    toggler(self.tray_text_mode)
+                                    toggler(self.settings.tray_text_mode)
                                         .on_toggle(move |is_enabled| {
                                             Message::TrayTextModeChanged(is_enabled)
                                         })
@@ -991,7 +1035,7 @@ impl App {
                                         combo_box(
                                             &self.theme_state,
                                             "Select theme",
-                                            Some(&self.selected_theme),
+                                            Some(&self.settings.theme),
                                             Message::ThemeSelected
                                         )
                                         .input_style(
@@ -1055,7 +1099,7 @@ impl App {
                                 ]
                                 .spacing(12);
 
-                            let stem_control_value = self.stem_control;
+                            let stem_control_value = self.settings.stem_control;
                             let stem_control_toggle = container(
                                 row![
                                     column![
@@ -1116,15 +1160,144 @@ impl App {
                             ]
                             .spacing(12);
 
-                            container(
+                            let close_hotkey_label = hotkey_label(
+                                self.settings.close_window_hotkey.as_ref(),
+                                self.recording_hotkey == Some(HotkeyAction::CloseWindow),
+                                self.hotkey_conflict,
+                            );
+                            let close_window_hotkey_setting = container(
+                                row![
+                                    column![
+                                        text("Close window").size(16),
+                                        text("Click to remap. Backspace unbinds; Esc cancels.").size(12).style(|theme: &Theme| {
+                                            let mut style = text::Style::default();
+                                            style.color = Some(theme.palette().text.scale_alpha(0.7));
+                                            style
+                                        })
+                                    ]
+                                    .width(Length::Fill),
+                                    button(text(close_hotkey_label).size(14).center())
+                                        .on_press(Message::StartHotkeyRecording(HotkeyAction::CloseWindow))
+                                        .style(|theme: &Theme, _status| Style {
+                                            text_color: theme.palette().text,
+                                            background: Some(Background::Color(theme.palette().primary.scale_alpha(0.2))),
+                                            border: Border {
+                                                width: 1.0,
+                                                color: theme.palette().text.scale_alpha(0.3),
+                                                radius: Radius::from(4.0),
+                                            },
+                                            ..Style::default()
+                                        })
+                                        .padding(Padding {
+                                            top: 5.0,
+                                            bottom: 5.0,
+                                            left: 10.0,
+                                            right: 10.0,
+                                        })
+                                        .width(Length::from(160))
+                                ]
+                                .align_y(Center)
+                                .spacing(12)
+                            )
+                            .padding(Padding {
+                                top: 5.0,
+                                bottom: 5.0,
+                                left: 18.0,
+                                right: 18.0,
+                            })
+                            .style(|theme: &Theme| {
+                                let mut style = container::Style::default();
+                                style.background = Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                                let mut border = Border::default();
+                                border.color = theme.palette().primary.scale_alpha(0.5);
+                                style.border = border.rounded(16);
+                                style
+                            });
+
+                            let quit_hotkey_label = hotkey_label(
+                                self.settings.quit_application_hotkey.as_ref(),
+                                self.recording_hotkey == Some(HotkeyAction::QuitApplication),
+                                self.hotkey_conflict,
+                            );
+                            let quit_application_hotkey_setting = container(
+                                row![
+                                    column![
+                                        text("Quit application").size(16),
+                                        text("Click to remap. Backspace unbinds; Esc cancels.").size(12).style(|theme: &Theme| {
+                                            let mut style = text::Style::default();
+                                            style.color = Some(theme.palette().text.scale_alpha(0.7));
+                                            style
+                                        })
+                                    ]
+                                    .width(Length::Fill),
+                                    button(text(quit_hotkey_label).size(14).center())
+                                        .on_press(Message::StartHotkeyRecording(HotkeyAction::QuitApplication))
+                                        .style(|theme: &Theme, _status| Style {
+                                            text_color: theme.palette().text,
+                                            background: Some(Background::Color(theme.palette().primary.scale_alpha(0.2))),
+                                            border: Border {
+                                                width: 1.0,
+                                                color: theme.palette().text.scale_alpha(0.3),
+                                                radius: Radius::from(4.0),
+                                            },
+                                            ..Style::default()
+                                        })
+                                        .padding(Padding {
+                                            top: 5.0,
+                                            bottom: 5.0,
+                                            left: 10.0,
+                                            right: 10.0,
+                                        })
+                                        .width(Length::from(160))
+                                ]
+                                .align_y(Center)
+                                .spacing(12)
+                            )
+                            .padding(Padding {
+                                top: 5.0,
+                                bottom: 5.0,
+                                left: 18.0,
+                                right: 18.0,
+                            })
+                            .style(|theme: &Theme| {
+                                let mut style = container::Style::default();
+                                style.background = Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                                let mut border = Border::default();
+                                border.color = theme.palette().primary.scale_alpha(0.5);
+                                style.border = border.rounded(16);
+                                style
+                            });
+
+                            let hotkey_settings_col = column![
+                                container(
+                                    text("Keyboard shortcuts").size(20).style(|theme: &Theme| {
+                                        let mut style = text::Style::default();
+                                        style.color = Some(theme.palette().primary);
+                                        style
+                                    })
+                                )
+                                .padding(Padding {
+                                    top: 0.0,
+                                    bottom: 0.0,
+                                    left: 18.0,
+                                    right: 18.0,
+                                }),
+                                close_window_hotkey_setting,
+                                quit_application_hotkey_setting,
+                            ]
+                            .spacing(12);
+
+                            container(scrollable(
                                 column![
                                     appearance_settings_col,
                                     Space::new().height(Length::from(20)),
                                     tray_text_mode_toggle,
                                     Space::new().height(Length::from(20)),
                                     controls_settings_col,
+                                    Space::new().height(Length::from(20)),
+                                    hotkey_settings_col,
                                 ]
-                            )
+                            ))
                                 .padding(20)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
@@ -1297,11 +1470,180 @@ impl App {
     }
 
     fn theme(&self, _id: window::Id) -> Theme {
-        self.selected_theme.into()
+        self.settings.theme.into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        window::close_events().map(Message::WindowClosed)
+        Subscription::batch([
+            window::close_events().map(Message::WindowClosed),
+            event::listen_with(|event, status, _window| match event {
+                event::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key,
+                    physical_key,
+                    modifiers,
+                    repeat: false,
+                    ..
+                }) => Some(Message::HotkeyPressed(key, physical_key, modifiers, status)),
+                _ => None,
+            }),
+        ])
+    }
+}
+
+fn hotkey_key(key: &keyboard::Key, physical_key: keyboard::key::Physical) -> Option<String> {
+    match key.as_ref() {
+        keyboard::Key::Character(character) if !character.is_empty() => Some(
+            key.to_latin(physical_key)
+                .map(|character| character.to_lowercase().collect())
+                .unwrap_or_else(|| character.to_lowercase()),
+        ),
+        keyboard::Key::Named(
+            keyboard::key::Named::Alt
+            | keyboard::key::Named::AltGraph
+            | keyboard::key::Named::Control
+            | keyboard::key::Named::Meta
+            | keyboard::key::Named::Shift
+            | keyboard::key::Named::Super,
+        )
+        | keyboard::Key::Unidentified => None,
+        keyboard::Key::Named(named) => Some(format!("{named:?}")),
+        keyboard::Key::Character(_) => None,
+    }
+}
+
+fn handle_window_closed(
+    window: &mut Option<window::Id>,
+    recording_hotkey: &mut Option<HotkeyAction>,
+    closed_window: window::Id,
+) {
+    if *window == Some(closed_window) {
+        *window = None;
+        *recording_hotkey = None;
+    }
+}
+
+fn select_tab(selected_tab: &mut Tab, recording_hotkey: &mut Option<HotkeyAction>, tab: Tab) {
+    if !matches!(tab, Tab::Settings) {
+        *recording_hotkey = None;
+    }
+    *selected_tab = tab;
+}
+
+fn hotkey_label(hotkey: Option<&Hotkey>, recording: bool, conflict: bool) -> String {
+    if recording {
+        if conflict {
+            "Already in use".to_string()
+        } else {
+            "Press shortcut...".to_string()
+        }
+    } else {
+        hotkey
+            .map(Hotkey::display)
+            .unwrap_or_else(|| "Not set".to_string())
+    }
+}
+
+fn expire_hotkey_conflict(
+    recording_hotkey: &mut Option<HotkeyAction>,
+    hotkey_conflict: &mut bool,
+    current_generation: u64,
+    action: HotkeyAction,
+    generation: u64,
+) -> bool {
+    if *hotkey_conflict
+        && *recording_hotkey == Some(action)
+        && current_generation == generation
+    {
+        *hotkey_conflict = false;
+        *recording_hotkey = None;
+        true
+    } else {
+        false
+    }
+}
+
+fn process_hotkey_press(
+    settings: &mut AppSettings,
+    recording_hotkey: &mut Option<HotkeyAction>,
+    key: &keyboard::Key,
+    physical_key: keyboard::key::Physical,
+    modifiers: keyboard::Modifiers,
+    status: event::Status,
+) -> HotkeyOutcome {
+    if recording_hotkey.is_none() && status == event::Status::Captured {
+        return HotkeyOutcome::None;
+    }
+
+    if recording_hotkey.is_some()
+        && key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Escape)
+    {
+        *recording_hotkey = None;
+        return HotkeyOutcome::None;
+    }
+
+    if key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Backspace)
+        && let Some(action) = recording_hotkey.take()
+    {
+        match action {
+            HotkeyAction::CloseWindow => settings.close_window_hotkey = None,
+            HotkeyAction::QuitApplication => settings.quit_application_hotkey = None,
+        }
+        return HotkeyOutcome::SettingsChanged;
+    }
+
+    let Some(key) = hotkey_key(key, physical_key) else {
+        return HotkeyOutcome::None;
+    };
+
+    if let Some(action) = recording_hotkey.take() {
+        let hotkey = Hotkey::new(
+            key,
+            modifiers.control(),
+            modifiers.alt(),
+            modifiers.shift(),
+            modifiers.logo(),
+        );
+        let conflicts = match action {
+            HotkeyAction::CloseWindow => settings
+                .quit_application_hotkey
+                .as_ref()
+                .is_some_and(|existing| existing.same_binding(&hotkey)),
+            HotkeyAction::QuitApplication => settings
+                .close_window_hotkey
+                .as_ref()
+                .is_some_and(|existing| existing.same_binding(&hotkey)),
+        };
+        if conflicts {
+            *recording_hotkey = Some(action);
+            return HotkeyOutcome::Conflict;
+        }
+
+        match action {
+            HotkeyAction::CloseWindow => settings.close_window_hotkey = Some(hotkey),
+            HotkeyAction::QuitApplication => settings.quit_application_hotkey = Some(hotkey),
+        }
+        return HotkeyOutcome::SettingsChanged;
+    }
+
+    let matches = |hotkey: &Hotkey| {
+        hotkey.matches(
+            &key,
+            modifiers.control(),
+            modifiers.alt(),
+            modifiers.shift(),
+            modifiers.logo(),
+        )
+    };
+    if settings.close_window_hotkey.as_ref().is_some_and(matches) {
+        HotkeyOutcome::CloseWindow
+    } else if settings
+        .quit_application_hotkey
+        .as_ref()
+        .is_some_and(matches)
+    {
+        HotkeyOutcome::QuitApplication
+    } else {
+        HotkeyOutcome::None
     }
 }
 
@@ -1313,6 +1655,349 @@ async fn wait_for_message(ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>
             error!("UI message channel closed");
             Message::BluetoothMessage(BluetoothUIMessage::NoOp)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iced::keyboard::key::{Code, Physical};
+
+    #[test]
+    fn records_named_shortcut() {
+        let mut settings = AppSettings::default();
+        let expected = Hotkey::new("Enter".to_string(), false, false, false, false);
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Enter),
+            Physical::Code(Code::Enter),
+            keyboard::Modifiers::NONE,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
+        assert_eq!(settings.close_window_hotkey, Some(expected));
+        assert_eq!(recording, None);
+    }
+
+    #[test]
+    fn escape_cancels_recording_without_changing_binding() {
+        let mut settings = AppSettings::default();
+        let original = settings.close_window_hotkey.clone();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Escape),
+            Physical::Code(Code::Escape),
+            keyboard::Modifiers::NONE,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::None);
+        assert_eq!(recording, None);
+        assert_eq!(settings.close_window_hotkey, original);
+    }
+
+    #[test]
+    fn backspace_unbinds_recorded_action() {
+        let mut settings = AppSettings::default();
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Backspace),
+            Physical::Code(Code::Backspace),
+            keyboard::Modifiers::NONE,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
+        assert_eq!(recording, None);
+        assert_eq!(settings.quit_application_hotkey, None);
+    }
+
+    #[test]
+    fn quit_shortcut_returns_quit_outcome() {
+        let mut settings = AppSettings::default();
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Character("q".into()),
+            Physical::Code(Code::KeyQ),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::QuitApplication);
+    }
+
+    #[test]
+    fn modifier_only_press_keeps_recording_active() {
+        let mut settings = AppSettings::default();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Control),
+            Physical::Code(Code::ControlLeft),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::None);
+        assert_eq!(recording, Some(HotkeyAction::CloseWindow));
+    }
+
+    #[test]
+    fn captured_keys_do_not_trigger_shortcuts() {
+        let mut settings = AppSettings {
+            close_window_hotkey: Some(Hotkey::new(
+                "Enter".to_string(),
+                false,
+                false,
+                false,
+                false,
+            )),
+            ..AppSettings::default()
+        };
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Named(keyboard::key::Named::Enter),
+            Physical::Code(Code::Enter),
+            keyboard::Modifiers::NONE,
+            event::Status::Captured,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::None);
+    }
+
+    #[test]
+    fn captured_keys_can_be_recorded() {
+        let mut settings = AppSettings::default();
+        let expected = Hotkey::new("Enter".to_string(), false, false, false, false);
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Enter),
+            Physical::Code(Code::Enter),
+            keyboard::Modifiers::NONE,
+            event::Status::Captured,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
+        assert_eq!(settings.close_window_hotkey, Some(expected));
+        assert_eq!(recording, None);
+    }
+
+    #[test]
+    fn latin_shortcuts_work_with_non_latin_layouts() {
+        let mut settings = AppSettings::default();
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Character("ц".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::CloseWindow);
+    }
+
+    #[test]
+    fn latin_shortcuts_are_case_insensitive() {
+        let mut settings = AppSettings::default();
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Character("W".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::CloseWindow);
+    }
+
+    #[test]
+    fn recorded_shortcuts_survive_keyboard_layout_changes() {
+        let mut settings = AppSettings::default();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let recorded = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("ц".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+        let matched = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("w".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(recorded, HotkeyOutcome::SettingsChanged);
+        assert_eq!(matched, HotkeyOutcome::CloseWindow);
+    }
+
+    #[test]
+    fn leaving_settings_cancels_hotkey_recording() {
+        let mut selected_tab = Tab::Settings;
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        select_tab(
+            &mut selected_tab,
+            &mut recording,
+            Tab::Device("device".to_string()),
+        );
+
+        assert_eq!(recording, None);
+        assert_eq!(selected_tab, Tab::Device("device".to_string()));
+    }
+
+    #[test]
+    fn closing_window_cancels_hotkey_recording() {
+        let window = window::Id::unique();
+        let mut current_window = Some(window);
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        handle_window_closed(&mut current_window, &mut recording, window);
+
+        assert_eq!(current_window, None);
+        assert_eq!(recording, None);
+    }
+
+    #[test]
+    fn assigning_duplicate_shortcut_is_rejected() {
+        let mut settings = AppSettings::default();
+        let original_close = settings.close_window_hotkey.clone();
+        let original_quit = settings.quit_application_hotkey.clone();
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("w".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::Conflict);
+        assert_eq!(settings.close_window_hotkey, original_close);
+        assert_eq!(settings.quit_application_hotkey, original_quit);
+        assert_eq!(recording, Some(HotkeyAction::QuitApplication));
+    }
+
+    #[test]
+    fn assigning_quit_shortcut_to_close_action_is_rejected() {
+        let mut settings = AppSettings::default();
+        let original_close = settings.close_window_hotkey.clone();
+        let original_quit = settings.quit_application_hotkey.clone();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("q".into()),
+            Physical::Code(Code::KeyQ),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::Conflict);
+        assert_eq!(settings.close_window_hotkey, original_close);
+        assert_eq!(settings.quit_application_hotkey, original_quit);
+        assert_eq!(recording, Some(HotkeyAction::CloseWindow));
+    }
+
+    #[test]
+    fn duplicate_shortcut_check_is_case_insensitive() {
+        let mut settings = AppSettings {
+            close_window_hotkey: Some(Hotkey::new(
+                "W".to_string(),
+                true,
+                false,
+                false,
+                false,
+            )),
+            ..AppSettings::default()
+        };
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("w".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::Conflict);
+        assert_eq!(recording, Some(HotkeyAction::QuitApplication));
+    }
+
+    #[test]
+    fn conflicting_hotkey_label_reports_error() {
+        assert_eq!(hotkey_label(None, true, true), "Already in use");
+        assert_eq!(hotkey_label(None, true, false), "Press shortcut...");
+    }
+
+    #[test]
+    fn conflict_expiry_restores_previous_hotkey_label() {
+        let hotkey = Hotkey::new("w".to_string(), true, false, false, false);
+        let mut recording = Some(HotkeyAction::CloseWindow);
+        let mut conflict = true;
+
+        assert_eq!(hotkey_label(Some(&hotkey), true, conflict), "Already in use");
+        assert!(expire_hotkey_conflict(
+            &mut recording,
+            &mut conflict,
+            4,
+            HotkeyAction::CloseWindow,
+            4,
+        ));
+
+        assert_eq!(recording, None);
+        assert!(!conflict);
+        assert_eq!(hotkey_label(Some(&hotkey), false, conflict), "Ctrl+W");
+    }
+
+    #[test]
+    fn stale_conflict_expiry_does_not_clear_newer_warning() {
+        let mut recording = Some(HotkeyAction::QuitApplication);
+        let mut conflict = true;
+
+        assert!(!expire_hotkey_conflict(
+            &mut recording,
+            &mut conflict,
+            5,
+            HotkeyAction::QuitApplication,
+            4,
+        ));
+
+        assert_eq!(recording, Some(HotkeyAction::QuitApplication));
+        assert!(conflict);
     }
 }
 

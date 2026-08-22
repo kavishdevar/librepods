@@ -3,6 +3,7 @@ use aes::cipher::Array;
 use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use iced::Theme;
 use serde::{Deserialize, Serialize};
+use std::io;
 use std::path::PathBuf;
 
 pub fn get_devices_path() -> PathBuf {
@@ -49,6 +50,201 @@ pub fn get_app_settings_path() -> PathBuf {
     }
 
     new_path
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppSettings {
+    pub theme: MyTheme,
+    pub tray_text_mode: bool,
+    pub stem_control: bool,
+    pub close_window_hotkey: Option<Hotkey>,
+    pub quit_application_hotkey: Option<Hotkey>,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme: MyTheme::Dark,
+            tray_text_mode: false,
+            stem_control: false,
+            close_window_hotkey: Some(Hotkey::with_control("w")),
+            quit_application_hotkey: Some(Hotkey::with_control("q")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Hotkey {
+    key: String,
+    control: bool,
+    alt: bool,
+    shift: bool,
+    logo: bool,
+}
+
+impl Hotkey {
+    fn with_control(key: &str) -> Self {
+        Self::new(key.to_string(), true, false, false, false)
+    }
+
+    pub fn new(key: String, control: bool, alt: bool, shift: bool, logo: bool) -> Self {
+        Self {
+            key,
+            control,
+            alt,
+            shift,
+            logo,
+        }
+    }
+
+    pub fn matches(
+        &self,
+        key: &str,
+        control: bool,
+        alt: bool,
+        shift: bool,
+        logo: bool,
+    ) -> bool {
+        self.key.to_lowercase() == key.to_lowercase()
+            && self.control == control
+            && self.alt == alt
+            && self.shift == shift
+            && self.logo == logo
+    }
+
+    pub(crate) fn same_binding(&self, other: &Self) -> bool {
+        self.matches(
+            &other.key,
+            other.control,
+            other.alt,
+            other.shift,
+            other.logo,
+        )
+    }
+
+    pub fn display(&self) -> String {
+        let mut parts = Vec::new();
+        if self.control {
+            parts.push("Ctrl".to_string());
+        }
+        if self.alt {
+            parts.push("Alt".to_string());
+        }
+        if self.shift {
+            parts.push("Shift".to_string());
+        }
+        if self.logo {
+            parts.push("Super".to_string());
+        }
+        parts.push(if self.key.chars().count() == 1 {
+            self.key.to_uppercase()
+        } else {
+            self.key.clone()
+        });
+        parts.join("+")
+    }
+}
+
+impl AppSettings {
+    pub fn load() -> Self {
+        let mut settings: Self = std::fs::read_to_string(get_app_settings_path())
+            .ok()
+            .and_then(|settings| serde_json::from_str(&settings).ok())
+            .unwrap_or_default();
+        settings.remove_duplicate_hotkeys();
+        settings
+    }
+
+    pub fn save(&self) -> io::Result<()> {
+        let path = get_app_settings_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let settings = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
+        std::fs::write(path, settings)
+    }
+
+    fn remove_duplicate_hotkeys(&mut self) {
+        if self
+            .close_window_hotkey
+            .as_ref()
+            .zip(self.quit_application_hotkey.as_ref())
+            .is_some_and(|(close, quit)| close.same_binding(quit))
+        {
+            log::warn!(
+                "Duplicate persisted hotkeys detected; preserving close binding and unbinding quit"
+            );
+            self.quit_application_hotkey = None;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppSettings, Hotkey, MyTheme};
+
+    #[test]
+    fn old_app_settings_use_default_hotkeys() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"theme":"Nord","tray_text_mode":true,"stem_control":true}"#,
+        )
+        .unwrap();
+
+        assert_eq!(settings.theme, MyTheme::Nord);
+        assert!(settings.tray_text_mode);
+        assert!(settings.stem_control);
+        assert_eq!(settings.close_window_hotkey, Some(Hotkey::with_control("w")));
+        assert_eq!(settings.quit_application_hotkey, Some(Hotkey::with_control("q")));
+    }
+
+    #[test]
+    fn hotkey_formats_modifiers_and_key() {
+        let hotkey = Hotkey::new("k".to_string(), true, true, true, false);
+
+        assert_eq!(hotkey.display(), "Ctrl+Alt+Shift+K");
+        assert!(hotkey.matches("k", true, true, true, false));
+        assert!(hotkey.matches("K", true, true, true, false));
+    }
+
+    #[test]
+    fn app_settings_round_trip_custom_hotkeys() {
+        let expected = AppSettings {
+            close_window_hotkey: None,
+            quit_application_hotkey: Some(Hotkey::new(
+                "F12".to_string(),
+                false,
+                true,
+                false,
+                false,
+            )),
+            ..AppSettings::default()
+        };
+
+        let json = serde_json::to_string(&expected).unwrap();
+        let actual: AppSettings = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(actual.close_window_hotkey, expected.close_window_hotkey);
+        assert_eq!(
+            actual.quit_application_hotkey,
+            expected.quit_application_hotkey
+        );
+    }
+
+    #[test]
+    fn duplicate_app_settings_unbind_quit_action() {
+        let close = Hotkey::with_control("W");
+        let mut settings = AppSettings {
+            close_window_hotkey: Some(close.clone()),
+            quit_application_hotkey: Some(Hotkey::with_control("w")),
+            ..AppSettings::default()
+        };
+
+        settings.remove_duplicate_hotkeys();
+
+        assert_eq!(settings.close_window_hotkey, Some(close));
+        assert_eq!(settings.quit_application_hotkey, None);
+    }
 }
 
 fn e(key: &[u8; 16], data: &[u8; 16]) -> [u8; 16] {
