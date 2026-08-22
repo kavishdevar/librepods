@@ -9,7 +9,7 @@ use crate::devices::enums::{
 use crate::ui::airpods::airpods_view;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::nothing::nothing_view;
-use crate::utils::{AppSettings, MyTheme, get_app_settings_path, get_devices_path};
+use crate::utils::{AppSettings, Hotkey, MyTheme, get_app_settings_path, get_devices_path};
 use bluer::Address;
 use iced::border::Radius;
 use iced::overlay::menu;
@@ -19,7 +19,7 @@ use iced::widget::{
     Space, button, column, combo_box, container, pane_grid, row, rule, scrollable, text,
     text_input, toggler
 };
-use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Subscription, Task, Theme, daemon, window, Settings};
+use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Subscription, Task, Theme, daemon, event, keyboard, window, Settings};
 use log::{debug, error};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -73,6 +73,7 @@ pub struct App {
     pending_add_device: Option<(String, Address)>,
     device_type_state: combo_box::State<DeviceType>,
     selected_device_type: Option<DeviceType>,
+    recording_hotkey: Option<HotkeyAction>,
 }
 
 pub struct BluetoothState {
@@ -105,6 +106,14 @@ pub enum Message {
     StateChanged(String, DeviceState),
     TrayTextModeChanged(bool),
     StemControlChanged(bool),
+    StartHotkeyRecording(HotkeyAction),
+    HotkeyPressed(keyboard::Key, keyboard::Modifiers),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotkeyAction {
+    CloseWindow,
+    QuitApplication,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -194,6 +203,7 @@ impl App {
                 device_type_state: combo_box::State::new(vec![DeviceType::Nothing]),
                 selected_device_type: None,
                 device_managers,
+                recording_hotkey: None,
             },
             Task::batch(vec![open_task, wait_task]),
         )
@@ -606,6 +616,73 @@ impl App {
             Message::StemControlChanged(is_enabled) => {
                 self.settings.stem_control = is_enabled;
                 self.save_settings();
+                Task::none()
+            }
+            Message::StartHotkeyRecording(action) => {
+                self.recording_hotkey = Some(action);
+                Task::none()
+            }
+            Message::HotkeyPressed(key, modifiers) => {
+                if self.recording_hotkey.is_some()
+                    && key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Escape)
+                {
+                    self.recording_hotkey = None;
+                    return Task::none();
+                }
+
+                if key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Backspace)
+                    && let Some(action) = self.recording_hotkey.take()
+                {
+                    match action {
+                        HotkeyAction::CloseWindow => self.settings.close_window_hotkey = None,
+                        HotkeyAction::QuitApplication => {
+                            self.settings.quit_application_hotkey = None
+                        }
+                    }
+                    self.save_settings();
+                    return Task::none();
+                }
+
+                let Some(key) = hotkey_key(&key) else {
+                    return Task::none();
+                };
+
+                if let Some(action) = self.recording_hotkey.take() {
+                    let hotkey = Hotkey::new(
+                        key,
+                        modifiers.control(),
+                        modifiers.alt(),
+                        modifiers.shift(),
+                        modifiers.logo(),
+                    );
+                    match action {
+                        HotkeyAction::CloseWindow => {
+                            self.settings.close_window_hotkey = Some(hotkey)
+                        }
+                        HotkeyAction::QuitApplication => {
+                            self.settings.quit_application_hotkey = Some(hotkey)
+                        }
+                    }
+                    self.save_settings();
+                    return Task::none();
+                }
+
+                let matches = |hotkey: &Hotkey| {
+                    hotkey.matches(
+                        &key,
+                        modifiers.control(),
+                        modifiers.alt(),
+                        modifiers.shift(),
+                        modifiers.logo(),
+                    )
+                };
+                if self.settings.close_window_hotkey.as_ref().is_some_and(matches) {
+                    if let Some(window) = self.window {
+                        return window::close(window);
+                    }
+                } else if self.settings.quit_application_hotkey.as_ref().is_some_and(matches) {
+                    return iced::exit();
+                }
                 Task::none()
             }
         }
@@ -1068,15 +1145,148 @@ impl App {
                             ]
                             .spacing(12);
 
-                            container(
+                            let close_hotkey_label = if self.recording_hotkey == Some(HotkeyAction::CloseWindow) {
+                                "Press shortcut...".to_string()
+                            } else {
+                                self.settings.close_window_hotkey.as_ref()
+                                    .map(Hotkey::display)
+                                    .unwrap_or_else(|| "Not set".to_string())
+                            };
+                            let close_window_hotkey_setting = container(
+                                row![
+                                    column![
+                                        text("Close window").size(16),
+                                        text("Click to remap. Backspace unbinds; Esc cancels.").size(12).style(|theme: &Theme| {
+                                            let mut style = text::Style::default();
+                                            style.color = Some(theme.palette().text.scale_alpha(0.7));
+                                            style
+                                        })
+                                    ]
+                                    .width(Length::Fill),
+                                    button(text(close_hotkey_label).size(14).center())
+                                        .on_press(Message::StartHotkeyRecording(HotkeyAction::CloseWindow))
+                                        .style(|theme: &Theme, _status| Style {
+                                            text_color: theme.palette().text,
+                                            background: Some(Background::Color(theme.palette().primary.scale_alpha(0.2))),
+                                            border: Border {
+                                                width: 1.0,
+                                                color: theme.palette().text.scale_alpha(0.3),
+                                                radius: Radius::from(4.0),
+                                            },
+                                            ..Style::default()
+                                        })
+                                        .padding(Padding {
+                                            top: 5.0,
+                                            bottom: 5.0,
+                                            left: 10.0,
+                                            right: 10.0,
+                                        })
+                                        .width(Length::from(160))
+                                ]
+                                .align_y(Center)
+                                .spacing(12)
+                            )
+                            .padding(Padding {
+                                top: 5.0,
+                                bottom: 5.0,
+                                left: 18.0,
+                                right: 18.0,
+                            })
+                            .style(|theme: &Theme| {
+                                let mut style = container::Style::default();
+                                style.background = Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                                let mut border = Border::default();
+                                border.color = theme.palette().primary.scale_alpha(0.5);
+                                style.border = border.rounded(16);
+                                style
+                            });
+
+                            let quit_hotkey_label = if self.recording_hotkey == Some(HotkeyAction::QuitApplication) {
+                                "Press shortcut...".to_string()
+                            } else {
+                                self.settings.quit_application_hotkey.as_ref()
+                                    .map(Hotkey::display)
+                                    .unwrap_or_else(|| "Not set".to_string())
+                            };
+                            let quit_application_hotkey_setting = container(
+                                row![
+                                    column![
+                                        text("Quit application").size(16),
+                                        text("Click to remap. Backspace unbinds; Esc cancels.").size(12).style(|theme: &Theme| {
+                                            let mut style = text::Style::default();
+                                            style.color = Some(theme.palette().text.scale_alpha(0.7));
+                                            style
+                                        })
+                                    ]
+                                    .width(Length::Fill),
+                                    button(text(quit_hotkey_label).size(14).center())
+                                        .on_press(Message::StartHotkeyRecording(HotkeyAction::QuitApplication))
+                                        .style(|theme: &Theme, _status| Style {
+                                            text_color: theme.palette().text,
+                                            background: Some(Background::Color(theme.palette().primary.scale_alpha(0.2))),
+                                            border: Border {
+                                                width: 1.0,
+                                                color: theme.palette().text.scale_alpha(0.3),
+                                                radius: Radius::from(4.0),
+                                            },
+                                            ..Style::default()
+                                        })
+                                        .padding(Padding {
+                                            top: 5.0,
+                                            bottom: 5.0,
+                                            left: 10.0,
+                                            right: 10.0,
+                                        })
+                                        .width(Length::from(160))
+                                ]
+                                .align_y(Center)
+                                .spacing(12)
+                            )
+                            .padding(Padding {
+                                top: 5.0,
+                                bottom: 5.0,
+                                left: 18.0,
+                                right: 18.0,
+                            })
+                            .style(|theme: &Theme| {
+                                let mut style = container::Style::default();
+                                style.background = Some(Background::Color(theme.palette().primary.scale_alpha(0.1)));
+                                let mut border = Border::default();
+                                border.color = theme.palette().primary.scale_alpha(0.5);
+                                style.border = border.rounded(16);
+                                style
+                            });
+
+                            let hotkey_settings_col = column![
+                                container(
+                                    text("Keyboard shortcuts").size(20).style(|theme: &Theme| {
+                                        let mut style = text::Style::default();
+                                        style.color = Some(theme.palette().primary);
+                                        style
+                                    })
+                                )
+                                .padding(Padding {
+                                    top: 0.0,
+                                    bottom: 0.0,
+                                    left: 18.0,
+                                    right: 18.0,
+                                }),
+                                close_window_hotkey_setting,
+                                quit_application_hotkey_setting,
+                            ]
+                            .spacing(12);
+
+                            container(scrollable(
                                 column![
                                     appearance_settings_col,
                                     Space::new().height(Length::from(20)),
                                     tray_text_mode_toggle,
                                     Space::new().height(Length::from(20)),
                                     controls_settings_col,
+                                    Space::new().height(Length::from(20)),
+                                    hotkey_settings_col,
                                 ]
-                            )
+                            ))
                                 .padding(20)
                                 .width(Length::Fill)
                                 .height(Length::Fill)
@@ -1253,7 +1463,37 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        window::close_events().map(Message::WindowClosed)
+        Subscription::batch([
+            window::close_events().map(Message::WindowClosed),
+            event::listen_with(|event, _status, _window| match event {
+                event::Event::Keyboard(keyboard::Event::KeyPressed {
+                    key,
+                    modifiers,
+                    repeat: false,
+                    ..
+                }) => Some(Message::HotkeyPressed(key, modifiers)),
+                _ => None,
+            }),
+        ])
+    }
+}
+
+fn hotkey_key(key: &keyboard::Key) -> Option<String> {
+    match key.as_ref() {
+        keyboard::Key::Character(character) if !character.is_empty() => {
+            Some(character.to_lowercase())
+        }
+        keyboard::Key::Named(
+            keyboard::key::Named::Alt
+            | keyboard::key::Named::AltGraph
+            | keyboard::key::Named::Control
+            | keyboard::key::Named::Meta
+            | keyboard::key::Named::Shift
+            | keyboard::key::Named::Super,
+        )
+        | keyboard::Key::Unidentified => None,
+        keyboard::Key::Named(named) => Some(format!("{named:?}")),
+        keyboard::Key::Character(_) => None,
     }
 }
 

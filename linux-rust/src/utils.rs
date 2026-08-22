@@ -58,6 +58,8 @@ pub struct AppSettings {
     pub theme: MyTheme,
     pub tray_text_mode: bool,
     pub stem_control: bool,
+    pub close_window_hotkey: Option<Hotkey>,
+    pub quit_application_hotkey: Option<Hotkey>,
 }
 
 impl Default for AppSettings {
@@ -66,7 +68,71 @@ impl Default for AppSettings {
             theme: MyTheme::Dark,
             tray_text_mode: false,
             stem_control: false,
+            close_window_hotkey: Some(Hotkey::with_control("w")),
+            quit_application_hotkey: Some(Hotkey::with_control("q")),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Hotkey {
+    key: String,
+    control: bool,
+    alt: bool,
+    shift: bool,
+    logo: bool,
+}
+
+impl Hotkey {
+    fn with_control(key: &str) -> Self {
+        Self::new(key.to_string(), true, false, false, false)
+    }
+
+    pub fn new(key: String, control: bool, alt: bool, shift: bool, logo: bool) -> Self {
+        Self {
+            key,
+            control,
+            alt,
+            shift,
+            logo,
+        }
+    }
+
+    pub fn matches(
+        &self,
+        key: &str,
+        control: bool,
+        alt: bool,
+        shift: bool,
+        logo: bool,
+    ) -> bool {
+        self.key == key
+            && self.control == control
+            && self.alt == alt
+            && self.shift == shift
+            && self.logo == logo
+    }
+
+    pub fn display(&self) -> String {
+        let mut parts = Vec::new();
+        if self.control {
+            parts.push("Ctrl".to_string());
+        }
+        if self.alt {
+            parts.push("Alt".to_string());
+        }
+        if self.shift {
+            parts.push("Shift".to_string());
+        }
+        if self.logo {
+            parts.push("Super".to_string());
+        }
+        parts.push(if self.key.chars().count() == 1 {
+            self.key.to_uppercase()
+        } else {
+            self.key.clone()
+        });
+        parts.join("+")
     }
 }
 
@@ -85,6 +151,57 @@ impl AppSettings {
         }
         let settings = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
         std::fs::write(path, settings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppSettings, Hotkey, MyTheme};
+
+    #[test]
+    fn old_app_settings_use_default_hotkeys() {
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"theme":"Nord","tray_text_mode":true,"stem_control":true}"#,
+        )
+        .unwrap();
+
+        assert_eq!(settings.theme, MyTheme::Nord);
+        assert!(settings.tray_text_mode);
+        assert!(settings.stem_control);
+        assert_eq!(settings.close_window_hotkey, Some(Hotkey::with_control("w")));
+        assert_eq!(settings.quit_application_hotkey, Some(Hotkey::with_control("q")));
+    }
+
+    #[test]
+    fn hotkey_formats_modifiers_and_key() {
+        let hotkey = Hotkey::new("k".to_string(), true, true, true, false);
+
+        assert_eq!(hotkey.display(), "Ctrl+Alt+Shift+K");
+        assert!(hotkey.matches("k", true, true, true, false));
+    }
+
+    #[test]
+    fn app_settings_round_trip_custom_hotkeys() {
+        let expected = AppSettings {
+            close_window_hotkey: None,
+            quit_application_hotkey: Some(Hotkey::new(
+                "F12".to_string(),
+                false,
+                true,
+                false,
+                false,
+            )),
+            ..AppSettings::default()
+        };
+
+        let json = serde_json::to_string(&expected).unwrap();
+        let actual: AppSettings = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(actual.close_window_hotkey, expected.close_window_hotkey);
+        assert_eq!(
+            actual.quit_application_hotkey,
+            expected.quit_application_hotkey
+        );
     }
 }
 
