@@ -3,6 +3,7 @@ use aes::cipher::Array;
 use aes::cipher::{BlockCipherEncrypt, KeyInit};
 use iced::Theme;
 use serde::{Deserialize, Serialize};
+use std::io;
 use std::path::PathBuf;
 
 pub fn get_devices_path() -> PathBuf {
@@ -49,6 +50,42 @@ pub fn get_app_settings_path() -> PathBuf {
     }
 
     new_path
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AppSettings {
+    pub theme: MyTheme,
+    pub tray_text_mode: bool,
+    pub stem_control: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme: MyTheme::Dark,
+            tray_text_mode: false,
+            stem_control: false,
+        }
+    }
+}
+
+impl AppSettings {
+    pub fn load() -> Self {
+        std::fs::read_to_string(get_app_settings_path())
+            .ok()
+            .and_then(|settings| serde_json::from_str(&settings).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self) -> io::Result<()> {
+        let path = get_app_settings_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let settings = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
+        std::fs::write(path, settings)
+    }
 }
 
 fn e(key: &[u8; 16], data: &[u8; 16]) -> [u8; 16] {

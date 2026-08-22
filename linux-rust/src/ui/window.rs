@@ -9,8 +9,8 @@ use crate::devices::enums::{
 use crate::ui::airpods::airpods_view;
 use crate::ui::messages::BluetoothUIMessage;
 use crate::ui::nothing::nothing_view;
-use crate::utils::{MyTheme, get_app_settings_path, get_devices_path};
-use bluer::{Address};
+use crate::utils::{AppSettings, MyTheme, get_app_settings_path, get_devices_path};
+use bluer::Address;
 use iced::border::Radius;
 use iced::overlay::menu;
 use iced::widget::button::Style;
@@ -19,10 +19,9 @@ use iced::widget::{
     Space, button, column, combo_box, container, pane_grid, row, rule, scrollable, text,
     text_input, toggler
 };
-use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Subscription, Task, Theme, daemon, window, Settings, Program};
+use iced::{Background, Border, Center, Element, Font, Length, Padding, Size, Subscription, Task, Theme, daemon, window, Settings};
 use log::{debug, error};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::{Mutex, RwLock};
@@ -65,7 +64,7 @@ pub struct App {
     panes: pane_grid::State<Pane>,
     selected_tab: Tab,
     theme_state: combo_box::State<MyTheme>,
-    selected_theme: MyTheme,
+    settings: AppSettings,
     ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>>>,
     bluetooth_state: BluetoothState,
     paired_devices: HashMap<String, Address>,
@@ -74,8 +73,6 @@ pub struct App {
     pending_add_device: Option<(String, Address)>,
     device_type_state: combo_box::State<DeviceType>,
     selected_device_type: Option<DeviceType>,
-    tray_text_mode: bool,
-    stem_control: bool,
 }
 
 pub struct BluetoothState {
@@ -106,7 +103,7 @@ pub enum Message {
     ConfirmAddDevice,
     CancelAddDevice,
     StateChanged(String, DeviceState),
-    TrayTextModeChanged(bool), // yes, I know I should add all settings to a struct, but I'm lazy
+    TrayTextModeChanged(bool),
     StemControlChanged(bool),
 }
 
@@ -147,25 +144,7 @@ impl App {
             (Some(id), open.map(Message::WindowOpened))
         };
 
-        let app_settings_path = get_app_settings_path();
-        let settings = std::fs::read_to_string(&app_settings_path)
-            .ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-        let selected_theme = settings
-            .clone()
-            .and_then(|v| v.get("theme").cloned())
-            .and_then(|t| serde_json::from_value(t).ok())
-            .unwrap_or(MyTheme::Dark);
-        let tray_text_mode = settings
-            .clone()
-            .and_then(|v| v.get("tray_text_mode").cloned())
-            .and_then(|ttm| serde_json::from_value(ttm).ok())
-            .unwrap_or(false);
-        let stem_control = settings
-            .clone()
-            .and_then(|v| v.get("stem_control").cloned())
-            .and_then(|s| serde_json::from_value(s).ok())
-            .unwrap_or(false);
+        let settings = AppSettings::load();
 
         let bluetooth_state = BluetoothState::new();
 
@@ -206,7 +185,7 @@ impl App {
                     MyTheme::Oxocarbon,
                     MyTheme::Ferra,
                 ]),
-                selected_theme,
+                settings,
                 ui_rx,
                 bluetooth_state,
                 paired_devices: HashMap::new(),
@@ -215,8 +194,6 @@ impl App {
                 device_type_state: combo_box::State::new(vec![DeviceType::Nothing]),
                 selected_device_type: None,
                 device_managers,
-                tray_text_mode,
-                stem_control,
             },
             Task::batch(vec![open_task, wait_task]),
         )
@@ -224,6 +201,14 @@ impl App {
 
     fn title(&self, _id: window::Id) -> String {
         "LibrePods".to_string()
+    }
+
+    fn save_settings(&self) {
+        let path = get_app_settings_path();
+        debug!("Writing settings to {}: {:?}", path.display(), self.settings);
+        if let Err(error) = self.settings.save() {
+            error!("Failed to write settings to {}: {}", path.display(), error);
+        }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -247,19 +232,8 @@ impl App {
                 Task::none()
             }
             Message::ThemeSelected(theme) => {
-                self.selected_theme = theme;
-                let app_settings_path = get_app_settings_path();
-                let settings = serde_json::json!({
-                    "theme": self.selected_theme,
-                    "tray_text_mode": self.tray_text_mode,
-                    "stem_control": self.stem_control,
-                });
-                debug!(
-                    "Writing settings to {}: {}",
-                    app_settings_path.to_str().unwrap(),
-                    settings
-                );
-                std::fs::write(app_settings_path, settings.to_string()).ok();
+                self.settings.theme = theme;
+                self.save_settings();
                 Task::none()
             }
             Message::CopyToClipboard(data) => iced::clipboard::write(data),
@@ -625,35 +599,13 @@ impl App {
                 Task::none()
             }
             Message::TrayTextModeChanged(is_enabled) => {
-                self.tray_text_mode = is_enabled;
-                let app_settings_path = get_app_settings_path();
-                let settings = serde_json::json!({
-                    "theme": self.selected_theme,
-                    "tray_text_mode": self.tray_text_mode,
-                    "stem_control": self.stem_control,
-                });
-                debug!(
-                    "Writing settings to {}: {}",
-                    app_settings_path.to_str().unwrap(),
-                    settings
-                );
-                std::fs::write(app_settings_path, settings.to_string()).ok();
+                self.settings.tray_text_mode = is_enabled;
+                self.save_settings();
                 Task::none()
             }
             Message::StemControlChanged(is_enabled) => {
-                self.stem_control = is_enabled;
-                let app_settings_path = get_app_settings_path();
-                let settings = serde_json::json!({
-                    "theme": self.selected_theme,
-                    "tray_text_mode": self.tray_text_mode,
-                    "stem_control": self.stem_control,
-                });
-                debug!(
-                    "Writing settings to {}: {}",
-                    app_settings_path.to_str().unwrap(),
-                    settings
-                );
-                std::fs::write(app_settings_path, settings.to_string()).ok();
+                self.settings.stem_control = is_enabled;
+                self.save_settings();
                 Task::none()
             }
         }
@@ -939,7 +891,7 @@ impl App {
                                             }
                                         ).width(Length::Fill)
                                     ].width(Length::Fill),
-                                    toggler(self.tray_text_mode)
+                                    toggler(self.settings.tray_text_mode)
                                         .on_toggle(move |is_enabled| {
                                             Message::TrayTextModeChanged(is_enabled)
                                         })
@@ -991,7 +943,7 @@ impl App {
                                         combo_box(
                                             &self.theme_state,
                                             "Select theme",
-                                            Some(&self.selected_theme),
+                                            Some(&self.settings.theme),
                                             Message::ThemeSelected
                                         )
                                         .input_style(
@@ -1055,7 +1007,7 @@ impl App {
                                 ]
                                 .spacing(12);
 
-                            let stem_control_value = self.stem_control;
+                            let stem_control_value = self.settings.stem_control;
                             let stem_control_toggle = container(
                                 row![
                                     column![
@@ -1297,7 +1249,7 @@ impl App {
     }
 
     fn theme(&self, _id: window::Id) -> Theme {
-        self.selected_theme.into()
+        self.settings.theme.into()
     }
 
     fn subscription(&self) -> Subscription<Message> {
