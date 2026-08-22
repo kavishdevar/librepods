@@ -116,6 +116,14 @@ pub enum HotkeyAction {
     QuitApplication,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HotkeyOutcome {
+    None,
+    SettingsChanged,
+    CloseWindow,
+    QuitApplication,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Tab {
     Device(String),
@@ -623,67 +631,22 @@ impl App {
                 Task::none()
             }
             Message::HotkeyPressed(key, modifiers) => {
-                if self.recording_hotkey.is_some()
-                    && key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Escape)
-                {
-                    self.recording_hotkey = None;
-                    return Task::none();
-                }
-
-                if key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Backspace)
-                    && let Some(action) = self.recording_hotkey.take()
-                {
-                    match action {
-                        HotkeyAction::CloseWindow => self.settings.close_window_hotkey = None,
-                        HotkeyAction::QuitApplication => {
-                            self.settings.quit_application_hotkey = None
-                        }
+                match process_hotkey_press(
+                    &mut self.settings,
+                    &mut self.recording_hotkey,
+                    &key,
+                    modifiers,
+                ) {
+                    HotkeyOutcome::None => Task::none(),
+                    HotkeyOutcome::SettingsChanged => {
+                        self.save_settings();
+                        Task::none()
                     }
-                    self.save_settings();
-                    return Task::none();
-                }
-
-                let Some(key) = hotkey_key(&key) else {
-                    return Task::none();
-                };
-
-                if let Some(action) = self.recording_hotkey.take() {
-                    let hotkey = Hotkey::new(
-                        key,
-                        modifiers.control(),
-                        modifiers.alt(),
-                        modifiers.shift(),
-                        modifiers.logo(),
-                    );
-                    match action {
-                        HotkeyAction::CloseWindow => {
-                            self.settings.close_window_hotkey = Some(hotkey)
-                        }
-                        HotkeyAction::QuitApplication => {
-                            self.settings.quit_application_hotkey = Some(hotkey)
-                        }
+                    HotkeyOutcome::CloseWindow => {
+                        self.window.map_or_else(Task::none, window::close)
                     }
-                    self.save_settings();
-                    return Task::none();
+                    HotkeyOutcome::QuitApplication => iced::exit(),
                 }
-
-                let matches = |hotkey: &Hotkey| {
-                    hotkey.matches(
-                        &key,
-                        modifiers.control(),
-                        modifiers.alt(),
-                        modifiers.shift(),
-                        modifiers.logo(),
-                    )
-                };
-                if self.settings.close_window_hotkey.as_ref().is_some_and(matches) {
-                    if let Some(window) = self.window {
-                        return window::close(window);
-                    }
-                } else if self.settings.quit_application_hotkey.as_ref().is_some_and(matches) {
-                    return iced::exit();
-                }
-                Task::none()
             }
         }
     }
@@ -1497,6 +1460,70 @@ fn hotkey_key(key: &keyboard::Key) -> Option<String> {
     }
 }
 
+fn process_hotkey_press(
+    settings: &mut AppSettings,
+    recording_hotkey: &mut Option<HotkeyAction>,
+    key: &keyboard::Key,
+    modifiers: keyboard::Modifiers,
+) -> HotkeyOutcome {
+    if recording_hotkey.is_some()
+        && key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Escape)
+    {
+        *recording_hotkey = None;
+        return HotkeyOutcome::None;
+    }
+
+    if key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Backspace)
+        && let Some(action) = recording_hotkey.take()
+    {
+        match action {
+            HotkeyAction::CloseWindow => settings.close_window_hotkey = None,
+            HotkeyAction::QuitApplication => settings.quit_application_hotkey = None,
+        }
+        return HotkeyOutcome::SettingsChanged;
+    }
+
+    let Some(key) = hotkey_key(key) else {
+        return HotkeyOutcome::None;
+    };
+
+    if let Some(action) = recording_hotkey.take() {
+        let hotkey = Hotkey::new(
+            key,
+            modifiers.control(),
+            modifiers.alt(),
+            modifiers.shift(),
+            modifiers.logo(),
+        );
+        match action {
+            HotkeyAction::CloseWindow => settings.close_window_hotkey = Some(hotkey),
+            HotkeyAction::QuitApplication => settings.quit_application_hotkey = Some(hotkey),
+        }
+        return HotkeyOutcome::SettingsChanged;
+    }
+
+    let matches = |hotkey: &Hotkey| {
+        hotkey.matches(
+            &key,
+            modifiers.control(),
+            modifiers.alt(),
+            modifiers.shift(),
+            modifiers.logo(),
+        )
+    };
+    if settings.close_window_hotkey.as_ref().is_some_and(matches) {
+        HotkeyOutcome::CloseWindow
+    } else if settings
+        .quit_application_hotkey
+        .as_ref()
+        .is_some_and(matches)
+    {
+        HotkeyOutcome::QuitApplication
+    } else {
+        HotkeyOutcome::None
+    }
+}
+
 async fn wait_for_message(ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>>>) -> Message {
     let mut rx = ui_rx.lock().await;
     match rx.recv().await {
@@ -1505,6 +1532,94 @@ async fn wait_for_message(ui_rx: Arc<Mutex<UnboundedReceiver<BluetoothUIMessage>
             error!("UI message channel closed");
             Message::BluetoothMessage(BluetoothUIMessage::NoOp)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn records_named_shortcut() {
+        let mut settings = AppSettings::default();
+        let expected = Hotkey::new("Enter".to_string(), false, false, false, false);
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Enter),
+            keyboard::Modifiers::NONE,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
+        assert_eq!(settings.close_window_hotkey, Some(expected));
+        assert_eq!(recording, None);
+    }
+
+    #[test]
+    fn escape_cancels_recording_without_changing_binding() {
+        let mut settings = AppSettings::default();
+        let original = settings.close_window_hotkey.clone();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Escape),
+            keyboard::Modifiers::NONE,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::None);
+        assert_eq!(recording, None);
+        assert_eq!(settings.close_window_hotkey, original);
+    }
+
+    #[test]
+    fn backspace_unbinds_recorded_action() {
+        let mut settings = AppSettings::default();
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Backspace),
+            keyboard::Modifiers::NONE,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
+        assert_eq!(recording, None);
+        assert_eq!(settings.quit_application_hotkey, None);
+    }
+
+    #[test]
+    fn quit_shortcut_returns_quit_outcome() {
+        let mut settings = AppSettings::default();
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Character("q".into()),
+            keyboard::Modifiers::CTRL,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::QuitApplication);
+    }
+
+    #[test]
+    fn modifier_only_press_keeps_recording_active() {
+        let mut settings = AppSettings::default();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Control),
+            keyboard::Modifiers::CTRL,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::None);
+        assert_eq!(recording, Some(HotkeyAction::CloseWindow));
     }
 }
 
