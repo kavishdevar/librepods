@@ -113,6 +113,16 @@ impl Hotkey {
             && self.logo == logo
     }
 
+    pub(crate) fn same_binding(&self, other: &Self) -> bool {
+        self.matches(
+            &other.key,
+            other.control,
+            other.alt,
+            other.shift,
+            other.logo,
+        )
+    }
+
     pub fn display(&self) -> String {
         let mut parts = Vec::new();
         if self.control {
@@ -138,10 +148,12 @@ impl Hotkey {
 
 impl AppSettings {
     pub fn load() -> Self {
-        std::fs::read_to_string(get_app_settings_path())
+        let mut settings: Self = std::fs::read_to_string(get_app_settings_path())
             .ok()
             .and_then(|settings| serde_json::from_str(&settings).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        settings.remove_duplicate_hotkeys();
+        settings
     }
 
     pub fn save(&self) -> io::Result<()> {
@@ -151,6 +163,20 @@ impl AppSettings {
         }
         let settings = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
         std::fs::write(path, settings)
+    }
+
+    fn remove_duplicate_hotkeys(&mut self) {
+        if self
+            .close_window_hotkey
+            .as_ref()
+            .zip(self.quit_application_hotkey.as_ref())
+            .is_some_and(|(close, quit)| close.same_binding(quit))
+        {
+            log::warn!(
+                "Duplicate persisted hotkeys detected; preserving close binding and unbinding quit"
+            );
+            self.quit_application_hotkey = None;
+        }
     }
 }
 
@@ -203,6 +229,21 @@ mod tests {
             actual.quit_application_hotkey,
             expected.quit_application_hotkey
         );
+    }
+
+    #[test]
+    fn duplicate_app_settings_unbind_quit_action() {
+        let close = Hotkey::with_control("W");
+        let mut settings = AppSettings {
+            close_window_hotkey: Some(close.clone()),
+            quit_application_hotkey: Some(Hotkey::with_control("w")),
+            ..AppSettings::default()
+        };
+
+        settings.remove_duplicate_hotkeys();
+
+        assert_eq!(settings.close_window_hotkey, Some(close));
+        assert_eq!(settings.quit_application_hotkey, None);
     }
 }
 

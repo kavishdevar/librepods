@@ -125,6 +125,7 @@ pub enum HotkeyAction {
 enum HotkeyOutcome {
     None,
     SettingsChanged,
+    Conflict,
     CloseWindow,
     QuitApplication,
 }
@@ -645,6 +646,10 @@ impl App {
                     HotkeyOutcome::None => Task::none(),
                     HotkeyOutcome::SettingsChanged => {
                         self.save_settings();
+                        Task::none()
+                    }
+                    HotkeyOutcome::Conflict => {
+                        self.recording_hotkey = None;
                         Task::none()
                     }
                     HotkeyOutcome::CloseWindow => {
@@ -1527,6 +1532,21 @@ fn process_hotkey_press(
             modifiers.shift(),
             modifiers.logo(),
         );
+        let conflicts = match action {
+            HotkeyAction::CloseWindow => settings
+                .quit_application_hotkey
+                .as_ref()
+                .is_some_and(|existing| existing.same_binding(&hotkey)),
+            HotkeyAction::QuitApplication => settings
+                .close_window_hotkey
+                .as_ref()
+                .is_some_and(|existing| existing.same_binding(&hotkey)),
+        };
+        if conflicts {
+            *recording_hotkey = Some(action);
+            return HotkeyOutcome::Conflict;
+        }
+
         match action {
             HotkeyAction::CloseWindow => settings.close_window_hotkey = Some(hotkey),
             HotkeyAction::QuitApplication => settings.quit_application_hotkey = Some(hotkey),
@@ -1793,6 +1813,77 @@ mod tests {
 
         assert_eq!(current_window, None);
         assert_eq!(recording, None);
+    }
+
+    #[test]
+    fn assigning_duplicate_shortcut_is_rejected() {
+        let mut settings = AppSettings::default();
+        let original_close = settings.close_window_hotkey.clone();
+        let original_quit = settings.quit_application_hotkey.clone();
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("w".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::Conflict);
+        assert_eq!(settings.close_window_hotkey, original_close);
+        assert_eq!(settings.quit_application_hotkey, original_quit);
+        assert_eq!(recording, Some(HotkeyAction::QuitApplication));
+    }
+
+    #[test]
+    fn assigning_quit_shortcut_to_close_action_is_rejected() {
+        let mut settings = AppSettings::default();
+        let original_close = settings.close_window_hotkey.clone();
+        let original_quit = settings.quit_application_hotkey.clone();
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("q".into()),
+            Physical::Code(Code::KeyQ),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::Conflict);
+        assert_eq!(settings.close_window_hotkey, original_close);
+        assert_eq!(settings.quit_application_hotkey, original_quit);
+        assert_eq!(recording, Some(HotkeyAction::CloseWindow));
+    }
+
+    #[test]
+    fn duplicate_shortcut_check_is_case_insensitive() {
+        let mut settings = AppSettings {
+            close_window_hotkey: Some(Hotkey::new(
+                "W".to_string(),
+                true,
+                false,
+                false,
+                false,
+            )),
+            ..AppSettings::default()
+        };
+        let mut recording = Some(HotkeyAction::QuitApplication);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Character("w".into()),
+            Physical::Code(Code::KeyW),
+            keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::Conflict);
+        assert_eq!(recording, Some(HotkeyAction::QuitApplication));
     }
 }
 
