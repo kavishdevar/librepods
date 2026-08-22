@@ -107,7 +107,7 @@ pub enum Message {
     TrayTextModeChanged(bool),
     StemControlChanged(bool),
     StartHotkeyRecording(HotkeyAction),
-    HotkeyPressed(keyboard::Key, keyboard::Modifiers),
+    HotkeyPressed(keyboard::Key, keyboard::Modifiers, event::Status),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -630,12 +630,13 @@ impl App {
                 self.recording_hotkey = Some(action);
                 Task::none()
             }
-            Message::HotkeyPressed(key, modifiers) => {
+            Message::HotkeyPressed(key, modifiers, status) => {
                 match process_hotkey_press(
                     &mut self.settings,
                     &mut self.recording_hotkey,
                     &key,
                     modifiers,
+                    status,
                 ) {
                     HotkeyOutcome::None => Task::none(),
                     HotkeyOutcome::SettingsChanged => {
@@ -1428,13 +1429,13 @@ impl App {
     fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             window::close_events().map(Message::WindowClosed),
-            event::listen_with(|event, _status, _window| match event {
+            event::listen_with(|event, status, _window| match event {
                 event::Event::Keyboard(keyboard::Event::KeyPressed {
                     key,
                     modifiers,
                     repeat: false,
                     ..
-                }) => Some(Message::HotkeyPressed(key, modifiers)),
+                }) => Some(Message::HotkeyPressed(key, modifiers, status)),
                 _ => None,
             }),
         ])
@@ -1465,7 +1466,12 @@ fn process_hotkey_press(
     recording_hotkey: &mut Option<HotkeyAction>,
     key: &keyboard::Key,
     modifiers: keyboard::Modifiers,
+    status: event::Status,
 ) -> HotkeyOutcome {
+    if recording_hotkey.is_none() && status == event::Status::Captured {
+        return HotkeyOutcome::None;
+    }
+
     if recording_hotkey.is_some()
         && key.as_ref() == keyboard::Key::Named(keyboard::key::Named::Escape)
     {
@@ -1550,6 +1556,7 @@ mod tests {
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Enter),
             keyboard::Modifiers::NONE,
+            event::Status::Ignored,
         );
 
         assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
@@ -1568,6 +1575,7 @@ mod tests {
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Escape),
             keyboard::Modifiers::NONE,
+            event::Status::Ignored,
         );
 
         assert_eq!(outcome, HotkeyOutcome::None);
@@ -1585,6 +1593,7 @@ mod tests {
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Backspace),
             keyboard::Modifiers::NONE,
+            event::Status::Ignored,
         );
 
         assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
@@ -1601,6 +1610,7 @@ mod tests {
             &mut None,
             &keyboard::Key::Character("q".into()),
             keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
         );
 
         assert_eq!(outcome, HotkeyOutcome::QuitApplication);
@@ -1616,10 +1626,54 @@ mod tests {
             &mut recording,
             &keyboard::Key::Named(keyboard::key::Named::Control),
             keyboard::Modifiers::CTRL,
+            event::Status::Ignored,
         );
 
         assert_eq!(outcome, HotkeyOutcome::None);
         assert_eq!(recording, Some(HotkeyAction::CloseWindow));
+    }
+
+    #[test]
+    fn captured_keys_do_not_trigger_shortcuts() {
+        let mut settings = AppSettings {
+            close_window_hotkey: Some(Hotkey::new(
+                "Enter".to_string(),
+                false,
+                false,
+                false,
+                false,
+            )),
+            ..AppSettings::default()
+        };
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut None,
+            &keyboard::Key::Named(keyboard::key::Named::Enter),
+            keyboard::Modifiers::NONE,
+            event::Status::Captured,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::None);
+    }
+
+    #[test]
+    fn captured_keys_can_be_recorded() {
+        let mut settings = AppSettings::default();
+        let expected = Hotkey::new("Enter".to_string(), false, false, false, false);
+        let mut recording = Some(HotkeyAction::CloseWindow);
+
+        let outcome = process_hotkey_press(
+            &mut settings,
+            &mut recording,
+            &keyboard::Key::Named(keyboard::key::Named::Enter),
+            keyboard::Modifiers::NONE,
+            event::Status::Captured,
+        );
+
+        assert_eq!(outcome, HotkeyOutcome::SettingsChanged);
+        assert_eq!(settings.close_window_hotkey, Some(expected));
+        assert_eq!(recording, None);
     }
 }
 
