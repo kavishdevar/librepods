@@ -83,7 +83,7 @@ fun createBluetoothSocket(
 }
 
 private fun createL2capSocketViaDevice(device: BluetoothDevice, psm: Int): BluetoothSocket? {
-    val methodNames = listOf("createInsecureL2capSocket", "createL2capSocket")
+    val methodNames = listOf("createL2capSocket", "createInsecureL2capSocket")
     for (name in methodNames) {
         try {
             val method = BluetoothDevice::class.java.getDeclaredMethod(

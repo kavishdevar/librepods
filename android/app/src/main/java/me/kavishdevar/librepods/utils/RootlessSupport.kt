@@ -25,14 +25,8 @@ import androidx.core.content.edit
 
 private const val TAG = "RootlessSupport"
 
-/** One UI encodes 9.0 as 90000, 8.5 as 85000, 8.0 as 80000. */
-internal const val ONE_UI_9 = 90_000
-
-/** Samsung SEM_PLATFORM_INT for One UI 9.0 (One UI 8.0 is 170000). */
-internal const val SEM_PLATFORM_ONE_UI_9 = 180_000
-
 fun isSupported(sharedPreferences: SharedPreferences): Boolean {
-    if (hasFixedL2capStack()) return true
+    if (deviceHasFixedL2capStack()) return true
 
     val isBypassFlagActive = sharedPreferences.getBoolean("bypass_device_check.v2", false)
     return isBypassFlagActive
@@ -45,55 +39,26 @@ fun bypassDeviceCheck(sharedPreferences: SharedPreferences) {
 fun isSamsungDevice(
     manufacturer: String = Build.MANUFACTURER,
     brand: String = Build.BRAND
-): Boolean {
-    return manufacturer.equals("samsung", ignoreCase = true) ||
-        brand.equals("samsung", ignoreCase = true)
-}
+): Boolean = isSamsungManufacturer(manufacturer, brand)
 
-/**
- * True when this OS build includes Google's AirPods L2CAP stack fix, so LibrePods
- * can talk to AirPods without root or Xposed.
- *
- * Android 17 (SDK 37) has the fix in AOSP. Samsung ships it as One UI 9; Galaxy S26
- * on One UI 8 / 8.5 does not. One UI 9 betas sometimes still report SDK 36, so we
- * also read Samsung's One UI version properties.
- */
-internal fun hasFixedL2capStack(
-    sdkInt: Int = Build.VERSION.SDK_INT,
-    manufacturer: String = Build.MANUFACTURER,
-    androidRelease: String = Build.VERSION.RELEASE ?: "",
-    buildId: String = Build.ID ?: "",
-    oneUiVersion: Int? = readOneUiVersion(),
-    semPlatformInt: Int? = readSemPlatformInt()
-): Boolean {
-    if (sdkInt >= 37) return true
-    if (androidRelease.startsWith("17")) return true
-
-    val mfr = manufacturer.lowercase()
-    val isPixel = mfr == "google"
-    val isOppoFamily = mfr in listOf("oneplus", "oppo", "realme")
-
-    if (isPixel && sdkInt == 36) {
-        return buildId.startsWith("CP1A")
-    }
-    if (isOppoFamily && sdkInt >= 36) return true
-    if (isSamsungDevice(manufacturer) && isSamsungOneUi9OrNewer(oneUiVersion, semPlatformInt)) {
+internal fun deviceHasFixedL2capStack(): Boolean {
+    val oneUiVersion = readOneUiVersion()
+    val semPlatformInt = readSemPlatformInt()
+    val supported = hasFixedL2capStack(
+        sdkInt = Build.VERSION.SDK_INT,
+        manufacturer = Build.MANUFACTURER,
+        androidRelease = Build.VERSION.RELEASE ?: "",
+        buildId = Build.ID ?: "",
+        oneUiVersion = oneUiVersion,
+        semPlatformInt = semPlatformInt
+    )
+    if (supported && isSamsungDevice()) {
         Log.i(
             TAG,
-            "Samsung One UI 9+ detected (oneui=$oneUiVersion sem=$semPlatformInt sdk=$sdkInt)"
+            "Samsung One UI 9+ detected (oneui=$oneUiVersion sem=$semPlatformInt sdk=${Build.VERSION.SDK_INT})"
         )
-        return true
     }
-    return false
-}
-
-internal fun isSamsungOneUi9OrNewer(
-    oneUiVersion: Int? = readOneUiVersion(),
-    semPlatformInt: Int? = readSemPlatformInt()
-): Boolean {
-    if (oneUiVersion != null && oneUiVersion >= ONE_UI_9) return true
-    if (semPlatformInt != null && semPlatformInt >= SEM_PLATFORM_ONE_UI_9) return true
-    return false
+    return supported
 }
 
 fun readOneUiVersion(): Int? {

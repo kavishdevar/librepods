@@ -20,6 +20,7 @@ hilt = "2.59.2"
 xposed = "101.0.0"
 lifecycleProcess = "2.10.0"
 play = "2.0.2"
+junit = "4.13.2"
 nav3Core = "1.1.2"
 lifecycleViewmodelNav3 = "2.11.0-rc01"
 navevent = "1.1.1"
@@ -64,6 +65,7 @@ androidx-lifecycle-viewmodel-navigation3 = { module = "androidx.lifecycle:lifecy
 androidx-navigationevent = { module = "androidx.navigationevent:navigationevent", version.ref = "navevent"}
 androidx-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout", version.ref = "foundationLayout" }
 androidx-compose-ui-text-google-fonts = { group = "androidx.compose.ui", name = "ui-text-google-fonts", version.ref = "uiTextGoogleFonts" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

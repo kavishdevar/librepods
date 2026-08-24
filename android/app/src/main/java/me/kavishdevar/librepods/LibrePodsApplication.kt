@@ -13,6 +13,19 @@ import me.kavishdevar.librepods.utils.XposedState
 
 class LibrePodsApplication: Application(), XposedServiceHelper.OnServiceListener, DefaultLifecycleObserver {
 
+    companion object {
+        init {
+            // Hidden-API exemption for SystemProperties / BluetoothSocket must be in
+            // place before onboarding calls isSupported(). AirPodsService also loads
+            // this library; a second loadLibrary is a no-op.
+            try {
+                System.loadLibrary("bluetooth_socket")
+            } catch (_: UnsatisfiedLinkError) {
+                // JVM unit tests and hosts without the JNI lib.
+            }
+        }
+    }
+
     override fun onCreate() {
         XposedServiceHelper.registerListener(this)
         BillingManager.provider = BillingProviderFactory.create(this)
