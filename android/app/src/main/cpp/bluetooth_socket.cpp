@@ -42,6 +42,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
         constexpr auto c6 = ENC("java/lang/String");
         constexpr auto c7 = ENC("Landroid/bluetooth/BluetoothSocket;");
         constexpr auto c8 = ENC("Landroid/bluetooth/BluetoothDevice;");
+        constexpr auto c9 = ENC("Landroid/os/SystemProperties;");
 
         JNIEnv* env;
         getVm()->AttachCurrentThread(&env, nullptr);
@@ -52,9 +53,10 @@ JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 
         jobject runtime = env->CallStaticObjectMethod(vmRuntime, getRuntime);
         jobjectArray prefixes = env->NewObjectArray(
-                2, env->FindClass(DEC(c6)), nullptr);
+                3, env->FindClass(DEC(c6)), nullptr);
         env->SetObjectArrayElement(prefixes, 0, env->NewStringUTF(DEC(c7)));
         env->SetObjectArrayElement(prefixes, 1, env->NewStringUTF(DEC(c8)));
+        env->SetObjectArrayElement(prefixes, 2, env->NewStringUTF(DEC(c9)));
 
         env->CallVoidMethod(runtime, setExemptions, prefixes);
         getVm()->DetachCurrentThread();

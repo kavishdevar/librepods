@@ -4,6 +4,8 @@ LibrePods *may* require root depending on your device/OS and what features you w
 
 - Features requiring the VendorID hook ([the features marked with an asterisk here](https://github.com/kavishdevar/librepods#key-features)) will always require root regardless of your device/OS.
 - On **ColorOS/OxygenOS 16 and realme UI 7.0** and **Pixel devices on Android 16 QPR3** (with the latest Google Play system update), LibrePods does not need root for most features.
+- On **Samsung Galaxy devices running One UI 9 (Android 17)** — including **Galaxy S26 / S26+ / S26 Ultra** — LibrePods does not need root. The maintainer confirmed this on One UI 9 beta. Install the [GitHub release APK](https://github.com/librepods-org/librepods/releases/latest); Play Store still excludes Samsung until stable One UI 9 is widely rolled out.
+- On Samsung One UI 8 / 8.5 (Android 16), the Bluetooth stack does not include the L2CAP fix. There is no no-root workaround. Update to One UI 9, or use [CAPod](https://github.com/d4rken-org/capod) for battery/proximity only.
 - On other devices, LibrePods needs root because of a bug in the Android Bluetooth stack Fluoride/non-compliance of Apple with Bluetooth standards. You must have Xposed installed for the app to workaround this bug and connect to AirPods. [This issue is being tracked here](https://issuetracker.google.com/issues/371713238). **Please do not comment on the issue thread.** The issue has already been resolved and should be available in **Android 17** for all devices.
 
 > [!IMPORTANT]

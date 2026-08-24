@@ -18,6 +18,7 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.presentation.components.AppInfoCard
 import me.kavishdevar.librepods.presentation.components.DeviceInfoCard
 import me.kavishdevar.librepods.presentation.components.StyledListItem
+import me.kavishdevar.librepods.utils.isSamsungDevice
 
 @Composable
 fun NotSupportedPage(
@@ -38,13 +39,21 @@ fun NotSupportedPage(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = stringResource(R.string.check_the_repository_for_more_info),
+                text = stringResource(
+                    if (isSamsungDevice()) {
+                        R.string.samsung_one_ui9_required
+                    } else {
+                        R.string.check_the_repository_for_more_info
+                    }
+                ),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            Text(
-                text = stringResource(R.string.enable_app_in_xposed_or_update_device),
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            if (!isSamsungDevice()) {
+                Text(
+                    text = stringResource(R.string.enable_app_in_xposed_or_update_device),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             DeviceInfoCard()
             AppInfoCard()
 

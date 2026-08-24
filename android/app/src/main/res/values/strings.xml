@@ -252,8 +252,12 @@
         \n• Google Pixel® running 17 Beta 3 and above
         \n• OnePlus devices running OxygenOS 16 or later
         \n• Oppo devices running ColorOS 16 or later
+        \n• Samsung Galaxy devices running One UI 9 (Android 17), including Galaxy S26 / S26+ / S26 Ultra. Use the GitHub APK until Play Store listing is enabled for Samsung.
         \n\nFor details, see the project documentation.
     </string>
+    <string name="samsung_one_ui9_required">Galaxy phones do not need root. They need One UI 9 (Android 17), which includes the Bluetooth L2CAP fix required to control AirPods.\n\nGalaxy S26, S26+, and S26 Ultra work without root on One UI 9. Install the GitHub release APK — Play Store still hides Samsung until the stable One UI 9 rollout.\n\nOne UI 8 and 8.5 cannot open the AirPods control channel. That is a Samsung Bluetooth stack limitation, not something this app can patch without root.</string>
+    <string name="one_ui_version">One UI version</string>
+    <string name="unknown">Unknown</string>
     <string name="name_your_own_price">(Name your own price)</string>
     <string name="compatibility_play_dialog_confirmation">
         This device may not be supported due to platform limitations and requires an Xposed framework. Tick the checkbox below and type OK to continue.

@@ -33,12 +33,17 @@ fun createBluetoothSocket(
     adapter: BluetoothAdapter, device: BluetoothDevice, uuid: ParcelUuid, psm: Int
 ): BluetoothSocket {
     val type = 3 // L2CAP
+    // fd must be -1 ("no existing fd") for a new client socket. Passing 1 matches
+    // the AOSP constructor but wraps stdout and fails on Samsung's BluetoothSocket.
     val constructorSpecs = listOf(
         arrayOf(adapter, device, type, true, true, psm, uuid), // A16QPR3
         arrayOf(device, type, true, true, psm, uuid),
+        arrayOf(device, type, -1, true, true, psm, uuid),
+        arrayOf(type, -1, true, true, device, psm, uuid),
+        arrayOf(type, -1, true, true, device, psm, uuid, false, false),
+        arrayOf(type, true, true, device, psm, uuid),
         arrayOf(device, type, 1, true, true, psm, uuid),
-        arrayOf(type, 1, true, true, device, psm, uuid),
-        arrayOf(type, true, true, device, psm, uuid)
+        arrayOf(type, 1, true, true, device, psm, uuid)
     )
 
     val constructors = BluetoothSocket::class.java.declaredConstructors
@@ -69,8 +74,29 @@ fun createBluetoothSocket(
         }
     }
 
+    createL2capSocketViaDevice(device, psm)?.let { return it }
+
     val errorMessage =
         "Failed to create BluetoothSocket after trying $attemptedConstructors constructor signatures"
     Log.e("createSocket<psm>", errorMessage)
     throw lastException ?: IllegalStateException(errorMessage)
+}
+
+private fun createL2capSocketViaDevice(device: BluetoothDevice, psm: Int): BluetoothSocket? {
+    val methodNames = listOf("createInsecureL2capSocket", "createL2capSocket")
+    for (name in methodNames) {
+        try {
+            val method = BluetoothDevice::class.java.getDeclaredMethod(
+                name,
+                Int::class.javaPrimitiveType
+            )
+            method.isAccessible = true
+            val socket = method.invoke(device, psm) as BluetoothSocket
+            Log.d("createSocket<psm>", "Created socket via BluetoothDevice.$name($psm)")
+            return socket
+        } catch (e: Exception) {
+            Log.e("createSocket<psm>", "BluetoothDevice.$name failed: ${e.message}")
+        }
+    }
+    return null
 }

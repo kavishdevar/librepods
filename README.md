@@ -218,7 +218,7 @@ A huge thank you to everyone supporting the project!
 - Of course, everyone who has contributed to the project in any way, including by testing, sharing feedback, or just showing interest!
 
 # Alternates for other platforms:
-- CAPod - A companion app for AirPods on Android. ([play store](https://play.google.com/store/apps/details?id=eu.darken.capod) | [source code](https://github.com/d4rken-org/capod)). Use this if you're using Android version 16 QPR3 or below and are not rooted.
+- CAPod - A companion app for AirPods on Android. ([play store](https://play.google.com/store/apps/details?id=eu.darken.capod) | [source code](https://github.com/d4rken-org/capod)). Use this if you're using Android version 16 QPR3 or below and are not rooted, or a Samsung Galaxy on One UI 8 / 8.5. Galaxy S26 on One UI 9 should use LibrePods (GitHub APK).
 - MagicPods for Steam Deck ([website](https://magicpods.app/steamdeck/))
 - MagicPods - if you're looking for "LibrePods for Windows"  ([ms store](https://apps.microsoft.com/store/detail/9P6SKKFKSHKM) [installer](https://magicpods.app/installer/MagicPods.appinstaller) | [website](https://magicpods.app/))
 

@@ -5,6 +5,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.utils.XposedState
+import me.kavishdevar.librepods.utils.isSamsungDevice
+import me.kavishdevar.librepods.utils.oneUiVersionLabel
 
 @Composable
 fun DeviceInfoCard() {
@@ -20,6 +22,14 @@ fun DeviceInfoCard() {
             description = Build.MODEL,
             enabled = false
         )
+
+        if (isSamsungDevice()) {
+            StyledListItem(
+                name = stringResource(R.string.one_ui_version),
+                description = oneUiVersionLabel() ?: stringResource(R.string.unknown),
+                enabled = false
+            )
+        }
 
         StyledListItem(
             name = stringResource(R.string.build_id),
