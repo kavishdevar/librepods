@@ -13,12 +13,12 @@
 - Wear app selects an already paired AirPods device.
 - Direct AACP classic L2CAP transport is owned by `AirPodsConnectionSession` / `WearBluetoothConnection`.
 - AACP handshake is stateful: `IDLE -> HANDSHAKE_SENT -> FEATURES_SENT -> READY`.
-- AACP packet callbacks are wired into `AirPodsController`.
+- AACP packet callbacks are wired into `AirPodsController` using the actual `AACPManager.Companion` nested packet types.
 - Battery packets are validated and decoded for left/right/case.
 - Ear-detection packets are validated and decoded.
 - Raw/unknown packets are retained in controller diagnostics for reverse-engineering.
 - BLE advertisements remain a secondary status source for battery/ear/case data.
-- Callback type mismatch in `AirPodsController` was corrected to the actual nested AACP packet types.
+- Callback type mismatch in `AirPodsController` is fixed against the current AACP API.
 
 ## Protocol work queue
 
@@ -34,6 +34,13 @@
 10. **ATT** — add only after AACP status is stable; do not make ATT a prerequisite for the first working connection.
 11. **Protocol test vectors** — add captured packet fixtures; no guessed packet layouts.
 12. **Wear UI** — keep the compact connection/status view and expose protocol stage + last opcode/hex only for debugging.
+
+## Next implementation block
+
+- Verify the callback-type fix with a clean Wear build.
+- Then implement robust AACP stream framing so one `read()` cannot be incorrectly treated as exactly one protocol packet.
+- Preserve raw frames for diagnostics while only decoding layouts that are verified.
+- After framing is stable, move to device-information and battery/status completion.
 
 ## Acceptance target
 
