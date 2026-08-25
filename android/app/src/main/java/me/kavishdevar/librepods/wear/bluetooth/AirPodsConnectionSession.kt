@@ -24,7 +24,6 @@ class AirPodsConnectionSession(
     enum class State { IDLE, CONNECTING, CONNECTED, DISCONNECTING, FAILED }
 
     companion object {
-        /** Apple Accessory Communication Protocol L2CAP PSM. */
         const val AACP_PSM = 0x1001
         private val FALLBACK_UUID = ParcelUuid(UUID(0L, 0L))
     }
@@ -42,10 +41,6 @@ class AirPodsConnectionSession(
     override val attInput get() = requireSocket(attSocket).inputStream
     override val attOutput get() = requireSocket(attSocket).outputStream
 
-    /**
-     * Connect only the AACP control channel. This is enough for the first
-     * working milestone: handshake, notifications, battery and ear state.
-     */
     @Synchronized
     fun connectAacp(device: BluetoothDevice) {
         if (mutableState.value == State.CONNECTING || mutableState.value == State.CONNECTED) return
@@ -147,7 +142,20 @@ class AirPodsConnectionSession(
         uuid: ParcelUuid,
         psm: Int,
     ): BluetoothSocket {
-        val type = 3 // Classic L2CAP
+        // Modern Android exposes a public L2CAP channel API. Prefer it over
+        // hidden BluetoothSocket constructors; keep the reflection fallback
+        // for Wear builds/devices where the public channel is unavailable.
+        if (psm == AACP_PSM) {
+            runCatching {
+                val socket = device.createL2capChannel(psm)
+                Log.d("AirPodsConnection", "Using public createL2capChannel for PSM 0x${psm.toString(16)}")
+                return socket
+            }.onFailure {
+                Log.d("AirPodsConnection", "Public L2CAP channel API unavailable: ${it.message}")
+            }
+        }
+
+        val type = 3
         val constructorSpecs: List<Array<Any>> = listOf(
             arrayOf(adapter, device, type, true, true, psm, uuid),
             arrayOf(device, type, true, true, psm, uuid),
