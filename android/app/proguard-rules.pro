@@ -21,3 +21,17 @@
 #-renamesourcefileattribute SourceFile
 
 -keep class me.kavishdevar.librepods.utils.KotlinModule { *; }
+
+# Room discovers generated database implementations and their no-argument constructors by
+# convention/reflection. R8 full mode otherwise sees WorkDatabase_Impl() as unused and removes
+# it, which makes WorkManager's startup provider crash only in release builds.
+-keep class * extends androidx.room.RoomDatabase {
+    public <init>();
+}
+
+# Keep release builds quiet and avoid paying to construct high-volume protocol debug strings.
+# Warning and error logs remain available for actionable field diagnostics.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}

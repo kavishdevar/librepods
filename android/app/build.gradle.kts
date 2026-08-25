@@ -54,6 +54,8 @@ android {
     }
     buildTypes {
         release {
+            isDebuggable = false
+            isJniDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -126,6 +128,7 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.accompanist.permissions)
     implementation(libs.androidx.compose.ui.text.google.fonts)
+    implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.ktx)

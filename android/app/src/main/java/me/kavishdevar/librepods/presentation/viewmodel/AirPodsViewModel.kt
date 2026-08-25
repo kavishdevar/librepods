@@ -32,6 +32,7 @@ import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -42,7 +43,6 @@ import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.bluetooth.AACPManager.Companion.ControlCommandIdentifiers
 import me.kavishdevar.librepods.bluetooth.ATTCCCDHandles
 import me.kavishdevar.librepods.bluetooth.ATTHandles
-import me.kavishdevar.librepods.bluetooth.BluetoothConnectionManager
 import me.kavishdevar.librepods.data.AirPodsInstance
 import me.kavishdevar.librepods.data.AirPodsModels
 import me.kavishdevar.librepods.data.AirPodsNotifications
@@ -195,16 +195,43 @@ class AirPodsViewModel(
     private lateinit var appContext: Context
     private lateinit var service: AirPodsService
     private lateinit var controlRepo: ControlCommandRepository
+    private var initializedService: AirPodsService? = null
+    private var sharedPreferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var attLoadJob: Job? = null
+    private var attNotificationJob: Job? = null
+    private var connectionStateJob: Job? = null
+    private var attNotificationsService: AirPodsService? = null
 
     var isReady by mutableStateOf(false)
         private set
 
     fun init(service: AirPodsService, controlRepo: ControlCommandRepository, sharedPreferences: SharedPreferences, appContext: Context) {
+        if (initializedService != null && initializedService !== service) {
+            connectionStateJob?.cancel()
+            attLoadJob?.cancel()
+            attNotificationJob?.cancel()
+            attNotificationsService?.attManager?.setOnNotificationReceived(null)
+            attNotificationsService = null
+        }
         this.service = service
         this.controlRepo = controlRepo
         this.sharedPreferences = sharedPreferences
         this.appContext = appContext
 
+        // Service binding can be delivered again when the activity returns to the foreground.
+        // Refresh the snapshot without registering a second set of receivers/listeners.
+        if (initializedService === service && isReady) {
+            loadName()
+            loadInstance()
+            loadSharedPreferences()
+            loadCurrentStatus()
+            loadEq()
+            loadATT()
+            return
+        }
+        initializedService = service
+
+        observeConnectionState()
         observeBroadcasts()
         loadName()
         loadInstance()
@@ -270,11 +297,32 @@ class AirPodsViewModel(
     }
 
     override fun onCleared() {
-        listeners.forEach { (id, listener) ->
-            controlRepo.remove(id, listener)
+        if (::controlRepo.isInitialized) {
+            listeners.forEach { (id, listener) ->
+                controlRepo.remove(id, listener)
+            }
         }
-        service.aacpManager.customEqCallback = null
-        appContext.unregisterReceiver(broadcastReceiver)
+        listeners.clear()
+        if (::sharedPreferences.isInitialized) {
+            sharedPreferenceListener?.let { listener ->
+                sharedPreferences.unregisterOnSharedPreferenceChangeListener(listener)
+            }
+        }
+        sharedPreferenceListener = null
+        attLoadJob?.cancel()
+        attLoadJob = null
+        attNotificationJob?.cancel()
+        attNotificationJob = null
+        connectionStateJob?.cancel()
+        connectionStateJob = null
+        attNotificationsService?.attManager?.setOnNotificationReceived(null)
+        attNotificationsService = null
+        if (::service.isInitialized) {
+            service.aacpManager.customEqCallback = null
+        }
+        if (::appContext.isInitialized && ::broadcastReceiver.isInitialized) {
+            runCatching { appContext.unregisterReceiver(broadcastReceiver) }
+        }
     }
 
     private fun loadName() {
@@ -306,7 +354,24 @@ class AirPodsViewModel(
         }
     }
 
+    private fun observeConnectionState() {
+        connectionStateJob?.cancel()
+        connectionStateJob = viewModelScope.launch {
+            service.connectionState.collect { connection ->
+                if (connection.controlChannelConnected) {
+                    loadInstance()
+                    loadCurrentStatus()
+                }
+                _uiState.update {
+                    it.copy(isLocallyConnected = connection.controlChannelConnected)
+                }
+            }
+        }
+    }
+
     private fun observeSharedPreferences() {
+        if (sharedPreferenceListener != null) return
+
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             when (key) {
                 "name" -> loadName()
@@ -315,6 +380,7 @@ class AirPodsViewModel(
                 "dynamic_end_of_charge", "foss_upgraded", "premium_expiry_time" -> loadSharedPreferences()
             }
         }
+        sharedPreferenceListener = listener
         sharedPreferences.registerOnSharedPreferenceChangeListener(listener)
     }
 
@@ -323,10 +389,15 @@ class AirPodsViewModel(
             override fun onReceive(context: Context?, intent: Intent?) {
                 val action = intent?.action ?: return
                 if (!isDemoMode) when (action) {
-                    AirPodsNotifications.AIRPODS_L2CAP_CONNECTED -> {
-                        _uiState.update {
-                            it.copy(isLocallyConnected = true)
-                        }
+                    AirPodsNotifications.AIRPODS_L2CAP_CONNECTED,
+                    AirPodsNotifications.AIRPODS_L2CAP_READY,
+                    AirPodsNotifications.AIRPODS_CONNECTED -> {
+                        // init() often runs just before the socket connects on a cold launch.
+                        // Pull the complete service snapshot as soon as either connection
+                        // milestone arrives instead of waiting for the activity to reopen.
+                        loadInstance()
+                        loadCurrentStatus()
+                        _uiState.update { it.copy(isLocallyConnected = true) }
                     }
 
                     AirPodsNotifications.AIRPODS_DISCONNECTED -> {
@@ -358,6 +429,8 @@ class AirPodsViewModel(
 
         val filter = IntentFilter().apply {
             addAction(AirPodsNotifications.AIRPODS_CONNECTED)
+            addAction(AirPodsNotifications.AIRPODS_L2CAP_CONNECTED)
+            addAction(AirPodsNotifications.AIRPODS_L2CAP_READY)
             addAction(AirPodsNotifications.AIRPODS_DISCONNECTED)
             addAction(AirPodsNotifications.BATTERY_DATA)
             addAction(AirPodsNotifications.EQ_DATA)
@@ -372,7 +445,19 @@ class AirPodsViewModel(
     fun setControlCommandValue(
         identifier: ControlCommandIdentifiers, value: ByteArray
     ) {
-        if (!isDemoMode) controlRepo.setValue(identifier, value)
+        if (!isDemoMode) {
+            if (identifier == ControlCommandIdentifiers.MIC_MODE) {
+                value.singleOrNull()
+                    ?.toInt()
+                    ?.and(0xFF)
+                    ?.takeIf { it in 0..2 }
+                    ?.let { micMode ->
+                        // edit() applies asynchronously, so saving the replay value never blocks UI.
+                        sharedPreferences.edit { putInt("mic_mode", micMode) }
+                    }
+            }
+            controlRepo.setValue(identifier, value)
+        }
         _uiState.update {
             it.copy(
                 controlStates = it.controlStates + (identifier to value)
@@ -465,7 +550,7 @@ class AirPodsViewModel(
         service.let { service ->
             _uiState.update {
                 it.copy(
-                    isLocallyConnected = BluetoothConnectionManager.aacpSocket?.isConnected == true,
+                    isLocallyConnected = service.connectionState.value.controlChannelConnected,
                     battery = service.getBattery(),
                     ancMode = controlRepo.getValue(ControlCommandIdentifiers.LISTENING_MODE)?.get(0)?.toInt() ?: 1,
                     controlStates = controlRepo.getMap()
@@ -594,17 +679,36 @@ class AirPodsViewModel(
     }
 
     private fun loadInstance() {
-        val instance = service.airpodsInstance ?: AirPodsInstance(
-            name = "AirPods",
-            model = AirPodsModels.getModelByModelNumber("A3049")!!,
-            actualModelNumber = "A3049",
-            serialNumber = null,
-            leftSerialNumber = null,
-            rightSerialNumber = null,
-            version1 = null,
-            version2 = null,
-            version3 = null,
+        val storedModelNumber = sharedPreferences
+            .getString("airpods_model_number", "")
+            .orEmpty()
+        val storedUpdaterIdentifier = sharedPreferences
+            .getString("airpods_updater_identifier", "")
+            .orEmpty()
+        val storedModel = AirPodsModels.resolve(
+            modelNumber = storedModelNumber,
+            updaterIdentifier = storedUpdaterIdentifier,
+            bleModelName = service.getMostRecentBleModelName()
         )
+        val instance = service.airpodsInstance ?: storedModel?.let { model ->
+            AirPodsInstance(
+                name = sharedPreferences.getString("name", "AirPods") ?: "AirPods",
+                model = model,
+                actualModelNumber = storedModelNumber,
+                serialNumber = sharedPreferences.getString("airpods_serial_number", null),
+                leftSerialNumber = sharedPreferences.getString(
+                    "airpods_left_serial_number",
+                    null
+                ),
+                rightSerialNumber = sharedPreferences.getString(
+                    "airpods_right_serial_number",
+                    null
+                ),
+                version1 = sharedPreferences.getString("airpods_version1", null),
+                version2 = sharedPreferences.getString("airpods_version2", null),
+                version3 = sharedPreferences.getString("airpods_version3", null),
+            )
+        } ?: return
 
         _uiState.update {
             it.copy(
@@ -633,8 +737,8 @@ class AirPodsViewModel(
     }
 
     fun startHeadTracking() {
-        service.startHeadTracking()
-        _uiState.update { it.copy(headTrackingActive = true) }
+        val started = service.startHeadTracking()
+        _uiState.update { it.copy(headTrackingActive = started) }
     }
 
     fun stopHeadTracking() {
@@ -665,32 +769,42 @@ class AirPodsViewModel(
     }
 
     fun loadATT() {
-        val loudSoundReduction = service.attManager.getCharacteristic(ATTHandles.LOUD_SOUND_REDUCTION) ?: byteArrayOf()
-        val loudSoundReductionEnabled = if (loudSoundReduction.isNotEmpty()) {
-            loudSoundReduction[0].toInt() == 1
-        } else false
-        val hearingAidData = service.attManager.getCharacteristic(ATTHandles.HEARING_AID) ?: byteArrayOf()
-        val transparencyData = service.attManager.getCharacteristic(ATTHandles.TRANSPARENCY) ?: byteArrayOf()
-        _uiState.update {
-            it.copy(
-                loudSoundReductionEnabled = loudSoundReductionEnabled,
-                transparencyData = transparencyData,
-                hearingAidData = hearingAidData
-            )
+        if (attLoadJob?.isActive == true) return
+
+        val serviceSnapshot = service
+        val attManager = serviceSnapshot.attManager
+        attLoadJob = viewModelScope.launch(Dispatchers.IO) {
+            val loudSoundReduction =
+                attManager.getCharacteristic(ATTHandles.LOUD_SOUND_REDUCTION) ?: byteArrayOf()
+            val hearingAidData =
+                attManager.getCharacteristic(ATTHandles.HEARING_AID) ?: byteArrayOf()
+            val transparencyData =
+                attManager.getCharacteristic(ATTHandles.TRANSPARENCY) ?: byteArrayOf()
+
+            if (initializedService !== serviceSnapshot) return@launch
+
+            _uiState.update {
+                it.copy(
+                    loudSoundReductionEnabled = loudSoundReduction.firstOrNull()?.toInt() == 1,
+                    transparencyData = transparencyData,
+                    hearingAidData = hearingAidData
+                )
+            }
         }
     }
 
     fun observeATT() {
-        viewModelScope.launch(Dispatchers.IO) {
-            service.attManager.enableNotification(ATTCCCDHandles.HEARING_AID)
-            service.attManager.enableNotification(ATTCCCDHandles.TRANSPARENCY)
-        }
-        service.attManager.setOnNotificationReceived { handle, value ->
+        val serviceSnapshot = service
+        if (attNotificationsService === serviceSnapshot) return
+
+        attNotificationsService?.attManager?.setOnNotificationReceived(null)
+        attNotificationsService = serviceSnapshot
+
+        serviceSnapshot.attManager.setOnNotificationReceived { handle, value ->
+            if (initializedService !== serviceSnapshot) return@setOnNotificationReceived
             when (handle) {
                 ATTHandles.LOUD_SOUND_REDUCTION.value.toByte() -> {
-                    val loudSoundReductionEnabled = if (value.isNotEmpty()) {
-                        value[0].toInt() == 1
-                    } else false
+                    val loudSoundReductionEnabled = value.firstOrNull()?.toInt() == 1
                     _uiState.update {
                         it.copy(loudSoundReductionEnabled = loudSoundReductionEnabled)
                     }
@@ -706,6 +820,13 @@ class AirPodsViewModel(
                     }
                 }
             }
+        }
+
+        attNotificationJob = viewModelScope.launch(Dispatchers.IO) {
+            attLoadJob?.join()
+            if (initializedService !== serviceSnapshot) return@launch
+            serviceSnapshot.attManager.enableNotification(ATTCCCDHandles.HEARING_AID)
+            serviceSnapshot.attManager.enableNotification(ATTCCCDHandles.TRANSPARENCY)
         }
     }
 

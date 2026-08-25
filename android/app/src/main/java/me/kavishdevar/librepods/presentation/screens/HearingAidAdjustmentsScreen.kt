@@ -37,7 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,7 +68,7 @@ private const val TAG = "HearingAidAdjustments"
 @Composable
 fun HearingAidAdjustmentsScreen(viewModel: AirPodsViewModel) {
     val verticalScrollState = rememberScrollState()
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val debounceJob = remember { mutableStateOf<Job?>(null) }
 

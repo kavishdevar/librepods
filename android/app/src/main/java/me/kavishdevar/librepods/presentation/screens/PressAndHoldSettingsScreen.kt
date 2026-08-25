@@ -40,7 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -65,7 +65,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LongPress(viewModel: AirPodsViewModel, name: String, navigateToPurchase: () -> Unit) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val modesByte = state.controlStates[AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE_CONFIGS]?.get(0) ?: 0
 

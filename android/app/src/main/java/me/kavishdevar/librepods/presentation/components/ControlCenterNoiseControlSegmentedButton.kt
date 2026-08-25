@@ -53,6 +53,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.kavishdevar.librepods.R
@@ -98,7 +99,9 @@ fun ControlCenterNoiseControlSegmentedButton(
             0f
         }
     }
-    val itemSlotWidthDp = remember(itemSlotWidthPx) { with(density) { itemSlotWidthPx.toDp() } }
+    val itemSlotWidthDp = remember(itemSlotWidthPx, density) {
+        with(density) { itemSlotWidthPx.toDp() }
+    }
     val iconAreaSizePx = remember { with(density) { IconAreaSize.toPx() } }
 
     val targetIndicatorStartPx = remember(selectedIndex, itemSlotWidthPx, iconAreaSizePx) {
@@ -144,7 +147,7 @@ fun ControlCenterNoiseControlSegmentedButton(
             Box(
                 Modifier
                     .align(Alignment.CenterStart)
-                    .offset(x = indicatorOffset)
+                    .offset { IntOffset(indicatorOffset.roundToPx(), 0) }
                     .size(IconAreaSize)
                     .clip(CircleShape)
                     .background(indicatorBackground)
@@ -224,7 +227,7 @@ private fun NoiseControlIconItem(
 
 private fun getModeIconRes(mode: NoiseControlMode): Int {
     return when (mode) {
-        NoiseControlMode.OFF -> R.drawable.noise_cancellation
+        NoiseControlMode.OFF -> R.drawable.ic_noise_control_off
         NoiseControlMode.TRANSPARENCY -> R.drawable.transparency
         NoiseControlMode.ADAPTIVE -> R.drawable.adaptive
         NoiseControlMode.NOISE_CANCELLATION -> R.drawable.noise_cancellation
@@ -239,4 +242,3 @@ private fun getModeLabel(mode: NoiseControlMode): String {
         NoiseControlMode.NOISE_CANCELLATION -> "Noise Cancellation"
     }
 }
-

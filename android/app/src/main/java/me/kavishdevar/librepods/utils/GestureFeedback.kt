@@ -87,7 +87,6 @@ class GestureFeedback(context: Context) {
     @RequiresApi(Build.VERSION_CODES.R)
     fun playDirectional(isVertical: Boolean, value: Double) {
         if (!soundsLoaded.get()) {
-            Log.d(TAG, "Sounds not yet loaded, skipping playback")
             return
         }
 
@@ -97,17 +96,14 @@ class GestureFeedback(context: Context) {
             val isUp = value > 0
 
             if (now - lastVerticalTime < MIN_TIME_BETWEEN_SOUNDS) {
-                Log.d(TAG, "Skipping vertical sound due to general vertical debounce")
                 return
             }
 
             if (isUp && now - lastUpTime < MIN_TIME_BETWEEN_DIRECTION) {
-                Log.d(TAG, "Skipping UP sound due to direction debounce")
                 return
             }
 
             if (!isUp && now - lastDownTime < MIN_TIME_BETWEEN_DIRECTION) {
-                Log.d(TAG, "Skipping DOWN sound due to direction debounce")
                 return
             }
 
@@ -118,7 +114,6 @@ class GestureFeedback(context: Context) {
             val (leftVol, rightVol) = VERTICAL_VOLUME
 
             currentVerticalStreamId = soundPool.play(soundId, leftVol, rightVol, 1, 0, 1.0f)
-            Log.d(TAG, "Playing VERTICAL sound: ${if (isUp) "UP" else "DOWN"} - streamID=$currentVerticalStreamId")
 
             lastVerticalTime = now
             if (isUp) {
@@ -128,19 +123,16 @@ class GestureFeedback(context: Context) {
             }
         } else {
             if (now - lastHorizontalTime < MIN_TIME_BETWEEN_SOUNDS) {
-                Log.d(TAG, "Skipping horizontal sound due to general horizontal debounce")
                 return
             }
 
             val isRight = value > 0
 
             if (isRight && now - lastRightTime < MIN_TIME_BETWEEN_DIRECTION) {
-                Log.d(TAG, "Skipping RIGHT sound due to direction debounce")
                 return
             }
 
             if (!isRight && now - lastLeftTime < MIN_TIME_BETWEEN_DIRECTION) {
-                Log.d(TAG, "Skipping LEFT sound due to direction debounce")
                 return
             }
 
@@ -151,7 +143,6 @@ class GestureFeedback(context: Context) {
             val (leftVol, rightVol) = if (isRight) RIGHT_VOLUME else LEFT_VOLUME
 
             currentHorizontalStreamId = soundPool.play(soundId, leftVol, rightVol, 1, 0, 1.0f)
-            Log.d(TAG, "Playing HORIZONTAL sound: ${if (isRight) "RIGHT" else "LEFT"} - streamID=$currentHorizontalStreamId")
 
             lastHorizontalTime = now
             if (isRight) {
@@ -175,5 +166,12 @@ class GestureFeedback(context: Context) {
             val streamId = soundPool.play(soundId, 1.0f, 1.0f, 1, 0, 1.0f)
             Log.d(TAG, "Playing ${if (isYes) "YES" else "NO"} confirmation - streamID=$streamId")
         }
+    }
+
+    fun release() {
+        soundsLoaded.set(false)
+        if (currentHorizontalStreamId > 0) soundPool.stop(currentHorizontalStreamId)
+        if (currentVerticalStreamId > 0) soundPool.stop(currentVerticalStreamId)
+        soundPool.release()
     }
 }

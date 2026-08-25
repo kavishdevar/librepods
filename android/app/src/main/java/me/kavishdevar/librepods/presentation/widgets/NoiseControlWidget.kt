@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-@file:OptIn(ExperimentalEncodingApi::class)
-
 package me.kavishdevar.librepods.presentation.widgets
 
 import android.app.PendingIntent
@@ -30,7 +28,6 @@ import android.widget.RemoteViews
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.AACPManager
 import me.kavishdevar.librepods.services.ServiceManager
-import kotlin.io.encoding.ExperimentalEncodingApi
 
 class NoiseControlWidget : AppWidgetProvider() {
     override fun onUpdate(
@@ -73,8 +70,14 @@ class NoiseControlWidget : AppWidgetProvider() {
             R.id.widget_anc_button,
             PendingIntent.getBroadcast(context, 3, ancIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         )
-        ServiceManager.getService()?.updateNoiseControlWidget()
-        appWidgetManager.updateAppWidget(appWidgetIds, views)
+        val service = ServiceManager.getService()
+        if (service != null) {
+            service.updateNoiseControlWidget()
+            // Preserve the service-rendered selection state and layer only the click actions.
+            appWidgetManager.partiallyUpdateAppWidget(appWidgetIds, views)
+        } else {
+            appWidgetManager.updateAppWidget(appWidgetIds, views)
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {

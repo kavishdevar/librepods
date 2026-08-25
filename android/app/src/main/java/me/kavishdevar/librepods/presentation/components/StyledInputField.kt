@@ -37,6 +37,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.kavishdevar.librepods.R
@@ -141,7 +142,7 @@ fun StyledInputField(
                                             color = textColor.copy(alpha = 0.8f)
                                         ),
                                         modifier = Modifier
-                                            .offset(y = yOffset)
+                                            .offset { IntOffset(0, yOffset.roundToPx()) }
                                     )
 
                                     innerTextField()

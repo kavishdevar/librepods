@@ -33,9 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.tooling.preview.Devices.PIXEL_9_PRO_XL
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -88,215 +86,174 @@ val AppleTypography = Typography().run {
     )
 }
 
-val provider = GoogleFont.Provider(
-    providerAuthority = "com.google.android.gms.fonts",
-    providerPackage = "com.google.android.gms",
-    certificates = R.array.com_google_android_gms_fonts_certs
-)
-
-private fun robotoFlex(
-    wght: Float = 400f,
-    slnt: Float = 0f,
-    grad: Float = 0f,
-    wdth: Float = 100f,
-    xtra: Float = 468f,
-    xopq: Float = 96f,
-    yopq: Float = 79f,
-) = FontFamily(
-    androidx.compose.ui.text.googlefonts.Font(
-//    Font(
-//        resId = R.font.roboto_flex,
-        googleFont = GoogleFont("Roboto Flex"),
-        fontProvider = provider,
-        variationSettings = FontVariation.Settings(
-            FontVariation.Setting("wght", wght),
-            FontVariation.Setting("wdth", wdth),
-            FontVariation.Setting("slnt", slnt),
-            FontVariation.Setting("grad", grad),
-            FontVariation.Setting("xtra", xtra),
-            FontVariation.Setting("xopq", xopq),
-            FontVariation.Setting("yopq", yopq),
-        )
-    )
-)
-
-val display = robotoFlex(
-    wght = 800f,
-    grad = 100f,
-    wdth = 100f
-)
-
-val displayEmphasized = robotoFlex(
-    wght = 1000f,
-    slnt = -2f,
-    grad = 150f,
-    wdth = 150f,
-)
-
-val body = robotoFlex()
-
-val bodyEmphasized = robotoFlex(
-    wght = 600f,
-    wdth = 130f,
-    grad = 75f,
-)
-
-val label = robotoFlex(
-    wght = 450f,
-    grad = 50f
-)
-
-val labelEmphasized = robotoFlex(
-    wght = 600f,
-    wdth = 140f,
-    grad = 75f
-)
+private val materialFontFamily = FontFamily.SansSerif
 
 
 val MaterialTypography = Typography().run {
     copy(
         titleSmall = titleSmall.copy(
-            fontFamily = display,
-            fontSize = 24.sp,
-            lineHeight = 30.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 22.sp,
+            lineHeight = 28.sp,
         ),
 
         titleMedium = titleMedium.copy(
-            fontFamily = display,
-            fontSize = 28.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 26.sp,
             lineHeight = 32.sp,
         ),
 
         titleLarge = titleLarge.copy(
-            fontFamily = display,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 32.sp,
-            lineHeight = 36.sp,
+            lineHeight = 38.sp,
         ),
 
         titleSmallEmphasized = titleSmallEmphasized.copy(
-            fontFamily = display,
-            fontSize = 24.sp,
-            lineHeight = 30.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 22.sp,
+            lineHeight = 28.sp,
         ),
 
         titleMediumEmphasized = titleMediumEmphasized.copy(
-            fontFamily = displayEmphasized,
-            fontSize = 28.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
             lineHeight = 32.sp,
         ),
 
         titleLargeEmphasized = titleLargeEmphasized.copy(
-            fontFamily = displayEmphasized,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Bold,
             fontSize = 32.sp,
-            lineHeight = 36.sp,
+            lineHeight = 38.sp,
         ),
 
         displaySmall = displaySmall.copy(
-            fontFamily = display,
-            fontSize = 32.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 30.sp,
             lineHeight = 36.sp,
         ),
 
         displayMedium = displayMedium.copy(
-            fontFamily = display,
-            fontSize = 36.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 34.sp,
             lineHeight = 40.sp,
         ),
 
         displayLarge = displayLarge.copy(
-            fontFamily = display,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 40.sp,
-            lineHeight = 44.sp,
+            lineHeight = 46.sp,
         ),
 
         displaySmallEmphasized = displaySmallEmphasized.copy(
-            fontFamily = displayEmphasized,
-            fontSize = 38.sp,
-            lineHeight = 42.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 32.sp,
+            lineHeight = 38.sp,
         ),
 
         displayMediumEmphasized = displayMediumEmphasized.copy(
-            fontFamily = displayEmphasized,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Bold,
+            fontSize = 36.sp,
+            lineHeight = 42.sp,
+        ),
+
+        displayLargeEmphasized = displayLargeEmphasized.copy(
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Bold,
             fontSize = 42.sp,
             lineHeight = 48.sp,
         ),
 
-        displayLargeEmphasized = displayLargeEmphasized.copy(
-            fontFamily = displayEmphasized,
-            fontSize = 48.sp,
-            lineHeight = 52.sp,
-        ),
-
         bodySmall = bodySmall.copy(
-            fontFamily = body,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
+            fontFamily = materialFontFamily,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
         ),
 
         bodyMedium = bodyMedium.copy(
-            fontFamily = body,
-            fontSize = 16.sp,
-            lineHeight = 24.sp,
+            fontFamily = materialFontFamily,
+            fontSize = 15.sp,
+            lineHeight = 21.sp,
         ),
 
         bodyLarge = bodyLarge.copy(
-            fontFamily = body,
-            fontSize = 18.sp,
-            lineHeight = 28.sp,
-        ),
-
-        bodySmallEmphasized = bodySmallEmphasized.copy(
-            fontFamily = bodyEmphasized,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-        ),
-
-        bodyMediumEmphasized = bodyMediumEmphasized.copy(
-            fontFamily = bodyEmphasized,
-            fontSize = 16.sp,
+            fontFamily = materialFontFamily,
+            fontSize = 17.sp,
             lineHeight = 24.sp,
         ),
 
+        bodySmallEmphasized = bodySmallEmphasized.copy(
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+        ),
+
+        bodyMediumEmphasized = bodyMediumEmphasized.copy(
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 15.sp,
+            lineHeight = 21.sp,
+        ),
+
         bodyLargeEmphasized = bodyLargeEmphasized.copy(
-            fontFamily = bodyEmphasized,
-            fontSize = 18.sp,
-            lineHeight = 28.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 17.sp,
+            lineHeight = 24.sp,
         ),
 
         labelSmall = labelSmall.copy(
-            fontFamily = label,
-            fontSize = 14.sp,
-            lineHeight = 18.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
         ),
 
         labelMedium = labelMedium.copy(
-            fontFamily = label,
-            fontSize = 16.sp,
-            lineHeight = 20.sp,
-        ),
-
-        labelLarge = labelLarge.copy(
-            fontFamily = label,
-            fontSize = 18.sp,
-            lineHeight = 22.sp,
-        ),
-
-        labelSmallEmphasized = labelSmallEmphasized.copy(
-            fontFamily = labelEmphasized,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Medium,
             fontSize = 14.sp,
             lineHeight = 18.sp,
         ),
 
-        labelMediumEmphasized = labelMediumEmphasized.copy(
-            fontFamily = labelEmphasized,
+        labelLarge = labelLarge.copy(
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.Medium,
             fontSize = 16.sp,
             lineHeight = 20.sp,
         ),
 
+        labelSmallEmphasized = labelSmallEmphasized.copy(
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+        ),
+
+        labelMediumEmphasized = labelMediumEmphasized.copy(
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            lineHeight = 18.sp,
+        ),
+
         labelLargeEmphasized = labelLargeEmphasized.copy(
-            fontFamily = labelEmphasized,
-            fontSize = 18.sp,
-            lineHeight = 22.sp,
+            fontFamily = materialFontFamily,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 16.sp,
+            lineHeight = 20.sp,
         ),
     )
 }

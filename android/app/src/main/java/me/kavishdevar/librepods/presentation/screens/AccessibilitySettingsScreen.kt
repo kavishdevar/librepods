@@ -40,7 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -81,7 +81,7 @@ private var phoneMediaDebounceJob: Job? = null
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalEncodingApi::class, FlowPreview::class)
 @Composable
 fun AccessibilitySettingsScreen(viewModel: AirPodsViewModel, navigateToPurchase: () -> Unit, navigateToTransparencyCustomization: () -> Unit) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val hearingAidEnabled =
         state.controlStates[AACPManager.Companion.ControlCommandIdentifiers.HEARING_AID]?.getOrNull(

@@ -30,6 +30,7 @@ import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.core.content.edit
 import me.kavishdevar.librepods.utils.BluetoothCryptography
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
@@ -51,11 +52,16 @@ class BLEManager(private val context: Context) {
         val leftBattery: Int? = null,
         val rightBattery: Int? = null,
         val caseBattery: Int? = null,
+        /** Wall-clock time when the case value itself was seen, not merely replayed from cache. */
+        val caseBatteryObservedAt: Long? = null,
+        val caseBatteryIsCached: Boolean = false,
         val isLeftInEar: Boolean = false,
         val isRightInEar: Boolean = false,
         val isLeftCharging: Boolean = false,
         val isRightCharging: Boolean = false,
         val isCaseCharging: Boolean = false,
+        /** True when levels came from the decrypted, one-percent-resolution payload. */
+        val hasExactBatteryData: Boolean = false,
         val lidOpen: Boolean = false,
         val color: String = "Unknown",
         val connectionState: String = "Unknown"
@@ -71,6 +77,8 @@ class BLEManager(private val context: Context) {
         fun onLidStateChanged(lidOpen: Boolean)
         fun onEarStateChanged(device: AirPodsStatus, leftInEar: Boolean, rightInEar: Boolean)
         fun onBatteryChanged(device: AirPodsStatus)
+        /** Refreshes battery confidence without forcing downstream UI publication. */
+        fun onBatteryObserved(device: AirPodsStatus) = Unit
         fun onDeviceDisappeared()
     }
 
@@ -82,13 +90,30 @@ class BLEManager(private val context: Context) {
     private val sharedPreferences: SharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
     private var currentGlobalLidState: Boolean? = null
     private var lastBroadcastTime: Long = 0
-    private val processedAddresses = mutableSetOf<String>()
 
-    private val lastValidCaseBatteryMap = mutableMapOf<String, Int>()
+    private data class RememberedCaseBattery(val level: Int, val observedAt: Long)
+
+    private val lastValidCaseBatteryMap = mutableMapOf<String, RememberedCaseBattery>()
+    private val loadedCaseBatteryAddresses = mutableSetOf<String>()
+    private val lastAdvertisementMap = mutableMapOf<String, CachedAdvertisement>()
+
+    private var cachedEncryptionKeyBase64: String? = null
+    private var cachedEncryptionKey: ByteArray? = null
+    private var decryptionCipher: Cipher? = null
+    private var cachedIrkBase64: String? = null
+    private var cachedIrk: ByteArray? = null
+
+    private data class CachedAdvertisement(
+        val manufacturerData: ByteArray,
+        val encryptionKeyBase64: String?
+    )
     private val modelNames = mapOf(
         0x0E20 to "AirPods Pro",
         0x1420 to "AirPods Pro 2",
         0x2420 to "AirPods Pro 2 (USB-C)",
+        0x2520 to "AirPods Pro 3",
+        0x2620 to "AirPods Pro 3 (USB-C)",
+        0x2720 to "AirPods Pro 3",
         0x0220 to "AirPods 1",
         0x0F20 to "AirPods 2",
         0x1320 to "AirPods 3",
@@ -149,11 +174,13 @@ class BLEManager(private val context: Context) {
             mBluetoothLeScanner = btAdapter.bluetoothLeScanner
 
             val scanSettings = ScanSettings.Builder()
-                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                // Balanced scanning dramatically lowers the cost of an always-on scan. Results
+                // are delivered immediately so a lid-open advertisement is not held in a batch.
+                .setScanMode(ScanSettings.SCAN_MODE_BALANCED)
                 .setMatchMode(ScanSettings.MATCH_MODE_AGGRESSIVE)
                 .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
                 .setNumOfMatches(ScanSettings.MATCH_NUM_MAX_ADVERTISEMENT)
-                .setReportDelay(500L)
+                .setReportDelay(0L)
                 .build()
 
             val manufacturerData = ByteArray(27)
@@ -175,7 +202,6 @@ class BLEManager(private val context: Context) {
                 }
 
                 override fun onBatchScanResults(results: List<ScanResult>) {
-                    processedAddresses.clear()
                     for (result in results) {
                         processScanResult(result)
                     }
@@ -189,6 +215,7 @@ class BLEManager(private val context: Context) {
             mBluetoothLeScanner?.startScan(listOf(scanFilter), scanSettings, mScanCallback)
             Log.d(TAG, "BLE scanner started successfully")
 
+            cleanupHandler.removeCallbacks(cleanupRunnable)
             cleanupHandler.postDelayed(cleanupRunnable, CLEANUP_INTERVAL_MS)
         } catch (t: Throwable) {
             Log.e(TAG, "Error starting BLE scanner", t)
@@ -211,16 +238,29 @@ class BLEManager(private val context: Context) {
     }
 
     @OptIn(ExperimentalEncodingApi::class)
+    @SuppressLint("GetInstance") // AirPods advertisements use protocol-defined AES-ECB blocks.
     private fun getEncryptionKeyFromPreferences(): ByteArray? {
         val keyBase64 = sharedPreferences.getString(AACPManager.Companion.ProximityKeyType.ENC_KEY.name, null)
-        return if (keyBase64 != null) {
-            try {
-                Base64.decode(keyBase64)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to decode encryption key", e)
-                null
-            }
-        } else {
+        if (keyBase64 == cachedEncryptionKeyBase64) {
+            return cachedEncryptionKey
+        }
+
+        cachedEncryptionKeyBase64 = keyBase64
+        cachedEncryptionKey = null
+        decryptionCipher = null
+
+        if (keyBase64 == null) return null
+
+        return try {
+            val decodedKey = Base64.decode(keyBase64)
+            val cipher = Cipher.getInstance("AES/ECB/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(decodedKey, "AES"))
+            cachedEncryptionKey = decodedKey
+            decryptionCipher = cipher
+            decodedKey
+        } catch (e: Exception) {
+            // A bad stored key is logged once, when its value changes, rather than for every scan.
+            Log.e(TAG, "Failed to initialize the AirPods advertisement key", e)
             null
         }
     }
@@ -232,21 +272,19 @@ class BLEManager(private val context: Context) {
                 return null
             }
 
-            val block = data.copyOfRange(data.size - 16, data.size)
-            val cipher = Cipher.getInstance("AES/ECB/NoPadding")
-            val secretKey = SecretKeySpec(key, "AES")
-            cipher.init(Cipher.DECRYPT_MODE, secretKey)
-            cipher.doFinal(block)
+            var cipher = decryptionCipher
+            if (cipher == null || cachedEncryptionKey !== key) {
+                cipher = Cipher.getInstance("AES/ECB/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"))
+                cachedEncryptionKey = key
+                decryptionCipher = cipher
+            }
+            cipher.doFinal(data, data.size - 16, 16)
         } catch (e: Exception) {
             Log.e(TAG, "Error decrypting data", e)
+            decryptionCipher = null
             null
         }
-    }
-
-    private fun formatBattery(byteVal: Int): Pair<Boolean, Int> {
-        val charging = (byteVal and 0x80) != 0
-        val level = byteVal and 0x7F
-        return Pair(charging, level)
     }
 
     private fun processScanResult(result: ScanResult) {
@@ -254,15 +292,11 @@ class BLEManager(private val context: Context) {
             val scanRecord = result.scanRecord ?: return
             val address = result.device.address
 
-            if (processedAddresses.contains(address)) {
-                return
-            }
-
             val manufacturerData = scanRecord.getManufacturerSpecificData(76) ?: return
             if (manufacturerData.size <= 20) return
 
+            val irk = getIrkFromPreferences()
             if (!verifiedAddresses.contains(address)) {
-                val irk = getIrkFromPreferences()
                 if (irk == null || !BluetoothCryptography.verifyRPA(address, irk)) {
                     return
                 }
@@ -270,24 +304,61 @@ class BLEManager(private val context: Context) {
                 Log.d(TAG, "RPA verified and added to trusted list: $address")
             }
 
-            processedAddresses.add(address)
-            lastBroadcastTime = System.currentTimeMillis()
+            val observedAt = System.currentTimeMillis()
+            lastBroadcastTime = observedAt
 
             val encryptionKey = getEncryptionKeyFromPreferences()
-            val decryptedData = if (encryptionKey != null) decryptLastBytes(manufacturerData, encryptionKey) else null
-            val parsedStatus = if (decryptedData != null && decryptedData.size == 16) {
-                parseProximityMessageWithDecryption(address, manufacturerData, decryptedData)
-            } else {
-                parseProximityMessage(address, manufacturerData)
+            val previousStatus = deviceStatusMap[address]
+            val previousAdvertisement = lastAdvertisementMap[address]
+            val rememberedCaseExpired = previousStatus?.caseBattery != null &&
+                !isRememberedCaseBatteryFresh(address, observedAt)
+            if (previousStatus != null &&
+                previousAdvertisement != null &&
+                previousAdvertisement.encryptionKeyBase64 == cachedEncryptionKeyBase64 &&
+                previousAdvertisement.manufacturerData.contentEquals(manufacturerData) &&
+                !rememberedCaseExpired
+            ) {
+                // Duplicate advertisements are common. Keep liveness fresh without decrypting,
+                // reparsing, writing preferences, or waking every downstream listener.
+                val refreshed = previousStatus.copy(
+                    lastSeen = observedAt,
+                    caseBatteryObservedAt = if (previousStatus.caseBatteryIsCached) {
+                        previousStatus.caseBatteryObservedAt
+                    } else {
+                        observedAt
+                    },
+                )
+                deviceStatusMap[address] = refreshed
+                airPodsStatusListener?.onBatteryObserved(refreshed)
+                return
             }
 
-            val previousStatus = deviceStatusMap[address]
+            lastAdvertisementMap[address] = CachedAdvertisement(
+                manufacturerData = manufacturerData.copyOf(),
+                encryptionKeyBase64 = cachedEncryptionKeyBase64
+            )
+
+            val decryptedData = if (encryptionKey != null) decryptLastBytes(manufacturerData, encryptionKey) else null
+            val parsedStatus = if (decryptedData != null && decryptedData.size == 16) {
+                parseProximityMessageWithDecryption(address, manufacturerData, decryptedData, observedAt)
+            } else {
+                parseProximityMessage(address, manufacturerData, observedAt)
+            }
+
             deviceStatusMap[address] = parsedStatus
+            airPodsStatusListener?.onBatteryObserved(parsedStatus)
 
             airPodsStatusListener?.let { listener ->
                 if (previousStatus == null) {
                     listener.onBroadcastFromNewAddress(parsedStatus)
                     Log.d(TAG, "New AirPods device detected: $address")
+
+                    if (parsedStatus.leftBattery != null ||
+                        parsedStatus.rightBattery != null ||
+                        parsedStatus.caseBattery != null
+                    ) {
+                        listener.onBatteryChanged(parsedStatus)
+                    }
 
                     if (currentGlobalLidState == null || currentGlobalLidState != parsedStatus.lidOpen) {
                         currentGlobalLidState = parsedStatus.lidOpen
@@ -295,7 +366,7 @@ class BLEManager(private val context: Context) {
                         Log.d(TAG, "Lid state ${if (parsedStatus.lidOpen) "opened" else "closed"} (detected from new device)")
                     }
                 } else {
-                    if (parsedStatus != previousStatus) {
+                    if (!parsedStatus.hasSameStateAs(previousStatus)) {
                         listener.onDeviceStatusChanged(parsedStatus, previousStatus)
                     }
 
@@ -321,7 +392,11 @@ class BLEManager(private val context: Context) {
 
                     if (parsedStatus.leftBattery != previousStatus.leftBattery ||
                         parsedStatus.rightBattery != previousStatus.rightBattery ||
-                        parsedStatus.caseBattery != previousStatus.caseBattery) {
+                        parsedStatus.caseBattery != previousStatus.caseBattery ||
+                        parsedStatus.isLeftCharging != previousStatus.isLeftCharging ||
+                        parsedStatus.isRightCharging != previousStatus.isRightCharging ||
+                        parsedStatus.isCaseCharging != previousStatus.isCaseCharging ||
+                        parsedStatus.hasExactBatteryData != previousStatus.hasExactBatteryData) {
                         listener.onBatteryChanged(parsedStatus)
                         Log.d(TAG, "Battery changed - Left: ${parsedStatus.leftBattery}, Right: ${parsedStatus.rightBattery}, Case: ${parsedStatus.caseBattery}")
                     }
@@ -332,7 +407,12 @@ class BLEManager(private val context: Context) {
         }
     }
 
-    private fun parseProximityMessageWithDecryption(address: String, data: ByteArray, decrypted: ByteArray): AirPodsStatus {
+    private fun parseProximityMessageWithDecryption(
+        address: String,
+        data: ByteArray,
+        decrypted: ByteArray,
+        observedAt: Long
+    ): AirPodsStatus {
         val paired = data[2].toInt() == 1
         val modelId = ((data[3].toInt() and 0xFF) shl 8) or (data[4].toInt() and 0xFF)
         val model = modelNames[modelId] ?: "Unknown ($modelId)"
@@ -355,34 +435,45 @@ class BLEManager(private val context: Context) {
         val leftByteIndex = if (isFlipped) 2 else 1
         val rightByteIndex = if (isFlipped) 1 else 2
 
-        val (isLeftCharging, leftBattery) = formatBattery(decrypted[leftByteIndex].toInt() and 0xFF)
-        val (isRightCharging, rightBattery) = formatBattery(decrypted[rightByteIndex].toInt() and 0xFF)
+        val rawLeftBatteryByte = decrypted[leftByteIndex].toInt() and 0xFF
+        val rawRightBatteryByte = decrypted[rightByteIndex].toInt() and 0xFF
+        val rawLeftBattery = rawLeftBatteryByte and 0x7F
+        val rawRightBattery = rawRightBatteryByte and 0x7F
+        val leftBattery = if (rawLeftBattery in 0..100) rawLeftBattery else null
+        val rightBattery = if (rawRightBattery in 0..100) rawRightBattery else null
+        val isLeftCharging = leftBattery != null && (rawLeftBatteryByte and 0x80) != 0
+        val isRightCharging = rightBattery != null && (rawRightBatteryByte and 0x80) != 0
 
         val rawCaseBatteryByte = decrypted[3].toInt() and 0xFF
-        val (isCaseCharging, rawCaseBattery) = formatBattery(rawCaseBatteryByte)
+        val rawCaseBattery = rawCaseBatteryByte and 0x7F
 
-        val caseBattery = if (rawCaseBatteryByte == 0xFF || (isCaseCharging && rawCaseBattery == 127)) {
-            lastValidCaseBatteryMap[address]
+        val isValidCase = rawCaseBatteryByte != 0xFF && rawCaseBattery in 0..100
+        val isCaseCharging = isValidCase && (rawCaseBatteryByte and 0x80) != 0
+        val rememberedCase = if (isValidCase) {
+            rememberCaseBattery(address, rawCaseBattery, observedAt)
+            RememberedCaseBattery(rawCaseBattery, observedAt)
         } else {
-            lastValidCaseBatteryMap[address] = rawCaseBattery
-            rawCaseBattery
+            getRememberedCaseBatteryObservation(address, observedAt)
         }
 
         val lidOpen = ((lid shr 3) and 0x01) == 0
 
         return AirPodsStatus(
             address = address,
-            lastSeen = System.currentTimeMillis(),
+            lastSeen = observedAt,
             paired = paired,
             model = model,
             leftBattery = leftBattery,
             rightBattery = rightBattery,
-            caseBattery = caseBattery,
+            caseBattery = rememberedCase?.level,
+            caseBatteryObservedAt = rememberedCase?.observedAt,
+            caseBatteryIsCached = !isValidCase && rememberedCase != null,
             isLeftInEar = isLeftInEar,
             isRightInEar = isRightInEar,
             isLeftCharging = isLeftCharging,
             isRightCharging = isRightCharging,
             isCaseCharging = isCaseCharging,
+            hasExactBatteryData = true,
             lidOpen = lidOpen,
             color = color,
             connectionState = conn
@@ -398,6 +489,10 @@ class BLEManager(private val context: Context) {
 
         for (device in staleDevices) {
             deviceStatusMap.remove(device.key)
+            verifiedAddresses.remove(device.key)
+            lastAdvertisementMap.remove(device.key)
+            lastValidCaseBatteryMap.remove(device.key)
+            loadedCaseBatteryAddresses.remove(device.key)
             Log.d(TAG, "Removed stale device from tracking: ${device.key}")
         }
 
@@ -418,19 +513,26 @@ class BLEManager(private val context: Context) {
     @OptIn(ExperimentalEncodingApi::class)
     private fun getIrkFromPreferences(): ByteArray? {
         val irkBase64 = sharedPreferences.getString(AACPManager.Companion.ProximityKeyType.IRK.name, null)
-        return if (irkBase64 != null) {
-            try {
-                Base64.decode(irkBase64)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to decode IRK", e)
-                null
-            }
-        } else {
+        if (irkBase64 == cachedIrkBase64) {
+            return cachedIrk
+        }
+
+        cachedIrkBase64 = irkBase64
+        cachedIrk = null
+        verifiedAddresses.clear()
+
+        if (irkBase64 == null) return null
+
+        return try {
+            Base64.decode(irkBase64).also { cachedIrk = it }
+        } catch (e: Exception) {
+            // A bad stored IRK is logged once, when its value changes.
+            Log.e(TAG, "Failed to decode IRK", e)
             null
         }
     }
 
-    private fun parseProximityMessage(address: String, data: ByteArray): AirPodsStatus {
+    private fun parseProximityMessage(address: String, data: ByteArray, observedAt: Long): AirPodsStatus {
         val paired = data[2].toInt() == 1
         val modelId = ((data[3].toInt() and 0xFF) shl 8) or (data[4].toInt() and 0xFF)
         val model = modelNames[modelId] ?: "Unknown ($modelId)"
@@ -470,29 +572,118 @@ class BLEManager(private val context: Context) {
             else -> null
         }
 
+        val decodedCase = decodeBattery(caseBattery)
+        val rememberedCase = if (decodedCase != null) {
+            rememberCaseBattery(address, decodedCase, observedAt)
+            RememberedCaseBattery(decodedCase, observedAt)
+        } else {
+            getRememberedCaseBatteryObservation(address, observedAt)
+        }
+
         return AirPodsStatus(
             address = address,
-            lastSeen = System.currentTimeMillis(),
+            lastSeen = observedAt,
             paired = paired,
             model = model,
             leftBattery = decodeBattery(leftBatteryNibble),
             rightBattery = decodeBattery(rightBatteryNibble),
-            caseBattery = decodeBattery(caseBattery),
+            caseBattery = rememberedCase?.level,
+            caseBatteryObservedAt = rememberedCase?.observedAt,
+            caseBatteryIsCached = decodedCase == null && rememberedCase != null,
             isLeftInEar = isLeftInEar,
             isRightInEar = isRightInEar,
             isLeftCharging = isLeftCharging,
             isRightCharging = isRightCharging,
             isCaseCharging = isCaseCharging,
+            hasExactBatteryData = false,
             lidOpen = lidOpen,
             color = color,
             connectionState = conn
         )
     }
 
+    private fun AirPodsStatus.hasSameStateAs(other: AirPodsStatus): Boolean {
+        return address == other.address &&
+            paired == other.paired &&
+            model == other.model &&
+            leftBattery == other.leftBattery &&
+            rightBattery == other.rightBattery &&
+            caseBattery == other.caseBattery &&
+            isLeftInEar == other.isLeftInEar &&
+            isRightInEar == other.isRightInEar &&
+            isLeftCharging == other.isLeftCharging &&
+            isRightCharging == other.isRightCharging &&
+            isCaseCharging == other.isCaseCharging &&
+            hasExactBatteryData == other.hasExactBatteryData &&
+            lidOpen == other.lidOpen &&
+            color == other.color &&
+            connectionState == other.connectionState
+    }
+
+    private fun getRememberedCaseBattery(
+        address: String,
+        now: Long = System.currentTimeMillis()
+    ): Int? = getRememberedCaseBatteryObservation(address, now)?.level
+
+    private fun getRememberedCaseBatteryObservation(
+        address: String,
+        now: Long = System.currentTimeMillis()
+    ): RememberedCaseBattery? {
+        if (loadedCaseBatteryAddresses.add(address)) {
+            val stableLevel = sharedPreferences.getInt(LAST_CASE_BATTERY_KEY, -1)
+            val stableObservedAt = sharedPreferences.getLong(LAST_CASE_BATTERY_AT_KEY, -1L)
+            val legacyKey = "last_case_battery_$address"
+            val legacyLevel = sharedPreferences.getInt(legacyKey, -1)
+            val remembered = stableLevel.takeIf { it in 0..100 }
+                ?: legacyLevel.takeIf { it in 0..100 }
+            remembered?.let { level ->
+                if (stableObservedAt > 0L && now - stableObservedAt in 0..CASE_BATTERY_CACHE_TTL_MS) {
+                    lastValidCaseBatteryMap[address] = RememberedCaseBattery(level, stableObservedAt)
+                }
+                if (stableLevel !in 0..100 && stableObservedAt > 0L) {
+                    sharedPreferences.edit {
+                        putInt(LAST_CASE_BATTERY_KEY, level)
+                        remove(legacyKey)
+                    }
+                }
+            }
+        }
+        val remembered = lastValidCaseBatteryMap[address] ?: return null
+        return if (now - remembered.observedAt in 0..CASE_BATTERY_CACHE_TTL_MS) {
+            remembered
+        } else {
+            lastValidCaseBatteryMap.remove(address)
+            null
+        }
+    }
+
+    private fun rememberCaseBattery(address: String, level: Int, observedAt: Long): Int {
+        val previous = lastValidCaseBatteryMap[address]
+        lastValidCaseBatteryMap[address] = RememberedCaseBattery(level, observedAt)
+        if (previous?.level != level ||
+            observedAt - previous.observedAt >= CASE_BATTERY_PERSIST_INTERVAL_MS
+        ) {
+            sharedPreferences.edit {
+                putInt(LAST_CASE_BATTERY_KEY, level)
+                putLong(LAST_CASE_BATTERY_AT_KEY, observedAt)
+            }
+        }
+        return level
+    }
+
+    private fun isRememberedCaseBatteryFresh(address: String, now: Long): Boolean {
+        return getRememberedCaseBattery(address, now) != null
+    }
+
     companion object {
         private const val TAG = "AirPodsBLE"
         private const val CLEANUP_INTERVAL_MS = 10000L
         private const val STALE_DEVICE_TIMEOUT_MS = 15000L
-        private const val LID_CLOSE_TIMEOUT_MS = 2500L
+        private const val LAST_CASE_BATTERY_KEY = "last_case_battery"
+        private const val LAST_CASE_BATTERY_AT_KEY = "last_case_battery_observed_at"
+        private const val CASE_BATTERY_CACHE_TTL_MS = 15 * 60 * 1000L
+        private const val CASE_BATTERY_PERSIST_INTERVAL_MS = 60 * 1000L
+        // Balanced scans can have short radio gaps; allow one complete gap before inferring close.
+        private const val LID_CLOSE_TIMEOUT_MS = 6000L
     }
 }

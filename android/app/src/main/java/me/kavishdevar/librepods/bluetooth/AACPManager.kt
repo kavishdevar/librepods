@@ -25,6 +25,8 @@ import me.kavishdevar.librepods.data.Capability
 import me.kavishdevar.librepods.data.CustomEq
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
@@ -34,7 +36,29 @@ import kotlin.io.encoding.ExperimentalEncodingApi
  */
 class AACPManager {
     private val TAG = "AACPManager[${System.identityHashCode(this)}]"
+    private val emittedWarningKeys = ConcurrentHashMap.newKeySet<String>()
+
+    private inline fun logDebug(message: () -> String) {
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, message())
+        }
+    }
+
+    private inline fun logWarning(message: () -> String) {
+        if (Log.isLoggable(TAG, Log.WARN)) {
+            Log.w(TAG, message())
+        }
+    }
+
+    private inline fun logWarningOnce(key: String, message: () -> String) {
+        if (emittedWarningKeys.add(key)) {
+            logWarning(message)
+        }
+    }
+
     companion object {
+        private const val HEX_DIGITS = "0123456789ABCDEF"
+
         @Suppress("unused")
         object Opcodes {
             const val SET_FEATURE_FLAGS: Byte = 0x4D
@@ -115,8 +139,9 @@ class AACPManager {
             DYNAMIC_END_OF_CHARGE(0x3B);
 
             companion object {
-                fun fromByte(byte: Byte): ControlCommandIdentifiers? =
-                    entries.find { it.value == byte }
+                private val byValue = entries.associateBy { it.value }
+
+                fun fromByte(byte: Byte): ControlCommandIdentifiers? = byValue[byte]
             }
         }
 
@@ -177,9 +202,9 @@ class AACPManager {
     }
 
     var controlCommandStatusList: MutableList<ControlCommandStatus> =
-        mutableListOf<ControlCommandStatus>()
+        CopyOnWriteArrayList()
     var controlCommandListeners: MutableMap<ControlCommandIdentifiers, MutableList<ControlCommandListener>> =
-        mutableMapOf()
+        ConcurrentHashMap()
 
     var owns: Boolean = false
         private set
@@ -214,10 +239,9 @@ class AACPManager {
     private fun setControlCommandStatusValue(
         identifier: ControlCommandIdentifiers, value: ByteArray
     ) {
-        val existingStatus = getControlCommandStatus(identifier)
-        if (existingStatus?.value.contentEquals(value)) {
-            controlCommandStatusList.remove(existingStatus)
-        }
+        controlCommandStatusList
+            .filter { it.identifier == identifier }
+            .forEach(controlCommandStatusList::remove)
         controlCommandListeners[identifier]?.forEach { listener ->
             listener.onControlCommandReceived(ControlCommand(identifier.value, value))
         }
@@ -249,7 +273,7 @@ class AACPManager {
     }
 
     fun parseStemPressResponse(data: ByteArray): Pair<StemPressType, StemPressBudType> {
-        Log.d(TAG, "Parsing Stem Press Response: ${data.joinToString(" ") { "%02X".format(it) }}")
+        logDebug { "Parsing Stem Press Response (${data.size} bytes)" }
         if (data.size != 8) {
             throw IllegalArgumentException("Data array too short to parse Stem Press Response")
         }
@@ -270,7 +294,9 @@ class AACPManager {
     fun registerControlCommandListener(
         identifier: ControlCommandIdentifiers, callback: ControlCommandListener
     ) {
-        controlCommandListeners.getOrPut(identifier) { mutableListOf() }.add(callback)
+        controlCommandListeners
+            .getOrPut(identifier) { CopyOnWriteArrayList() }
+            .add(callback)
     }
 
     fun unregisterControlCommandListener(
@@ -279,6 +305,7 @@ class AACPManager {
         controlCommandListeners[identifier]?.remove(callback)
     }
 
+    @Volatile
     private var callback: PacketCallback? = null
 
     fun setPacketCallback(callback: PacketCallback) {
@@ -308,62 +335,43 @@ class AACPManager {
 
     fun sendControlCommand(identifier: Byte, value: ByteArray): Boolean {
         val controlPacket = createControlCommandPacket(identifier, value)
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false, value
-        )
         return sendDataPacket(controlPacket)
     }
 
     @OptIn(ExperimentalStdlibApi::class)
     fun sendControlCommand(identifier: Byte, value: Byte): Boolean {
         val controlPacket = createControlCommandPacket(identifier, byteArrayOf(value))
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false, byteArrayOf(value)
-        )
         return sendDataPacket(controlPacket)
     }
 
     fun sendControlCommand(identifier: Byte, value: Boolean): Boolean {
-        val controlPacket = createControlCommandPacket(
-            identifier, if (value) byteArrayOf(0x01) else byteArrayOf(0x02)
-        )
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false,
-            if (value) byteArrayOf(0x01) else byteArrayOf(0x02)
-        )
+        val commandValue = if (value) byteArrayOf(0x01) else byteArrayOf(0x02)
+        val controlPacket = createControlCommandPacket(identifier, commandValue)
         return sendDataPacket(controlPacket)
     }
 
     fun sendControlCommand(identifier: Byte, value: Int): Boolean {
         val controlPacket = createControlCommandPacket(identifier, byteArrayOf(value.toByte()))
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false,
-            byteArrayOf(value.toByte())
-        )
         return sendDataPacket(controlPacket)
     }
 
     fun parseProximityKeysResponse(data: ByteArray): Map<ProximityKeyType, ByteArray> {
-        Log.d(
-            TAG, "Parsing Proximity Keys Response: ${data.joinToString(" ") { "%02X".format(it) }}"
-        )
-        if (data.size < 4) {
+        logDebug { "Parsing Proximity Keys Response (${data.size} bytes)" }
+        if (data.size < 7) {
             throw IllegalArgumentException("Data array too short to parse Proximity Keys Response")
         }
         if (data[4] != Opcodes.PROXIMITY_KEYS_RSP) {
             throw IllegalArgumentException("Data array does not start with PROXIMITY_KEYS_RSP opcode")
         }
-        val keyCount = data[6].toInt()
+        val keyCount = data[6].toInt() and 0xFF
         val keys = mutableMapOf<ProximityKeyType, ByteArray>()
         var offset = 7
         for (i in 0 until keyCount) {
-            Log.d(TAG, "Parsing Proximity Key $i")
             if (offset + 3 >= data.size) {
                 throw IllegalArgumentException("Data array too short to parse Proximity Keys Response")
             }
             val keyType = data[offset]
-            val keyLength = data[offset + 2].toInt()
-            Log.d(TAG, "Key Type: ${keyType.toString(16)}, Key Length: $keyLength")
+            val keyLength = data[offset + 2].toInt() and 0xFF
             offset += 4
             if (offset + keyLength > data.size) {
                 throw IllegalArgumentException("Data array too short to parse Proximity Keys Response")
@@ -373,21 +381,16 @@ class AACPManager {
             try {
                 keys[ProximityKeyType.fromByte(keyType)] = key
             } catch (e: Exception) {
-                Log.e(
-                    TAG, "incorrect key type received: $keyType, ${key.toHexString()}"
-                )
+                Log.e(TAG, "Incorrect proximity key type received: $keyType")
             }
             offset += keyLength
-            Log.d(
-                TAG, "Parsed Proximity Key: Type: ${keyType}, Length: $keyLength, Key: ${
-                key.joinToString(" ") { "%02X".format(it) }
-            }")
+            logDebug { "Parsed proximity key ${i + 1}/$keyCount: type=$keyType, length=$keyLength" }
         }
         return keys
     }
 
     fun sendRequestProximityKeys(type: Byte): Boolean {
-        Log.d(TAG, "Requesting proximity keys of type: ${type.toString(16)}")
+        logDebug { "Requesting proximity keys of type: ${type.toString(16)}" }
         return sendDataPacket(createRequestProximityKeysPacket(type))
     }
 
@@ -399,19 +402,20 @@ class AACPManager {
 
     @OptIn(ExperimentalStdlibApi::class)
     fun receivePacket(packet: ByteArray) {
-        if (!packet.toHexString().startsWith("04000400")) {
-            Log.w(
-                TAG, "Received packet does not start with expected header: ${
-                packet.joinToString(" ") {
-                    "%02X".format(it)
-                }
-            }")
+        if (packet.size < 6) {
+            logWarning { "Received packet too short (${packet.size} bytes)" }
             return
         }
-        if (packet.size < 6) {
-            Log.w(
-                TAG, "Received packet too short: ${packet.joinToString(" ") { "%02X".format(it) }}"
-            )
+        if (packet[0] != HEADER_BYTES[0] ||
+            packet[1] != HEADER_BYTES[1] ||
+            packet[2] != HEADER_BYTES[2] ||
+            packet[3] != HEADER_BYTES[3]
+        ) {
+            logWarningOnce("invalid-header") {
+                "Received packet with an invalid header: ${
+                    packet.take(HEADER_BYTES.size).joinToString(" ") { "%02X".format(it) }
+                }"
+            }
             return
         }
 
@@ -428,44 +432,25 @@ class AACPManager {
                     callback?.onUnknownPacketReceived(packet)
                     return
                 }
-                setControlCommandStatusValue(
-                    ControlCommandIdentifiers.fromByte(controlCommand.identifier) ?: return,
-                    controlCommand.value
-                )
-                Log.d(
-                    TAG,
-                    "Control command received: ${controlCommand.identifier.toHexString()} - ${
-                        controlCommand.value.joinToString(" ") { "%02X".format(it) }
-                    }")
-
-                val controlCommandListText = try {
-                    controlCommandStatusList.joinToString(", ") { it ->
-                        "${it.identifier.name} (${it.identifier.value.toHexString()}) - ${
-                            it.value.joinToString(
-                                " "
-                            ) { "%02X".format(it) }
-                        }"
-                    }
-                } catch (e: Exception) {
-                    e.message
-                }
-
-                Log.d(
-                    TAG, "Control command list is now: $controlCommandListText"
-                )
-
                 val controlCommandIdentifier =
                     ControlCommandIdentifiers.fromByte(controlCommand.identifier)
-                if (controlCommandIdentifier != null) {
-                    controlCommandListeners[controlCommandIdentifier]?.forEach { listener ->
-                        Log.d(TAG, "calling listener for ${controlCommandIdentifier.name}")
-                        listener.onControlCommandReceived(controlCommand)
-                    }
-                } else {
-                    Log.w(
-                        TAG,
+                if (controlCommandIdentifier == null) {
+                    logWarningOnce(
+                        "unknown-control-${controlCommand.identifier}",
+                    ) {
                         "Unknown control command identifier: ${controlCommand.identifier.toHexString()}"
-                    )
+                    }
+                    callback?.onUnknownPacketReceived(packet)
+                    return
+                }
+                setControlCommandStatusValue(
+                    controlCommandIdentifier,
+                    controlCommand.value
+                )
+                logDebug {
+                    "Control command received: ${controlCommand.identifier.toHexString()} - ${
+                        controlCommand.value.joinToString(" ") { "%02X".format(it) }
+                    }"
                 }
 
                 if (controlCommandIdentifier == ControlCommandIdentifiers.OWNS_CONNECTION) {
@@ -484,13 +469,14 @@ class AACPManager {
             }
 
             Opcodes.HEADTRACKING -> {
-                if (packet.size < 70) {
-                    Log.w(
-                        TAG, "Received HEADTRACKING packet too short: ${
+                if (packet.size < 55) {
+                    logWarningOnce("short-head-tracking-${packet.size}") {
+                        "Received HEADTRACKING packet too short: ${
                         packet.joinToString(" ") {
                             "%02X".format(it)
                         }
-                    }")
+                    }"
+                    }
                     return
                 }
                 callback?.onHeadTrackingReceived(packet)
@@ -521,9 +507,12 @@ class AACPManager {
             }
 
             Opcodes.SMART_ROUTING_RESP -> {
+                if (packet.size < 12) {
+                    logWarning { "Received SMART_ROUTING_RESP packet too short (${packet.size} bytes)" }
+                    return
+                }
                 val packetString = packet.decodeToString()
-                val sender =
-                    packet.sliceArray(6..11).reversedArray().joinToString(":") { "%02X".format(it) }
+                val sender = formatReversedMac(packet, 6)
 
                 // if (connectedDevices.find { it.mac == sender }?.type == null && packetString.contains("btName")) {
                 //     val nameStartIndex = packetString.indexOf("btName") + 8
@@ -543,10 +532,9 @@ class AACPManager {
                 } else if ("Android" in packetString) {
                     connectedDevices.find { it.mac == sender }?.type = "Android"
                 }
-                Log.d(
-                    TAG,
+                logDebug {
                     "Smart Routing Response from $sender: $packetString, type: ${connectedDevices.find { it.mac == sender }?.type}"
-                )
+                }
                 if (packetString.contains("SetOwnershipToFalse")) {
                     callback?.onOwnershipToFalseRequest(
                         sender,
@@ -587,10 +575,9 @@ class AACPManager {
                 // for now, taking just the first EQ
                 eqData = FloatArray(8) { i -> eq1.get(i) }
 
-                Log.d(
-                    TAG,
-                    "EQ Data set to: ${eqData.toList()}, eqOnPhone: $eqOnPhone, eqOnMedia: $eqOnMedia"
-                )
+                logDebug {
+                    "EQ Data set to: ${eqData.contentToString()}, eqOnPhone: $eqOnPhone, eqOnMedia: $eqOnMedia"
+                }
 
                 callback?.onHeadphoneAccommodationReceived(eqData)
             }
@@ -602,14 +589,14 @@ class AACPManager {
             }
 
             Opcodes.CUSTOM_EQ -> {
-                Log.d(TAG, "Parsing CUSTOM_EQ: ${packet.toHexString()}")
+                logDebug { "Parsing CUSTOM_EQ: ${packet.toHexString()}" }
                 customEq = parseCustomEqPacket(packet)
                 customEqCallback?.invoke(customEq)
                 callback?.onCustomEqReceived(customEq)
             }
 
             else -> {
-                Log.d(TAG, "Unhandled opcode received: ${opcode.toHexString()}")
+                logDebug { "Unhandled opcode received: ${opcode.toHexString()}" }
                 callback?.onUnknownPacketReceived(packet)
             }
         }
@@ -1114,9 +1101,17 @@ class AACPManager {
                     throw IllegalArgumentException("Invalid opcode")
                 }
                 val identifier = data[offset + 2]
-                val value = data.copyOfRange(offset + 3, offset + 7)
-                val trimmed = value.dropLastWhile { it == 0x00.toByte() }.toByteArray()
-                return ControlCommand(identifier, if (trimmed.isEmpty()) byteArrayOf(0x00) else trimmed)
+                val valueStart = offset + 3
+                var valueEnd = offset + 7
+                while (valueEnd > valueStart && data[valueEnd - 1] == 0x00.toByte()) {
+                    valueEnd--
+                }
+                val value = if (valueEnd == valueStart) {
+                    byteArrayOf(0x00)
+                } else {
+                    data.copyOfRange(valueStart, valueEnd)
+                }
+                return ControlCommand(identifier, value)
             }
         }
     }
@@ -1130,16 +1125,21 @@ class AACPManager {
     ): Boolean {
         val value =
             ((if (singlePressCustomized) 0x01 else 0) or (if (doublePressCustomized) 0x02 else 0) or (if (triplePressCustomized) 0x04 else 0) or (if (longPressCustomized) 0x08 else 0)).toByte()
-        Log.d(TAG, "Sending Stem Config Packet with value: ${value.toHexString()}")
+        logDebug { "Sending Stem Config Packet with value: ${value.toHexString()}" }
         return sendControlCommand(
             ControlCommandIdentifiers.STEM_CONFIG.value, value
         )
     }
 
     @OptIn(ExperimentalStdlibApi::class)
+    @Synchronized
     fun sendPacket(packet: ByteArray): Boolean {
         try {
-            Log.d(TAG, "Sending packet: ${packet.joinToString(" ") { "%02X".format(it) }}")
+            if (packet.size < 5) {
+                Log.w(TAG, "Can't send malformed packet: expected at least 5 bytes, got ${packet.size}")
+                return false
+            }
+            logDebug { "Sending packet: ${packet.joinToString(" ") { "%02X".format(it) }}" }
 
             if (packet[4] == Opcodes.CONTROL_COMMAND) {
                 val controlCommand = try {
@@ -1149,10 +1149,11 @@ class AACPManager {
                     callback?.onUnknownPacketReceived(packet)
                     return false
                 }
-                Log.d(
-                    TAG, "Control command: ${controlCommand.identifier.toHexString()} - ${
+                logDebug {
+                    "Control command: ${controlCommand.identifier.toHexString()} - ${
                     controlCommand.value.joinToString(" ") { "%02X".format(it) }
-                }")
+                }"
+                }
                 setControlCommandStatusValue(
                     ControlCommandIdentifiers.fromByte(controlCommand.identifier) ?: return false,
                     controlCommand.value
@@ -1162,11 +1163,12 @@ class AACPManager {
             val socket = BluetoothConnectionManager.aacpSocket ?: return false
 
             if (socket.isConnected) {
-                socket.outputStream?.write(packet)
-                socket.outputStream?.flush()
+                val outputStream = socket.outputStream ?: return false
+                outputStream.write(packet)
+                outputStream.flush()
                 return true
             } else {
-                Log.d(TAG, "Can't send packet: Socket not initialized or connected")
+                logDebug { "Can't send packet: Socket not initialized or connected" }
                 return false
             }
         } catch (e: Exception) {
@@ -1206,15 +1208,14 @@ class AACPManager {
     }
 
     fun parseAudioSourceResponse(data: ByteArray): Pair<String, AudioSourceType> {
-        Log.d(TAG, "Parsing Audio Source Response: ${data.joinToString(" ") { "%02X".format(it) }}")
-        if (data.size < 9) {
+        logDebug { "Parsing Audio Source Response (${data.size} bytes)" }
+        if (data.size < 13) {
             throw IllegalArgumentException("Data array too short to parse Audio Source Response")
         }
         if (data[4] != Opcodes.AUDIO_SOURCE) {
             throw IllegalArgumentException("Data array does not start with AUDIO_SOURCE opcode")
         }
-        val macBytes = data.sliceArray(6..11).reversedArray()
-        val mac = macBytes.joinToString(":") { "%02X".format(it) }
+        val mac = formatReversedMac(data, 6)
         val typeByte = data[12]
         val type = AudioSourceType.fromByte(typeByte)
             ?: throw IllegalArgumentException("Unknown Audio Source Type: $typeByte")
@@ -1222,17 +1223,14 @@ class AACPManager {
     }
 
     fun parseConnectedDevicesResponse(data: ByteArray): List<ConnectedDevice> {
-        Log.d(
-            TAG,
-            "Parsing Connected Devices Response: ${data.joinToString(" ") { "%02X".format(it) }}"
-        )
-        if (data.size < 8) {
+        logDebug { "Parsing Connected Devices Response (${data.size} bytes)" }
+        if (data.size < 9) {
             throw IllegalArgumentException("Data array too short to parse Connected Devices Response")
         }
         if (data[4] != Opcodes.CONNECTED_DEVICES) {
             throw IllegalArgumentException("Data array does not start with CONNECTED_DEVICES opcode")
         }
-        val deviceCount = data[8].toInt()
+        val deviceCount = data[8].toInt() and 0xFF
         val devices = mutableListOf<ConnectedDevice>()
 
         var offset = 9
@@ -1244,8 +1242,7 @@ class AACPManager {
                 )
                 break
             }
-            val macBytes = data.sliceArray(offset until offset + 6)
-            val mac = macBytes.joinToString(":") { "%02X".format(it) }
+            val mac = formatForwardMac(data, offset)
             val info1 = data[offset + 6]
             val info2 = data[offset + 7]
             val existingDevice = devices.find { it.mac == mac }
@@ -1254,6 +1251,27 @@ class AACPManager {
         }
 
         return devices
+    }
+
+    private fun formatReversedMac(data: ByteArray, offset: Int): String {
+        return formatMac(data, offset, reversed = true)
+    }
+
+    private fun formatForwardMac(data: ByteArray, offset: Int): String {
+        return formatMac(data, offset, reversed = false)
+    }
+
+    private fun formatMac(data: ByteArray, offset: Int, reversed: Boolean): String {
+        require(offset >= 0 && offset + 6 <= data.size) { "Not enough bytes for a MAC address" }
+        return buildString(17) {
+            for (position in 0 until 6) {
+                if (position > 0) append(':')
+                val index = if (reversed) offset + 5 - position else offset + position
+                val value = data[index].toInt() and 0xFF
+                append(HEX_DIGITS[value ushr 4])
+                append(HEX_DIGITS[value and 0x0F])
+            }
+        }
     }
 
     fun sendSomePacketIDontKnowWhatItIs() {
@@ -1272,7 +1290,7 @@ class AACPManager {
     fun disconnected() {
         Log.d(TAG, "Disconnected, clearing state")
         controlCommandStatusList.clear()
-        controlCommandListeners.clear()
+        // Listener lifetimes are managed by the UI/service and must survive reconnects.
         owns = false
         oldConnectedDevices = listOf()
         connectedDevices = listOf()

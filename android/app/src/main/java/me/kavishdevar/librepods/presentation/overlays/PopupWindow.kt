@@ -29,7 +29,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.PixelFormat
-import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -42,14 +41,17 @@ import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.VideoView
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.data.AirPodsBase
 import me.kavishdevar.librepods.data.AirPodsNotifications
 import me.kavishdevar.librepods.data.Battery
 import me.kavishdevar.librepods.data.BatteryComponent
 import me.kavishdevar.librepods.data.BatteryStatus
+import me.kavishdevar.librepods.utils.BatteryLevels
+import me.kavishdevar.librepods.utils.OverlayMedia
 
 @SuppressLint("InflateParams", "ClickableViewAccessibility")
 class PopupWindow(
@@ -129,27 +131,27 @@ class PopupWindow(
         mWindowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     }
 
-    @SuppressLint("InlinedApi", "SetTextI18s")
-    fun open(name: String = "AirPods Pro", batteryNotification: AirPodsNotifications.BatteryNotification) {
+    @SuppressLint("InlinedApi")
+    fun open(
+        name: String = "AirPods Pro",
+        batteryNotification: AirPodsNotifications.BatteryNotification,
+        model: AirPodsBase? = null
+    ) {
         try {
             if (mView.windowToken == null && mView.parent == null && !isClosing) {
                 mView.findViewById<TextView>(R.id.name).text = name
 
                 updateBatteryStatus(batteryNotification)
 
-                val vid = mView.findViewById<VideoView>(R.id.video)
-                vid.setAudioFocusRequest(AudioManager.AUDIOFOCUS_NONE)
-                vid.setVideoPath("android.resource://me.kavishdevar.librepods/" + R.raw.connected)
-                vid.resolveAdjustedSize(vid.width, vid.height)
-                vid.start()
-                vid.setOnCompletionListener {
-                    vid.start()
-                }
+                mView.findViewById<ImageView>(R.id.popup_fallback_image)
+                    .setImageResource(OverlayMedia.budCaseImageRes(model))
 
                 try {
                     mWindowManager.addView(mView, mParams)
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e("PopupWindow", "Unable to show connection card", e)
+                    onCloseCallback()
+                    return
                 }
 
                 val displayMetrics = mView.context.resources.displayMetrics
@@ -169,7 +171,7 @@ class PopupWindow(
                 registerBatteryUpdateReceiver()
 
                 autoCloseRunnable = Runnable { close() }
-                autoCloseHandler.postDelayed(autoCloseRunnable!!, 12000)
+                autoCloseHandler.postDelayed(autoCloseRunnable!!, 8_000L)
             }
         } catch (e: Exception) {
             Log.e("PopupWindow", "Error opening popup: ${e.message}")
@@ -197,7 +199,7 @@ class PopupWindow(
 
         val filter = IntentFilter(AirPodsNotifications.BATTERY_DATA)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(batteryUpdateReceiver, filter, Context.RECEIVER_EXPORTED)
+            context.registerReceiver(batteryUpdateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             context.registerReceiver(batteryUpdateReceiver, filter)
         }
@@ -220,28 +222,24 @@ class PopupWindow(
         val batteryCaseText = mView.findViewById<TextView>(R.id.case_battery)
 
         batteryLeftText.text = batteryList.find { it.component == BatteryComponent.LEFT }?.let {
-            if (it.status != BatteryStatus.DISCONNECTED) {
-                "\uDBC3\uDC8E    ${it.level}%"
-            } else {
-                ""
-            }
+            popupBatteryLine("\uDBC3\uDC8E", it)
         } ?: ""
 
         batteryRightText.text = batteryList.find { it.component == BatteryComponent.RIGHT }?.let {
-            if (it.status != BatteryStatus.DISCONNECTED) {
-                "\uDBC3\uDC8D    ${it.level}%"
-            } else {
-                ""
-            }
+            popupBatteryLine("\uDBC3\uDC8D", it)
         } ?: ""
 
         batteryCaseText.text = batteryList.find { it.component == BatteryComponent.CASE }?.let {
-            if (it.status != BatteryStatus.DISCONNECTED) {
-                "\uDBC3\uDE6C    ${it.level}%"
-            } else {
-                ""
-            }
+            popupBatteryLine("\uDBC3\uDE6C", it)
         } ?: ""
+    }
+
+    private fun popupBatteryLine(icon: String, battery: Battery): String {
+        if (battery.status == BatteryStatus.DISCONNECTED) return ""
+        val charging = battery.status == BatteryStatus.CHARGING ||
+            battery.status == BatteryStatus.OPTIMIZED_CHARGING
+        val bolt = if (charging) "⚡ " else ""
+        return "$icon    $bolt${BatteryLevels.displayPercent(battery.level)}"
     }
 
     @SuppressLint("SetTextI18s")
@@ -258,31 +256,33 @@ class PopupWindow(
             autoCloseRunnable?.let { autoCloseHandler.removeCallbacks(it) }
             unregisterBatteryUpdateReceiver()
 
-            val vid = mView.findViewById<VideoView>(R.id.video)
-            vid.stopPlayback()
-
             ObjectAnimator.ofFloat(mView, "translationY", mView.height.toFloat()).apply {
                 duration = 500
                 interpolator = AccelerateInterpolator()
                 addListener(object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
-                        try {
-                            mView.visibility = View.GONE
-                            if (mView.parent != null) {
-                                mWindowManager.removeView(mView)
-                            }
-                        } catch (e: Exception) {
-                            Log.e("PopupWindow", "Error removing view: ${e.message}")
-                        } finally {
-                            isClosing = false
-                            onCloseCallback()
-                        }
+                        removeView()
                     }
+
+                    override fun onAnimationCancel(animation: Animator) = removeView()
                 })
                 start()
             }
         } catch (e: Exception) {
             Log.e("PopupWindow", "Error closing popup: ${e.message}")
+            isClosing = false
+            onCloseCallback()
+        }
+    }
+
+    private fun removeView() {
+        if (!isClosing && mView.parent == null) return
+        try {
+            mView.visibility = View.GONE
+            if (mView.parent != null) mWindowManager.removeViewImmediate(mView)
+        } catch (e: Exception) {
+            Log.w("PopupWindow", "Error removing connection card", e)
+        } finally {
             isClosing = false
             onCloseCallback()
         }

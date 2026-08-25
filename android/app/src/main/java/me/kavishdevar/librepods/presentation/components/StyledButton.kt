@@ -19,7 +19,6 @@
 package me.kavishdevar.librepods.presentation.components
 
 import android.graphics.RuntimeShader
-import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.VisibilityThreshold
@@ -45,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
@@ -102,6 +102,7 @@ fun StyledButton(
                     Button(
                         modifier = modifier.height(48.dp),
                         onClick = onClick,
+                        enabled = enabled,
                         content = content
                     )
                 }
@@ -109,6 +110,7 @@ fun StyledButton(
                     FilledTonalButton(
                         modifier = modifier.height(48.dp),
                         onClick = onClick,
+                        enabled = enabled,
                         content = content,
                         colors = ButtonDefaults.filledTonalButtonColors(containerColor = surfaceColor)
                     )
@@ -118,6 +120,7 @@ fun StyledButton(
                     OutlinedButton(
                         modifier = modifier.height(48.dp),
                         onClick = onClick,
+                        enabled = enabled,
                         content = content
                     )
                 }
@@ -126,13 +129,14 @@ fun StyledButton(
                     TextButton(
                         modifier = modifier.height(48.dp),
                         onClick = onClick,
+                        enabled = enabled,
                         content = content
                     )
                 }
             }
         }
         DesignSystem.Apple -> {
-            val isInteractive = enabled && isInteractive
+            val interactiveEffectsEnabled = enabled && isInteractive
             val scope = rememberCoroutineScope()
             val haptics = LocalHapticFeedback.current
             val progressAnimation = remember { Animatable(0f) }
@@ -141,9 +145,8 @@ fun StyledButton(
             var isPressed by remember { mutableStateOf(false) }
 
             val interactiveHighlightShader = remember {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    RuntimeShader(
-                        """
+                RuntimeShader(
+                    """
 uniform float2 size;
 layout(color) uniform half4 color;
 uniform float radius;
@@ -155,16 +158,14 @@ half4 main(float2 coord) {
     float intensity = smoothstep(radius, radius * 0.5, dist);
     return color * intensity;
 }"""
-                    )
-                } else {
-                    null
-                }
+                )
             }
 
             Row(
                 modifier
+                    .alpha(if (enabled) 1f else 0.45f)
                     .then(
-                        if (!isInteractive) {
+                        if (!interactiveEffectsEnabled) {
                             Modifier.drawBackdrop(
                                 backdrop = backdrop,
                                 shape = { RoundedCornerShape(28f.dp) },
@@ -249,7 +250,7 @@ half4 main(float2 coord) {
                                         drawRect(Color.White.copy(0.1f))
                                     }
                                     if (surfaceColor.isSpecified) {
-                                        val color = if (!isInteractive && isPressed) {
+                                        val color = if (!interactiveEffectsEnabled && isPressed) {
                                             Color(
                                                 red = surfaceColor.red * 0.5f,
                                                 green = surfaceColor.green * 0.5f,
@@ -265,36 +266,29 @@ half4 main(float2 coord) {
                                 onDrawFront = {
                                     val progress = progressAnimation.value.fastCoerceIn(0f, 1f)
                                     if (progress > 0f) {
-                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && interactiveHighlightShader != null) {
-                                            drawRect(
-                                                Color.White.copy(0.1f * progress),
-                                                blendMode = BlendMode.Plus
+                                        drawRect(
+                                            Color.White.copy(0.1f * progress),
+                                            blendMode = BlendMode.Plus
+                                        )
+                                        interactiveHighlightShader.apply {
+                                            val offset =
+                                                pressStartPosition + offsetAnimation.value
+                                            setFloatUniform("size", size.width, size.height)
+                                            setColorUniform(
+                                                "color",
+                                                Color.White.copy(0.15f * progress).toArgb()
                                             )
-                                            interactiveHighlightShader.apply {
-                                                val offset =
-                                                    pressStartPosition + offsetAnimation.value
-                                                setFloatUniform("size", size.width, size.height)
-                                                setColorUniform(
-                                                    "color",
-                                                    Color.White.copy(0.15f * progress).toArgb()
-                                                )
-                                                setFloatUniform("radius", size.maxDimension)
-                                                setFloatUniform(
-                                                    "offset",
-                                                    offset.x.fastCoerceIn(0f, size.width),
-                                                    offset.y.fastCoerceIn(0f, size.height)
-                                                )
-                                            }
-                                            drawRect(
-                                                ShaderBrush(interactiveHighlightShader),
-                                                blendMode = BlendMode.Plus
-                                            )
-                                        } else {
-                                            drawRect(
-                                                Color.White.copy(0.25f * progress),
-                                                blendMode = BlendMode.Plus
+                                            setFloatUniform("radius", size.maxDimension)
+                                            setFloatUniform(
+                                                "offset",
+                                                offset.x.fastCoerceIn(0f, size.width),
+                                                offset.y.fastCoerceIn(0f, size.height)
                                             )
                                         }
+                                        drawRect(
+                                            ShaderBrush(interactiveHighlightShader),
+                                            blendMode = BlendMode.Plus
+                                        )
                                     }
                                 }
                             )
@@ -303,16 +297,15 @@ half4 main(float2 coord) {
                     .clickable(
                         interactionSource = null,
                         indication = null,
+                        enabled = enabled,
                         role = Role.Button,
                         onClick = {
-                            if (enabled) {
-                                haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                onClick()
-                            }
+                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                            onClick()
                         }
                     )
                     .then(
-                        if (isInteractive) {
+                        if (interactiveEffectsEnabled) {
                             Modifier.pointerInput(scope) {
                                 val progressAnimationSpec = spring(0.5f, 300f, 0.001f)
                                 val offsetAnimationSpec =
@@ -376,17 +369,13 @@ half4 main(float2 coord) {
                                 }
                             }
                         } else {
-                            Modifier.pointerInput(Unit) {
+                            Modifier.pointerInput(enabled) {
                                 detectTapGestures(
                                     onPress = {
-                                        isPressed = true
-                                        tryAwaitRelease()
-                                        isPressed = false
-                                    },
-                                    onTap = {
                                         if (enabled) {
-                                            haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                            onClick()
+                                            isPressed = true
+                                            tryAwaitRelease()
+                                            isPressed = false
                                         }
                                     }
                                 )

@@ -19,6 +19,11 @@ class LibrePodsApplication: Application(), XposedServiceHelper.OnServiceListener
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
 
         super<Application>.onCreate()
+        if (getSharedPreferences("settings", MODE_PRIVATE)
+                .getBoolean("onboarding_complete", false)
+        ) {
+            me.kavishdevar.librepods.utils.OxygenOsKeepAlive.scheduleWatchdog(this)
+        }
 
     }
 

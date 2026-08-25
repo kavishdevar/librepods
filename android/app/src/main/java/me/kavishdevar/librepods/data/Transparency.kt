@@ -18,6 +18,7 @@
 
 package me.kavishdevar.librepods.data
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,6 +28,8 @@ import me.kavishdevar.librepods.bluetooth.ATTHandles
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+
+private const val TAG = "TransparencyUtils"
 
 data class TransparencySettings(
     val enabled: Boolean,
@@ -84,7 +87,8 @@ data class TransparencySettings(
 }
 
 fun parseTransparencySettingsResponse(data: ByteArray): TransparencySettings? {
-    if (data.size < 50) return null // 50 is arbitrary, too lazy to count
+    // Four-byte enabled flag, eight EQ floats and four controls for each ear.
+    if (data.size < 100) return null
     val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
 
     val enabled = buffer.float
@@ -146,6 +150,10 @@ fun sendTransparencySettings(writer: (ATTHandles, ByteArray) -> Unit, transparen
     debounceJob = CoroutineScope(Dispatchers.IO).launch {
         delay(100)
         try {
+            if (transparencySettings.leftEQ.size != 8 || transparencySettings.rightEQ.size != 8) {
+                Log.w(TAG, "Expected eight EQ bands per ear")
+                return@launch
+            }
             val buffer = ByteBuffer.allocate(
                 if (transparencySettings.ownVoiceAmplification != null) 104 else 100
             ).order(ByteOrder.LITTLE_ENDIAN)

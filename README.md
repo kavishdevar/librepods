@@ -72,7 +72,7 @@ The following features related to Find My are planned, but require further RE an
 
 ## Spatial Audio
 
-The app does not currently provide head tracking information to Android for the OS to perform HRTF. This has not been explored completely, and it might need root. 
+LibrePods reads AirPods motion data for live head tracking and head gestures. Android does not expose a regular app API for injecting that motion into a system spatial-audio renderer, so system HRTF head tracking remains unavailable without privileged integration.
 
 Spatializing stereo sound is beyond this project's scope and will never be available. Many OEMs have an implementation of their own for this.
 

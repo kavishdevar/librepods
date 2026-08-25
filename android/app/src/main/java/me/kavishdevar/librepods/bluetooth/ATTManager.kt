@@ -39,7 +39,7 @@ enum class ATTCCCDHandles(val value: Int) {
 }
 
 class ATTManagerv2 {
-    val characteristicList = mutableMapOf<ATTHandles, ByteArray>()
+    val characteristicList = ConcurrentHashMap<ATTHandles, ByteArray>()
 
     private val responseQueues = ConcurrentHashMap<Byte, LinkedBlockingQueue<ByteArray>>()
 
@@ -94,14 +94,18 @@ class ATTManagerv2 {
                 output.write(pdu)
                 output.flush()
             }
-            Log.d(TAG, "sending read request: ${pdu.joinToString(" ") { String.format("%02X", it) }}")
+            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                Log.v(TAG, "sending read request: ${pdu.toHexString()}")
+            }
 
             val resp = waitForResponse(0x0B, timeoutMillis) ?: run {
                 Log.e(TAG, "Timeout waiting for Read Response (0x0B) for handle ${handle.value}")
                 return null
             }
 
-            Log.d(TAG, "read response: ${resp.joinToString(" ") { String.format("%02X", it) }}")
+            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                Log.v(TAG, "read response: ${resp.toHexString()}")
+            }
             val value = resp.copyOfRange(1, resp.size)
             characteristicList[handle] = value
             return value
@@ -125,14 +129,18 @@ class ATTManagerv2 {
                 output.write(pdu)
                 output.flush()
             }
-            Log.d(TAG, "sending write request: ${pdu.joinToString(" ") { String.format("%02X", it) }}")
+            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                Log.v(TAG, "sending write request: ${pdu.toHexString()}")
+            }
 
             val resp = waitForResponse(0x13, timeoutMillis) ?: run {
                 Log.e(TAG, "timeout waiting for response (0x13) for handle ${String.format("%02X", handle)}")
                 return
             }
 
-            Log.d(TAG, "write respose: ${resp.joinToString(" ") { String.format("%02X", it) }}")
+            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                Log.v(TAG, "write response: ${resp.toHexString()}")
+            }
         } catch (e: Exception) {
             Log.e(TAG, "error writing characteristic: ${e.message}")
         }
@@ -140,6 +148,7 @@ class ATTManagerv2 {
 
     fun disconnected() {
         characteristicList.clear()
+        responseQueues.clear()
         stopReader()
         val socket = BluetoothConnectionManager.attSocket?: return
         try {
@@ -171,16 +180,25 @@ class ATTManagerv2 {
                 if (data.isEmpty()) continue
 
                 val opcode = data[0]
-                Log.d(TAG, "pdu received ${data.joinToString(" ") { String.format("%02X", it) }}")
+                if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                    Log.v(TAG, "pdu received ${data.toHexString()}")
+                }
 
-                val queue = responseQueues.computeIfAbsent(opcode) { LinkedBlockingQueue() }
-                queue.offer(data)
+                if (opcode == 0x0B.toByte() || opcode == 0x13.toByte()) {
+                    val queue = responseQueues.computeIfAbsent(opcode) { LinkedBlockingQueue() }
+                    queue.offer(data)
+                }
 
                 if (opcode == 0x1B.toByte()) {
                     if (data.size >= 3) {
                         val handle = data[1]
                         val value = if (data.size > 3) data.copyOfRange(3, data.size) else ByteArray(0)
-                        Log.d(TAG, "notification/indication handle=0x${String.format("%02X", handle)} value=${value.toHexString()}")
+                        if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                            Log.v(
+                                TAG,
+                                "notification handle=0x${String.format("%02X", handle)} value=${value.toHexString()}"
+                            )
+                        }
                         try {
                             onNotificationReceived?.invoke(handle, value)
                         } catch (t: Throwable) {

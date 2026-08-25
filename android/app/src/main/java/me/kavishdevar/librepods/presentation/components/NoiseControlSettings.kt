@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-@file:OptIn(ExperimentalEncodingApi::class)
-
 package me.kavishdevar.librepods.presentation.components
 
 import android.annotation.SuppressLint
@@ -53,6 +51,7 @@ import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,7 +78,6 @@ import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.theme.sectionHeader
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -92,38 +90,40 @@ fun NoiseControlSettings(
 ) {
     when (LocalDesignSystem.current) {
         DesignSystem.Material -> {
-            val options = buildList {
-                if (showOffListeningMode) {
+            val options = remember(showOffListeningMode) {
+                buildList {
+                    if (showOffListeningMode) {
+                        add(
+                            Triple(
+                                NoiseControlMode.OFF,
+                                R.string.off,
+                                R.drawable.noise_cancellation
+                            )
+                        )
+                    }
+
                     add(
                         Triple(
-                            NoiseControlMode.OFF,
-                            R.string.off,
+                            NoiseControlMode.TRANSPARENCY,
+                            R.string.transparency,
+                            R.drawable.transparency
+                        )
+                    )
+                    add(
+                        Triple(
+                            NoiseControlMode.ADAPTIVE,
+                            R.string.adaptive,
+                            R.drawable.adaptive
+                        )
+                    )
+                    add(
+                        Triple(
+                            NoiseControlMode.NOISE_CANCELLATION,
+                            R.string.noise_cancellation,
                             R.drawable.noise_cancellation
                         )
                     )
                 }
-
-                add(
-                    Triple(
-                        NoiseControlMode.TRANSPARENCY,
-                        R.string.transparency,
-                        R.drawable.transparency
-                    )
-                )
-                add(
-                    Triple(
-                        NoiseControlMode.ADAPTIVE,
-                        R.string.adaptive,
-                        R.drawable.adaptive
-                    )
-                )
-                add(
-                    Triple(
-                        NoiseControlMode.NOISE_CANCELLATION,
-                        R.string.noise_cancellation,
-                        R.drawable.noise_cancellation
-                    )
-                )
             }
 
             val selectedMode = NoiseControlMode.entries[(noiseControlModeValue - 1).coerceIn(0, NoiseControlMode.entries.lastIndex)]
@@ -132,7 +132,7 @@ fun NoiseControlSettings(
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
-                        .padding(top = 4.dp, bottom = 12.dp)
+                        .padding(top = 4.dp, bottom = 8.dp)
                 ) {
                     Text(
                         text = stringResource(R.string.noise_control),
@@ -147,7 +147,7 @@ fun NoiseControlSettings(
                     options.forEachIndexed { index, (mode, labelRes, iconRes) ->
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
                             modifier = Modifier.weight(1f),
                         ) {
                             ToggleButton(
@@ -164,12 +164,14 @@ fun NoiseControlSettings(
                                 },
                                 colors = ToggleButtonDefaults.toggleButtonColors()
                                     .copy(containerColor = MaterialTheme.colorScheme.surface),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
                             ) {
                                 Icon(
                                     bitmap = ImageBitmap.imageResource(iconRes),
                                     contentDescription = null,
-                                    modifier = Modifier.size(42.dp)
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
 
@@ -178,6 +180,7 @@ fun NoiseControlSettings(
                                 style = MaterialTheme.typography.labelSmall,
                                 textAlign = TextAlign.Center,
                                 maxLines = 2,
+                                lineHeight = 14.sp,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -190,59 +193,56 @@ fun NoiseControlSettings(
             val isDarkTheme = isSystemInDarkTheme()
             val backgroundColor = if (isDarkTheme) Color(0xFF1C1C1E) else Color(0xFFE3E3E8)
             val textColor = if (isDarkTheme) Color.White else Color.Black
-            val textColorSelected = if (isDarkTheme) Color.White else Color.Black
             val selectedBackground = if (isDarkTheme) Color(0xBF5C5A5F) else Color(0xFFFFFFFF)
 
-            val noiseControlMode = remember { mutableStateOf(NoiseControlMode.OFF) }
+            val receivedMode = NoiseControlMode.entries[
+                (noiseControlModeValue - 1).coerceIn(0, NoiseControlMode.entries.lastIndex)
+            ].let { mode ->
+                if (!showOffListeningMode && mode == NoiseControlMode.OFF) {
+                    NoiseControlMode.TRANSPARENCY
+                } else {
+                    mode
+                }
+            }
+            var selectedMode by remember { mutableStateOf(receivedMode) }
+            LaunchedEffect(receivedMode) {
+                selectedMode = receivedMode
+            }
 
-            val d1a = remember { mutableFloatStateOf(0f) }
-            val d2a = remember { mutableFloatStateOf(0f) }
-            val d3a = remember { mutableFloatStateOf(0f) }
-
-            // this function exists solely for the dividers, should get rid of it
-            fun onModeSelected(mode: NoiseControlMode, received: Boolean = false) {
-                val previousMode = noiseControlMode.value
-
+            fun onModeSelected(mode: NoiseControlMode) {
                 val targetMode = if (!showOffListeningMode && mode == NoiseControlMode.OFF) {
-                     NoiseControlMode.TRANSPARENCY
+                    NoiseControlMode.TRANSPARENCY
                 } else {
                     mode
                 }
 
-                noiseControlMode.value = targetMode
-
-                if (!received && targetMode != previousMode) onNoiseControlModeChanged(targetMode.ordinal + 1)
-
-
-                when (noiseControlMode.value) {
-                    NoiseControlMode.NOISE_CANCELLATION -> {
-                        d1a.floatValue = 1f
-                        d2a.floatValue = 1f
-                        d3a.floatValue = 0f
-                    }
-                    NoiseControlMode.OFF -> {
-                        d1a.floatValue = 0f
-                        d2a.floatValue = 1f
-                        d3a.floatValue = 1f
-                    }
-                    NoiseControlMode.ADAPTIVE -> {
-                        d1a.floatValue = 1f
-                        d2a.floatValue = 0f
-                        d3a.floatValue = 0f
-                    }
-                    NoiseControlMode.TRANSPARENCY -> {
-                        d1a.floatValue = 0f
-                        d2a.floatValue = 0f
-                        d3a.floatValue = 1f
-                    }
+                if (targetMode != selectedMode) {
+                    selectedMode = targetMode
+                    onNoiseControlModeChanged(targetMode.ordinal + 1)
                 }
             }
 
-
-            val index = (noiseControlModeValue - 1).coerceIn(0, NoiseControlMode.entries.size - 1)
-            noiseControlMode.value = NoiseControlMode.entries[index]
-
-            onModeSelected(noiseControlMode.value, received = true)
+            val firstDividerAlpha by animateFloatAsState(
+                targetValue = if (
+                    selectedMode == NoiseControlMode.OFF ||
+                    selectedMode == NoiseControlMode.TRANSPARENCY
+                ) 0f else 1f,
+                label = "off-transparency divider"
+            )
+            val secondDividerAlpha by animateFloatAsState(
+                targetValue = if (
+                    selectedMode == NoiseControlMode.TRANSPARENCY ||
+                    selectedMode == NoiseControlMode.ADAPTIVE
+                ) 0f else 1f,
+                label = "transparency-adaptive divider"
+            )
+            val thirdDividerAlpha by animateFloatAsState(
+                targetValue = if (
+                    selectedMode == NoiseControlMode.ADAPTIVE ||
+                    selectedMode == NoiseControlMode.NOISE_CANCELLATION
+                ) 0f else 1f,
+                label = "adaptive-noise-cancellation divider"
+            )
 
             Box(
                 modifier = Modifier
@@ -265,37 +265,29 @@ fun NoiseControlSettings(
                 val buttonCount = if (showOffListeningMode) 4 else 3
                 val buttonWidth = maxWidth / buttonCount
 
-                val isDragging = remember { mutableStateOf(false) }
-                var dragOffset by remember {
-                    mutableFloatStateOf(
-                        with(density) {
-                            when(noiseControlMode.value) {
-                                NoiseControlMode.OFF -> if (showOffListeningMode) 0f else buttonWidth.toPx()
-                                NoiseControlMode.TRANSPARENCY -> if (showOffListeningMode) buttonWidth.toPx() else 0f
-                                NoiseControlMode.ADAPTIVE -> if (showOffListeningMode) (buttonWidth * 2).toPx() else buttonWidth.toPx()
-                                NoiseControlMode.NOISE_CANCELLATION -> if (showOffListeningMode) (buttonWidth * 3).toPx() else (buttonWidth * 2).toPx()
-                            }
-                        }
+                var isDragging by remember { mutableStateOf(false) }
+                var dragOffset by remember(buttonWidth, density, showOffListeningMode) {
+                    mutableFloatStateOf(0f)
+                }
+
+                val animationSpec: AnimationSpec<Float> = remember {
+                    SpringSpec(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                        visibilityThreshold = 0.01f
                     )
                 }
 
-                val animationSpec: AnimationSpec<Float> = SpringSpec(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
-                    visibilityThreshold = 0.01f
-                )
-
-                val targetOffset = buttonWidth * when(noiseControlMode.value) {
+                val targetOffset = buttonWidth * when(selectedMode) {
                     NoiseControlMode.OFF -> if (showOffListeningMode) 0 else 1
                     NoiseControlMode.TRANSPARENCY -> if (showOffListeningMode) 1 else 0
                     NoiseControlMode.ADAPTIVE -> if (showOffListeningMode) 2 else 1
                     NoiseControlMode.NOISE_CANCELLATION -> if (showOffListeningMode) 3 else 2
                 }
+                val targetOffsetPx = with(density) { targetOffset.toPx() }
 
                 val animatedOffset by animateFloatAsState(
-                    targetValue = with(density) {
-                        if (isDragging.value) dragOffset else targetOffset.toPx()
-                    },
+                    targetValue = if (isDragging) dragOffset else targetOffsetPx,
                     animationSpec = animationSpec,
                     label = "selector"
                 )
@@ -308,93 +300,41 @@ fun NoiseControlSettings(
                             .fillMaxWidth()
                             .height(60.dp)
                             .background(backgroundColor, RoundedCornerShape(28.dp))
+                            .draggable(
+                                orientation = Orientation.Horizontal,
+                                state = rememberDraggableState { delta ->
+                                    dragOffset = (dragOffset + delta).coerceIn(
+                                        0f,
+                                        with(density) {
+                                            (buttonWidth * (buttonCount - 1)).toPx()
+                                        }
+                                    )
+                                },
+                                onDragStarted = {
+                                    dragOffset = targetOffsetPx
+                                    isDragging = true
+                                },
+                                onDragStopped = {
+                                    isDragging = false
+                                    val position = dragOffset / with(density) { buttonWidth.toPx() }
+                                    val newIndex = position.roundToInt()
+                                    val newMode = when (newIndex) {
+                                        0 -> if (showOffListeningMode) NoiseControlMode.OFF else NoiseControlMode.TRANSPARENCY
+                                        1 -> if (showOffListeningMode) NoiseControlMode.TRANSPARENCY else NoiseControlMode.ADAPTIVE
+                                        2 -> if (showOffListeningMode) NoiseControlMode.ADAPTIVE else NoiseControlMode.NOISE_CANCELLATION
+                                        3 -> NoiseControlMode.NOISE_CANCELLATION
+                                        else -> selectedMode
+                                    }
+                                    onModeSelected(newMode)
+                                }
+                            )
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            if (showOffListeningMode) {
-                                NoiseControlButton(
-                                    icon = ImageBitmap.imageResource(R.drawable.noise_cancellation),
-                                    onClick = { onModeSelected(NoiseControlMode.OFF) },
-                                    textColor = if (noiseControlMode.value == NoiseControlMode.OFF) textColorSelected else textColor,
-                                    modifier = Modifier.weight(1f),
-                                    usePadding = false
-                                )
-                                VerticalDivider(
-                                    thickness = 1.dp,
-                                    modifier = Modifier
-                                        .padding(vertical = 10.dp)
-                                        .alpha(d1a.floatValue),
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                )
-                            }
-                            NoiseControlButton(
-                                icon = ImageBitmap.imageResource(R.drawable.transparency),
-                                onClick = { onModeSelected(NoiseControlMode.TRANSPARENCY) },
-                                textColor = if (noiseControlMode.value == NoiseControlMode.TRANSPARENCY) textColorSelected else textColor,
-                                modifier = Modifier.weight(1f),
-                                usePadding = false
-                            )
-                            VerticalDivider(
-                                thickness = 1.dp,
-                                modifier = Modifier
-                                    .padding(vertical = 10.dp)
-                                    .alpha(d2a.floatValue),
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                            )
-                            NoiseControlButton(
-                                icon = ImageBitmap.imageResource(R.drawable.adaptive),
-                                onClick = { onModeSelected(NoiseControlMode.ADAPTIVE) },
-                                textColor = if (noiseControlMode.value == NoiseControlMode.ADAPTIVE) textColorSelected else textColor,
-                                modifier = Modifier.weight(1f),
-                                usePadding = false
-                            )
-                            VerticalDivider(
-                                thickness = 1.dp,
-                                modifier = Modifier
-                                    .padding(vertical = 10.dp)
-                                    .alpha(d3a.floatValue),
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                            )
-                            NoiseControlButton(
-                                icon = ImageBitmap.imageResource(R.drawable.noise_cancellation),
-                                onClick = { onModeSelected(NoiseControlMode.NOISE_CANCELLATION) },
-                                textColor = if (noiseControlMode.value == NoiseControlMode.NOISE_CANCELLATION) textColorSelected else textColor,
-                                modifier = Modifier.weight(1f),
-                                usePadding = false
-                            )
-                        }
-
                         Box(
                             modifier = Modifier
                                 .width(buttonWidth)
                                 .fillMaxHeight()
                                 .offset { IntOffset(animatedOffset.roundToInt(), 0) }
                                 .zIndex(0f)
-                                .draggable(
-                                    orientation = Orientation.Horizontal,
-                                    state = rememberDraggableState { delta ->
-                                        dragOffset = (dragOffset + delta).coerceIn(
-                                            0f,
-                                            with(density) { (buttonWidth * (buttonCount - 1)).toPx() }
-                                        )
-                                    },
-                                    onDragStarted = { isDragging.value = true },
-                                    onDragStopped = {
-                                        isDragging.value = false
-                                        val position =
-                                            dragOffset / with(density) { buttonWidth.toPx() }
-                                        val newIndex = position.roundToInt()
-                                        val newMode = when (newIndex) {
-                                            0 -> if (showOffListeningMode) NoiseControlMode.OFF else NoiseControlMode.TRANSPARENCY
-                                            1 -> if (showOffListeningMode) NoiseControlMode.TRANSPARENCY else NoiseControlMode.ADAPTIVE
-                                            2 -> if (showOffListeningMode) NoiseControlMode.ADAPTIVE else NoiseControlMode.NOISE_CANCELLATION
-                                            3 -> NoiseControlMode.NOISE_CANCELLATION
-                                            else -> noiseControlMode.value // Keep current if index is invalid
-                                        }
-                                        onModeSelected(newMode)
-                                    }
-                                )
                         ) {
                             Box(
                                 modifier = Modifier
@@ -413,7 +353,7 @@ fun NoiseControlSettings(
                                 NoiseControlButton(
                                     icon = ImageBitmap.imageResource(R.drawable.noise_cancellation),
                                     onClick = { onModeSelected(NoiseControlMode.OFF) },
-                                    textColor = if (noiseControlMode.value == NoiseControlMode.OFF) textColorSelected else textColor,
+                                    textColor = textColor,
                                     modifier = Modifier.weight(1f),
                                     usePadding = false
                                 )
@@ -421,14 +361,14 @@ fun NoiseControlSettings(
                                     thickness = 1.dp,
                                     modifier = Modifier
                                         .padding(vertical = 10.dp)
-                                        .alpha(d1a.floatValue),
+                                        .alpha(firstDividerAlpha),
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                                 )
                             }
                             NoiseControlButton(
                                 icon = ImageBitmap.imageResource(R.drawable.transparency),
                                 onClick = { onModeSelected(NoiseControlMode.TRANSPARENCY) },
-                                textColor = if (noiseControlMode.value == NoiseControlMode.TRANSPARENCY) textColorSelected else textColor,
+                                textColor = textColor,
                                 modifier = Modifier.weight(1f),
                                 usePadding = false
                             )
@@ -436,13 +376,13 @@ fun NoiseControlSettings(
                                 thickness = 1.dp,
                                 modifier = Modifier
                                     .padding(vertical = 10.dp)
-                                    .alpha(d2a.floatValue),
+                                    .alpha(secondDividerAlpha),
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                             )
                             NoiseControlButton(
                                 icon = ImageBitmap.imageResource(R.drawable.adaptive),
                                 onClick = { onModeSelected(NoiseControlMode.ADAPTIVE) },
-                                textColor = if (noiseControlMode.value == NoiseControlMode.ADAPTIVE) textColorSelected else textColor,
+                                textColor = textColor,
                                 modifier = Modifier.weight(1f),
                                 usePadding = false
                             )
@@ -450,13 +390,13 @@ fun NoiseControlSettings(
                                 thickness = 1.dp,
                                 modifier = Modifier
                                     .padding(vertical = 10.dp)
-                                    .alpha(d3a.floatValue),
+                                    .alpha(thirdDividerAlpha),
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                             )
                             NoiseControlButton(
                                 icon = ImageBitmap.imageResource(R.drawable.noise_cancellation),
                                 onClick = { onModeSelected(NoiseControlMode.NOISE_CANCELLATION) },
-                                textColor = if (noiseControlMode.value == NoiseControlMode.NOISE_CANCELLATION) textColorSelected else textColor,
+                                textColor = textColor,
                                 modifier = Modifier.weight(1f),
                                 usePadding = false
                             )

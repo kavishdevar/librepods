@@ -47,6 +47,7 @@ class AirPodsQSService : TileService() {
     private lateinit var sharedPreferences: SharedPreferences
     private var currentAncMode: Int = NoiseControlMode.OFF.ordinal + 1
     private var isAirPodsConnected: Boolean = false
+    private var receiversRegistered = false
 
     private val ancStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -112,15 +113,20 @@ class AirPodsQSService : TileService() {
             addAction(AirPodsNotifications.AIRPODS_DISCONNECTED)
         }
 
-        try {
+        if (!receiversRegistered) try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(ancStatusReceiver, ancIntentFilter, RECEIVER_EXPORTED)
-                registerReceiver(availabilityReceiver, availabilityIntentFilter, RECEIVER_EXPORTED)
+                registerReceiver(ancStatusReceiver, ancIntentFilter, RECEIVER_NOT_EXPORTED)
+                registerReceiver(
+                    availabilityReceiver,
+                    availabilityIntentFilter,
+                    RECEIVER_NOT_EXPORTED
+                )
             } else {
                 registerReceiver(ancStatusReceiver, ancIntentFilter)
                 registerReceiver(availabilityReceiver, availabilityIntentFilter)
             }
             sharedPreferences.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+            receiversRegistered = true
             Log.d("AirPodsQSService", "Receivers registered")
         } catch (e: Exception) {
             Log.e("AirPodsQSService", "Error registering receivers: $e")
@@ -132,10 +138,12 @@ class AirPodsQSService : TileService() {
     override fun onStopListening() {
         super.onStopListening()
         Log.d("AirPodsQSService", "onStopListening")
+        if (!receiversRegistered) return
         try {
             unregisterReceiver(ancStatusReceiver)
             unregisterReceiver(availabilityReceiver)
             sharedPreferences.unregisterOnSharedPreferenceChangeListener(preferenceChangeListener)
+            receiversRegistered = false
             Log.d("AirPodsQSService", "Receivers unregistered")
         } catch (e: IllegalArgumentException) {
             Log.e("AirPodsQSService", "Receiver not registered or already unregistered: $e")
@@ -152,7 +160,7 @@ class AirPodsQSService : TileService() {
             return
         }
 
-        val clickBehavior = "cycle" // sharedPreferences.getString("qs_click_behavior", "dialog") ?: "dialog"
+        val clickBehavior = sharedPreferences.getString("qs_click_behavior", "cycle") ?: "cycle"
 
         if (clickBehavior == "dialog") {
             launchDialogActivity()
@@ -214,8 +222,8 @@ class AirPodsQSService : TileService() {
             tile.icon = Icon.createWithResource(this, getModeIcon(currentAncMode))
         } else {
             tile.state = Tile.STATE_UNAVAILABLE
-            tile.label = "AirPods"
-            tile.subtitle = "Disconnected"
+            tile.label = getString(R.string.app_name)
+            tile.subtitle = getString(R.string.disconnect)
             tile.icon = Icon.createWithResource(this, R.drawable.airpods)
         }
 
@@ -254,23 +262,23 @@ class AirPodsQSService : TileService() {
 
     private fun getModeLabel(mode: Int): String {
         return when (mode) {
-            NoiseControlMode.OFF.ordinal + 1 -> "Off"
-            NoiseControlMode.TRANSPARENCY.ordinal + 1 -> "Transparency"
-            NoiseControlMode.ADAPTIVE.ordinal + 1 -> "Adaptive"
-            NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 -> "Noise Cancellation"
-            else -> "Unknown"
+            NoiseControlMode.OFF.ordinal + 1 -> getString(R.string.off)
+            NoiseControlMode.TRANSPARENCY.ordinal + 1 -> getString(R.string.transparency)
+            NoiseControlMode.ADAPTIVE.ordinal + 1 -> getString(R.string.adaptive)
+            NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 -> getString(R.string.noise_cancellation)
+            else -> getString(R.string.app_name)
         }
     }
 
-     private fun getModeIcon(mode: Int): Int {
-         return when (mode) {
-             NoiseControlMode.OFF.ordinal + 1 -> R.drawable.noise_cancellation
-             NoiseControlMode.TRANSPARENCY.ordinal + 1 -> R.drawable.transparency
-             NoiseControlMode.ADAPTIVE.ordinal + 1 -> R.drawable.adaptive
-             NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 -> R.drawable.noise_cancellation
-             else -> R.drawable.airpods
-         }
-     }
+    private fun getModeIcon(mode: Int): Int {
+        return when (mode) {
+            NoiseControlMode.OFF.ordinal + 1 -> R.drawable.ic_noise_control_off
+            NoiseControlMode.TRANSPARENCY.ordinal + 1 -> R.drawable.transparency
+            NoiseControlMode.ADAPTIVE.ordinal + 1 -> R.drawable.adaptive
+            NoiseControlMode.NOISE_CANCELLATION.ordinal + 1 -> R.drawable.noise_cancellation
+            else -> R.drawable.airpods
+        }
+    }
 
     override fun onTileAdded() {
         super.onTileAdded()

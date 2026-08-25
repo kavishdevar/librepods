@@ -28,19 +28,22 @@ import me.kavishdevar.librepods.services.AirPodsService
 
 class BootReceiver: BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
+        val appContext = context?.applicationContext ?: return
+        val setupComplete = appContext.getSharedPreferences(
+            "settings",
+            Context.MODE_PRIVATE
+        ).getBoolean("onboarding_complete", false)
+        if (!setupComplete) return
+
         when (intent?.action) {
-            Intent.ACTION_MY_PACKAGE_REPLACED -> try { context?.startForegroundService(
-                Intent(
-                    context,
-                    AirPodsService::class.java
-                )
-            ) } catch (e: Exception) { e.printStackTrace() }
-            Intent.ACTION_BOOT_COMPLETED -> try { context?.startForegroundService(
-                Intent(
-                    context,
-                    AirPodsService::class.java
-                )
-            ) } catch (e: Exception) { e.printStackTrace() }
+            Intent.ACTION_MY_PACKAGE_REPLACED -> try {
+                appContext.startForegroundService(Intent(appContext, AirPodsService::class.java))
+                me.kavishdevar.librepods.utils.OxygenOsKeepAlive.scheduleWatchdog(appContext)
+            } catch (e: Exception) { e.printStackTrace() }
+            Intent.ACTION_BOOT_COMPLETED -> try {
+                appContext.startForegroundService(Intent(appContext, AirPodsService::class.java))
+                me.kavishdevar.librepods.utils.OxygenOsKeepAlive.scheduleWatchdog(appContext)
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 }

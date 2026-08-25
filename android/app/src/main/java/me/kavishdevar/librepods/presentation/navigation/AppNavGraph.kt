@@ -22,6 +22,7 @@ import me.kavishdevar.librepods.presentation.screens.AdaptiveStrengthScreen
 import me.kavishdevar.librepods.presentation.screens.AirPodsSettingsRoute
 import me.kavishdevar.librepods.presentation.screens.AppSettingsScreen
 import me.kavishdevar.librepods.presentation.screens.CallControlScreen
+import me.kavishdevar.librepods.presentation.screens.ConnectionHealthScreen
 import me.kavishdevar.librepods.presentation.screens.EqualizerRoute
 import me.kavishdevar.librepods.presentation.screens.HeadTrackingScreen
 import me.kavishdevar.librepods.presentation.screens.HearingAidAdjustmentsScreen
@@ -86,32 +87,35 @@ fun AppNavGraph(
                         }
                     Screen.AirPodsSettings ->
                         NavEntry(screen) {
-                            if (!airPodsViewModel.isReady) LoadingScreen()
-                            AirPodsSettingsRoute(
-                                viewModel = airPodsViewModel,
-                                navigateToRename = { navigate(Screen.Rename) },
-                                navigateToHearingProtection = { navigate(Screen.HearingProtection) },
-                                navigateToHearingAid = { navigate(Screen.HearingAid) },
-                                navigateToLeftLongPress = {
-                                    navigate(
-                                        Screen.LongPress("Left")
-                                    )
-                                },
-                                navigateToRightLongPress = {
-                                    navigate(
-                                        Screen.LongPress("Right")
-                                    )
-                                },
-                                navigateToPurchase = { navigate(Screen.Purchase) },
-                                navigateToAdaptiveStrength = { navigate(Screen.AdaptiveStrength) },
-                                navigateToEqualizer = { navigate(Screen.Equalizer) },
-                                navigateToHeadTracking = { navigate(Screen.HeadTracking) },
-                                navigateToAccessibility = { navigate(Screen.Accessibility) },
-                                navigateToVersion = { navigate(Screen.VersionInfo) },
-                                navigateToTroubleshooting = { navigate(Screen.Troubleshooting) },
-                                navigateToCallControlScreen = { navigate(Screen.CallControl(it)) },
-                                navigateToMicrophoneSettings = { navigate(Screen.MicrophoneSettings) },
-                            )
+                            if (!airPodsViewModel.isReady) {
+                                LoadingScreen()
+                            } else {
+                                AirPodsSettingsRoute(
+                                    viewModel = airPodsViewModel,
+                                    navigateToRename = { navigate(Screen.Rename) },
+                                    navigateToHearingProtection = { navigate(Screen.HearingProtection) },
+                                    navigateToHearingAid = { navigate(Screen.HearingAid) },
+                                    navigateToLeftLongPress = {
+                                        navigate(
+                                            Screen.LongPress("Left")
+                                        )
+                                    },
+                                    navigateToRightLongPress = {
+                                        navigate(
+                                            Screen.LongPress("Right")
+                                        )
+                                    },
+                                    navigateToPurchase = { navigate(Screen.Purchase) },
+                                    navigateToAdaptiveStrength = { navigate(Screen.AdaptiveStrength) },
+                                    navigateToEqualizer = { navigate(Screen.Equalizer) },
+                                    navigateToHeadTracking = { navigate(Screen.HeadTracking) },
+                                    navigateToAccessibility = { navigate(Screen.Accessibility) },
+                                    navigateToVersion = { navigate(Screen.VersionInfo) },
+                                    navigateToTroubleshooting = { navigate(Screen.Troubleshooting) },
+                                    navigateToCallControlScreen = { navigate(Screen.CallControl(it)) },
+                                    navigateToMicrophoneSettings = { navigate(Screen.MicrophoneSettings) },
+                                )
+                            }
                         }
 
                     Screen.Rename ->
@@ -126,10 +130,16 @@ fun AppNavGraph(
                             AppSettingsScreen(
                                 viewModel = vm,
                                 navigateToPurchase = ::navigateToPurchase,
+                                navigateToConnectionHealth = { navigate(Screen.ConnectionHealth) },
                                 navigateToTroubleshooting = { navigate(Screen.Troubleshooting) },
                                 navigateToOpenSourceLicenses = { navigate(Screen.OpenSourceLicenses) },
                                 navigateToReleaseNotesScreen = { navigate(Screen.ReleaseNotes) }
                             )
+                        }
+
+                    Screen.ConnectionHealth ->
+                        NavEntry(screen) {
+                            ConnectionHealthScreen()
                         }
 
                     Screen.Troubleshooting ->
@@ -139,8 +149,11 @@ fun AppNavGraph(
 
                     Screen.HeadTracking ->
                         NavEntry(screen) {
-                            if (!airPodsViewModel.isReady) LoadingScreen()
-                            HeadTrackingScreen(airPodsViewModel, ::navigateToPurchase)
+                            if (!airPodsViewModel.isReady) {
+                                LoadingScreen()
+                            } else {
+                                HeadTrackingScreen(airPodsViewModel, ::navigateToPurchase)
+                            }
                         }
 
                     Screen.Accessibility ->

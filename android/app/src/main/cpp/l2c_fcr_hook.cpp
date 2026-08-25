@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <elf.h>
 #include <atomic>
+#include <inttypes.h>
 #include <jni.h>
 
 #include "l2c_fcr_hook.h"
@@ -184,13 +185,15 @@ static uintptr_t getModuleBase(const char *name) {
     while (fgets(line, sizeof(line), fp)) {
         if (strstr(line, name)) {
             base = strtoull(line, nullptr, 16);
-            LOGI("getModuleBase: found base at 0x%lx", base);
+            LOGI("getModuleBase: found base at 0x%" PRIxPTR, base);
             break;
         }
     }
 
     fclose(fp);
-    LOGI("getModuleBase: failed to find base for %s", name);
+    if (base == 0) {
+        LOGI("getModuleBase: failed to find base for %s", name);
+    }
     return base;
 }
 

@@ -39,7 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,7 +84,7 @@ fun HearingAidScreen(viewModel: AirPodsViewModel, onNavigateHearingAidAdjustment
     val showDialog = remember { mutableStateOf(false) }
     val initialLoad = remember { mutableStateOf(true) }
 
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val hearingAidEnabled = remember {
         val aidStatus = state.controlStates[AACPManager.Companion.ControlCommandIdentifiers.HEARING_AID]

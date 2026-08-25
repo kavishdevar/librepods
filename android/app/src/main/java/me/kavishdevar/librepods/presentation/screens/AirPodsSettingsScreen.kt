@@ -16,20 +16,14 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-@file:OptIn(ExperimentalEncodingApi::class)
-
 package me.kavishdevar.librepods.presentation.screens
 
 // import me.kavishdevar.librepods.utils.RadareOffsetFinder
 import android.annotation.SuppressLint
-import android.content.Context.MODE_PRIVATE
 import android.content.Intent
-import android.content.SharedPreferences
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,6 +31,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -53,6 +48,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +59,6 @@ import androidx.compose.material3.toPath
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -85,7 +80,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -93,9 +87,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.graphics.shapes.Morph
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.backdrops.layerBackdrop
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import kotlinx.coroutines.delay
 import me.kavishdevar.librepods.BuildConfig
@@ -123,8 +120,8 @@ import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AirPodsUiState
 import me.kavishdevar.librepods.presentation.viewmodel.AirPodsViewModel
 import me.kavishdevar.librepods.presentation.viewmodel.demoState
+import me.kavishdevar.librepods.utils.SpatialAudioController
 import java.util.concurrent.TimeUnit
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.min
 import kotlin.time.Duration.Companion.seconds
 
@@ -146,11 +143,19 @@ fun AirPodsSettingsRoute(
     navigateToCallControlScreen: (action: String) -> Unit,
     navigateToMicrophoneSettings: () -> Unit
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    val topPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + if (m3eEnabled) 0.dp else 84.dp
-    val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    val topPadding = if (m3eEnabled) {
+        8.dp
+    } else {
+        WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
+    }
+    val bottomPadding = if (m3eEnabled) {
+        12.dp
+    } else {
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+    }
 
     Box (
         modifier = Modifier
@@ -236,30 +241,7 @@ fun AirPodsSettingsScreen(
         activateDemoMode: () -> Unit,
         reconnectFromSavedMac: () -> Unit,
 ) {
-    val sharedPreferences = LocalContext.current.getSharedPreferences("settings", MODE_PRIVATE)
-    var deviceName by remember {
-        mutableStateOf(
-            TextFieldValue(
-                sharedPreferences.getString("name", state.deviceName).toString()
-            )
-        )
-    }
-
-    val nameChangeListener = remember {
-        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "name") {
-                deviceName =
-                    TextFieldValue(sharedPreferences.getString("name", "AirPods Pro").toString())
-            }
-        }
-    }
-
-    DisposableEffect(Unit) {
-        sharedPreferences.registerOnSharedPreferenceChangeListener(nameChangeListener)
-        onDispose {
-            sharedPreferences.unregisterOnSharedPreferenceChangeListener(nameChangeListener)
-        }
-    }
+    val context = LocalContext.current
 
     if (state.isLocallyConnected) {
         val capabilities = state.capabilities
@@ -267,12 +249,14 @@ fun AirPodsSettingsScreen(
         LazyColumn(
             modifier = Modifier
                 .background(MaterialTheme.colorScheme.surfaceContainer)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(top = topPadding, bottom = bottomPadding)
         ) {
-            item(key = "top_padding") { Spacer(modifier = Modifier.height(topPadding)) }
+            item(key = "vendor_conflict_banner") {
+                me.kavishdevar.librepods.presentation.components.VendorAacpConflictBanner()
+            }
             item(key = "play_update_banner") {
                 if (state.timeUntilFOSSPremiumExpiry > 0L) {
-                    val context = LocalContext.current
                     Box(
                         modifier = Modifier
                             .background(Color(0xFF32829B), RoundedCornerShape(28.dp))
@@ -322,7 +306,7 @@ fun AirPodsSettingsScreen(
             item(key = "name") {
                 StyledListItem(
                     name = stringResource(R.string.name),
-                    description = deviceName.text,
+                    description = state.deviceName,
                     onClick = navigateToRename,
                 )
             }
@@ -386,17 +370,10 @@ fun AirPodsSettingsScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
             item(key = "call_control") {
-                val bytes =
-                    state.controlStates[AACPManager.Companion.ControlCommandIdentifiers.CALL_MANAGEMENT_CONFIG]?.take(
-                        2
-                    )?.toByteArray() ?: byteArrayOf(0x00, 0x00)
-                val flipped = try {
-                    bytes[1] == 0x02.toByte()
-                } catch (_: Exception) {
-                    false
-                }
                 CallControlSettings(
-                    flipped = flipped,
+                    flipped = state.controlStates[
+                        AACPManager.Companion.ControlCommandIdentifiers.CALL_MANAGEMENT_CONFIG
+                    ]?.getOrNull(1) == 0x02.toByte(),
                     navigateToCallControlScreen = navigateToCallControlScreen
                 )
             }
@@ -430,13 +407,13 @@ fun AirPodsSettingsScreen(
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
             item(key = "spacer_audio") { Spacer(modifier = Modifier.height(16.dp)) }
             item(key = "audio") {
-                val model = state.instance?.model ?: AirPodsPro3()
+                val fallbackModel = remember { AirPodsPro3() }
+                val model = state.instance?.model ?: fallbackModel
                 val adaptiveVolumeCapability =
                     model.capabilities.contains(Capability.ADAPTIVE_VOLUME)
                 val conversationalAwarenessCapability =
@@ -444,7 +421,7 @@ fun AirPodsSettingsScreen(
                 val loudSoundReductionCapability =
                     model.capabilities.contains(Capability.LOUD_SOUND_REDUCTION)
                 val adaptiveAudioCapability =
-                    model.capabilities.contains(Capability.ADAPTIVE_VOLUME)
+                    model.capabilities.contains(Capability.ADAPTIVE_AUDIO)
 
                 val adaptiveVolumeChecked =
                     state.controlStates[AACPManager.Companion.ControlCommandIdentifiers.ADAPTIVE_VOLUME_CONFIG]?.getOrNull(
@@ -455,12 +432,33 @@ fun AirPodsSettingsScreen(
                         0
                     ) == 0x01.toByte()
 
+                val lifecycleOwner = LocalLifecycleOwner.current
+                var spatialAudioStatus by remember(context) {
+                    mutableStateOf(SpatialAudioController.getStatus(context))
+                }
+                DisposableEffect(lifecycleOwner, context) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            spatialAudioStatus = SpatialAudioController.getStatus(context)
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+
                 AudioSettings(
                     adaptiveVolumeCapability = adaptiveVolumeCapability,
                     conversationalAwarenessCapability = conversationalAwarenessCapability,
                     loudSoundReductionCapability = loudSoundReductionCapability,
                     adaptiveAudioCapability = adaptiveAudioCapability,
                     customEqCapability = true,
+                    systemSpatialAudioSupported = spatialAudioStatus.supported,
+                    systemSpatialAudioEnabled = spatialAudioStatus.enabled,
+                    systemSpatialAudioAvailable = spatialAudioStatus.available,
+                    systemHeadTrackerAvailable = spatialAudioStatus.headTrackerAvailable,
+                    onOpenSystemSpatialAudio = {
+                        SpatialAudioController.openSystemSettings(context)
+                    },
                     adaptiveVolumeChecked = adaptiveVolumeChecked,
                     onAdaptiveVolumeCheckedChange = { checked ->
                         setControlCommandBoolean(
@@ -535,10 +533,11 @@ fun AirPodsSettingsScreen(
                 item(key = "head_tracking") {
                     StyledListItem(
                         name = stringResource(R.string.head_gestures),
-                        description = if (sharedPreferences.getBoolean(
-                                "head_gestures", false
-                            )
-                        ) stringResource(R.string.on) else stringResource(R.string.off),
+                        description = if (state.headGesturesEnabled) {
+                            stringResource(R.string.on)
+                        } else {
+                            stringResource(R.string.off)
+                        },
                         onClick = navigateToHeadTracking
                     )
                 }
@@ -608,23 +607,21 @@ fun AirPodsSettingsScreen(
 //                item(key = "spacer_debug") { Spacer(modifier = Modifier.height(16.dp)) }
 //                item(key = "debug") { StyledListItem("debug", "Debug", navController) }
 
-            item(key = "bottom_padding") { Spacer(modifier = Modifier.height(bottomPadding)) }
         }
     } else {
+        val designSystem = LocalDesignSystem.current
         val backdrop = rememberLayerBackdrop()
         Box(
             modifier = Modifier
-                .drawBackdrop(
-                    backdrop = rememberLayerBackdrop(),
-                    exportedBackdrop = backdrop,
-                    shape = { RoundedCornerShape(0.dp) },
-                    highlight = {
-                        Highlight.Ambient.copy(alpha = 0f)
-                    },
-                    effects = {}
-                )
                 .fillMaxSize()
-                .padding(start = 8.dp, end = 8.dp, bottom = bottomPadding),
+                .padding(start = 8.dp, end = 8.dp, bottom = bottomPadding)
+                .then(
+                    if (designSystem == DesignSystem.Apple) {
+                        Modifier.layerBackdrop(backdrop)
+                    } else {
+                        Modifier
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
             val tapCount = remember { mutableIntStateOf(0) }
@@ -639,7 +636,7 @@ fun AirPodsSettingsScreen(
                 }
             }
 
-            when (LocalDesignSystem.current) {
+            when (designSystem) {
                 DesignSystem.Material -> {
                     val polygons = remember {
                         listOf(
@@ -694,6 +691,13 @@ fun AirPodsSettingsScreen(
 
                     val path = remember { Path() }
                     val scaleMatrix = remember { Matrix() }
+                    val requestReconnect = {
+                        if (!reconnecting) {
+                            currentMorphIndex = 1
+                            reconnecting = true
+                            reconnectFromSavedMac()
+                        }
+                    }
 
                     Box(
                         modifier = Modifier
@@ -734,11 +738,14 @@ fun AirPodsSettingsScreen(
                             val primaryContainerColor = MaterialTheme.colorScheme.tertiaryContainer
                             val secondaryContainerColor = MaterialTheme.colorScheme.secondaryContainer
 
-                            val animatedShapeColor by animateColorAsState(if (reconnecting) primaryContainerColor else secondaryContainerColor)
+                            val animatedShapeColor by animateColorAsState(
+                                targetValue = if (reconnecting) primaryContainerColor else secondaryContainerColor,
+                                label = "reconnect shape color"
+                            )
 
                             Box(
                                 modifier = Modifier
-                                    .size(240.dp)
+                                    .size(168.dp)
                                     .background(
                                         MaterialTheme.colorScheme.surfaceBright,
                                         CircleShape
@@ -747,41 +754,11 @@ fun AirPodsSettingsScreen(
                                         interactionSource = null,
                                         indication = ripple(
                                             bounded = false,
-                                            radius = 120.dp
+                                            radius = 84.dp
                                         ),
                                         enabled = !reconnecting,
-                                        onClick = {}
+                                        onClick = requestReconnect
                                     )
-                                    .pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onTap = {
-                                                if (!reconnecting) {
-                                                    currentMorphIndex = 1
-                                                    reconnecting = true
-                                                    reconnectFromSavedMac()
-                                                }
-                                            },
-                                            onPress = {
-                                                if (!reconnecting) {
-                                                    morphProgress.animateTo(
-                                                        targetValue = 1f,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                            stiffness = Spring.StiffnessLow
-                                                        )
-                                                    )
-                                                    tryAwaitRelease()
-                                                    morphProgress.animateTo(
-                                                        targetValue = 0f,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                            stiffness = Spring.StiffnessLow
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
                                     .drawWithContent {
                                         val activeMorph = morphs[currentMorphIndex]
 
@@ -813,19 +790,47 @@ fun AirPodsSettingsScreen(
                             ) {
                                 Icon(
                                     imageVector = if (reconnecting) MaterialIcons.bluetooth_searching else MaterialIcons.headset_off,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(84.dp),
+                                    contentDescription = stringResource(R.string.reconnect),
+                                    modifier = Modifier.size(60.dp),
                                     tint = if (reconnecting) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
 
-                            Spacer(Modifier.height(40.dp))
+                            Spacer(Modifier.height(24.dp))
 
                             Text(
-                                text = if (reconnecting) stringResource(R.string.reconnecting) else stringResource(R.string.tap_to_reconnect),
-                                style = MaterialTheme.typography.labelSmallEmphasized,
-                                color = MaterialTheme.colorScheme.primary
+                                text = if (reconnecting) {
+                                    stringResource(R.string.reconnecting)
+                                } else {
+                                    stringResource(R.string.airpods_not_connected)
+                                },
+                                style = MaterialTheme.typography.titleSmall,
+                                textAlign = TextAlign.Center
                             )
+
+                            Spacer(Modifier.height(8.dp))
+
+                            Text(
+                                text = stringResource(R.string.airpods_not_connected_description),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+
+                            Spacer(Modifier.height(20.dp))
+
+                            FilledTonalButton(
+                                onClick = requestReconnect,
+                                enabled = !reconnecting
+                            ) {
+                                Text(
+                                    text = if (reconnecting) {
+                                        stringResource(R.string.reconnecting)
+                                    } else {
+                                        stringResource(R.string.reconnect)
+                                    }
+                                )
+                            }
                         }
 
                         if (!BuildConfig.PLAY_BUILD) {

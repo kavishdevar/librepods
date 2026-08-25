@@ -42,14 +42,47 @@ fun AudioSettings(
     loudSoundReductionChecked: Boolean,
     onLoudSoundReductionCheckedChange: (Boolean) -> Unit,
 
+    systemSpatialAudioSupported: Boolean = false,
+    systemSpatialAudioEnabled: Boolean = false,
+    systemSpatialAudioAvailable: Boolean = false,
+    systemHeadTrackerAvailable: Boolean = false,
+    onOpenSystemSpatialAudio: (() -> Unit)? = null,
+
     navigateToAdaptiveStrength: () -> Unit,
     navigateToEqualizer: () -> Unit,
 
     vendorIdHook: Boolean,
     isPremium: Boolean
 ) {
-    if (adaptiveVolumeCapability || conversationalAwarenessCapability || loudSoundReductionCapability || adaptiveAudioCapability) {
+    if (adaptiveVolumeCapability || conversationalAwarenessCapability || loudSoundReductionCapability || adaptiveAudioCapability || onOpenSystemSpatialAudio != null) {
         StyledList(title = stringResource(R.string.audio)) {
+            if (onOpenSystemSpatialAudio != null) {
+                val spatialAudioDescription = when {
+                    !systemSpatialAudioSupported ->
+                        stringResource(R.string.system_spatial_audio_unsupported)
+                    systemSpatialAudioEnabled && systemSpatialAudioAvailable ->
+                        stringResource(R.string.system_spatial_audio_active)
+                    systemSpatialAudioEnabled ->
+                        stringResource(R.string.system_spatial_audio_enabled_unavailable)
+                    else -> stringResource(R.string.system_spatial_audio_off)
+                }
+                StyledListItem(
+                    name = stringResource(R.string.system_spatial_audio),
+                    description = spatialAudioDescription,
+                    onClick = onOpenSystemSpatialAudio,
+                )
+                StyledListItem(
+                    name = stringResource(R.string.head_tracked_spatial_audio),
+                    description = if (systemHeadTrackerAvailable) {
+                        stringResource(R.string.system_head_tracking_available)
+                    } else {
+                        stringResource(R.string.system_head_tracking_airpods_unavailable)
+                    },
+                    onClick = null,
+                    enabled = true,
+                )
+            }
+
             if (adaptiveVolumeCapability) {
                 StyledToggle(
                     label = stringResource(R.string.personalized_volume),

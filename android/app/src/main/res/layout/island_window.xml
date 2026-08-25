@@ -4,33 +4,38 @@
     android:id="@+id/island_window_layout"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="16dp"
+    android:layout_margin="0dp"
     android:background="@drawable/island_background"
-    android:elevation="4dp"
+    android:baselineAligned="false"
+    android:elevation="8dp"
     android:gravity="center"
-    android:minHeight="115dp"
+    android:minHeight="104dp"
     android:orientation="horizontal"
-    android:outlineAmbientShadowColor="#4EFFFFFF"
-    android:outlineSpotShadowColor="#4EFFFFFF"
-    android:padding="8dp"
+    android:outlineAmbientShadowColor="#26000000"
+    android:outlineSpotShadowColor="#40000000"
+    android:padding="10dp"
     android:clipToPadding="false"
-    android:clipChildren="false">
+    android:clipChildren="false"
+    tools:ignore="UseAppTint">
 
-    <VideoView
-        android:id="@+id/island_video_view"
-        android:layout_width="80dp"
-        android:layout_height="80dp"
-        android:layout_marginStart="8dp"
-        android:importantForAccessibility="no" />
+    <ImageView
+        android:id="@+id/island_fallback_image"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:layout_marginStart="6dp"
+        android:contentDescription="@null"
+        android:importantForAccessibility="no"
+        android:scaleType="centerInside" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_margin="0dp"
         android:layout_weight="1"
-        android:gravity="bottom"
+        android:gravity="center_vertical"
         android:orientation="vertical"
-        android:padding="12dp">
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp">
 
         <TextView
             android:id="@+id/island_connected_text"
@@ -38,14 +43,16 @@
             android:layout_height="wrap_content"
             android:layout_margin="0dp"
             android:fontFamily="@font/sf_pro"
-            android:gravity="bottom"
+            android:ellipsize="end"
+            android:gravity="center_vertical"
             android:includeFontPadding="false"
+            android:maxLines="1"
             android:lineSpacingExtra="0dp"
             android:lineSpacingMultiplier="1"
             android:padding="0dp"
             android:text="@string/island_connected_text"
             android:textColor="#707072"
-            android:textSize="16sp" />
+            android:textSize="15sp" />
 
         <TextView
             android:id="@+id/island_device_name"
@@ -53,14 +60,16 @@
             android:layout_height="wrap_content"
             android:layout_margin="0dp"
             android:fontFamily="@font/sf_pro"
-            android:gravity="bottom"
+            android:ellipsize="end"
+            android:gravity="center_vertical"
             android:includeFontPadding="false"
+            android:maxLines="1"
             android:lineSpacingExtra="0dp"
             android:lineSpacingMultiplier="1"
             android:padding="0dp"
             android:text="AirPods Pro"
             android:textColor="@color/white"
-            android:textSize="24sp"
+            android:textSize="21sp"
             tools:ignore="HardcodedText" />
     </LinearLayout>
 
@@ -74,8 +83,8 @@
         <ProgressBar
             android:id="@+id/island_battery_bg"
             style="@style/Widget.AppCompat.ProgressBar.Horizontal"
-            android:layout_width="84dp"
-            android:layout_height="84dp"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
             android:layout_gravity="center"
             android:indeterminate="false"
             android:max="100"
@@ -85,8 +94,8 @@
         <ProgressBar
             android:id="@+id/island_battery_progress"
             style="@style/Widget.AppCompat.ProgressBar.Horizontal"
-            android:layout_width="84dp"
-            android:layout_height="84dp"
+            android:layout_width="72dp"
+            android:layout_height="72dp"
             android:layout_gravity="center"
             android:indeterminate="false"
             android:max="100"
@@ -102,22 +111,20 @@
             android:gravity="center"
             android:text="50%"
             android:textColor="#1ceb72"
-            android:textSize="16sp"
+            android:textSize="15sp"
             android:textStyle="bold"
             tools:ignore="HardcodedText" />
 
         <ImageButton
             android:id="@+id/island_action_button"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
             android:layout_gravity="center"
-            android:translationX="-12dp"
             android:background="@drawable/ic_undo_button_bg"
-            android:contentDescription="@string/undo"
+            android:contentDescription="@string/take_back_audio"
             android:scaleType="centerInside"
             android:src="@drawable/ic_undo"
             android:tint="@android:color/white"
-            android:elevation="8dp"
             android:translationZ="8dp"
             android:visibility="gone" />
     </FrameLayout>

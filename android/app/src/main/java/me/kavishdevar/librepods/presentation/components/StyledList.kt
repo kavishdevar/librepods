@@ -43,7 +43,7 @@ fun StyledList(
                 modifier = Modifier
                     .background(if (m3eEnabled) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer)
                     .padding(horizontal = 16.dp)
-                    .padding(top = 4.dp, bottom = if (m3eEnabled) 12.dp else 4.dp)
+                    .padding(top = 4.dp, bottom = if (m3eEnabled) 8.dp else 4.dp)
             ) {
                 Text(
                     text = it,
@@ -65,12 +65,12 @@ fun StyledList(
                     color = MaterialTheme.colorScheme.onBackground.copy(0.8f),
                     modifier = Modifier.padding(horizontal = 16.dp)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
             scope.items.forEachIndexed { index, item ->
                 item(index, scope.items.size)
             }
-            Spacer(modifier = Modifier.height(if(m3eEnabled) 4.dp else 0.dp))
+            Spacer(modifier = Modifier.height(if(m3eEnabled) 2.dp else 0.dp))
         }
     }
     if (!m3eEnabled && description != null) {

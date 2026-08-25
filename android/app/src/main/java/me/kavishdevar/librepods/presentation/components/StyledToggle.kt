@@ -22,8 +22,8 @@ package me.kavishdevar.librepods.presentation.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,22 +45,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
@@ -79,13 +75,13 @@ fun StyledToggle(
     header: Boolean = false
 ) {
     val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
-    Column(modifier = Modifier.padding(vertical = 12.dp)) {
+    Column(modifier = Modifier.padding(vertical = if (m3eEnabled) 6.dp else 12.dp)) {
         title?.let {
             Box(
                 modifier = Modifier
                     .background(if (m3eEnabled) Color.Transparent else MaterialTheme.colorScheme.surfaceContainer)
                     .padding(horizontal = 16.dp)
-                    .padding(top = 4.dp, bottom = if (m3eEnabled) 12.dp else 4.dp)
+                    .padding(top = 4.dp, bottom = if (m3eEnabled) 8.dp else 4.dp)
             ) {
                 Text(
                     text = it,
@@ -176,9 +172,6 @@ private fun StyledToggleContent(
     val isDarkTheme = isSystemInDarkTheme()
     val textColor = if (isDarkTheme) Color.White else Color.Black
 
-    val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-
     val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
 
     if (m3eEnabled) {
@@ -245,7 +238,7 @@ private fun StyledToggleContent(
                 },
                 enabled = enabled,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.heightIn(min = 64.dp),
+                modifier = Modifier.heightIn(min = 56.dp),
                 colors = if (header) ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.primaryContainer) else ListItemDefaults.segmentedColors()
             )
             if (index+1 != count) {
@@ -253,34 +246,29 @@ private fun StyledToggleContent(
             }
         }
     } else {
-        val isPressed = remember { mutableStateOf(false) }
+        val interactionSource = remember { MutableInteractionSource() }
+        val isPressed by interactionSource.collectIsPressedAsState()
         Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
                         shape = RoundedCornerShape(28.dp),
-                        color = if (isPressed.value) Color(0xFFE0E0E0) else Color.Transparent
+                        color = if (isPressed && enabled) {
+                            MaterialTheme.colorScheme.surfaceDim
+                        } else {
+                            Color.Transparent
+                        }
                     )
-                    .padding(16.dp)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                isPressed.value = true
-                                tryAwaitRelease()
-                                isPressed.value = false
-                            }
-                        )
-                    }
                     .clickable(
                         indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
+                        interactionSource = interactionSource,
+                        enabled = enabled,
+                        role = Role.Switch
                     ) {
-                        if (enabled) {
-                            scope.launch { haptics.performHapticFeedback(if (!currentChecked) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff) }
-                            onCheckedChange(!currentChecked)
-                        }
-                    },
+                        onCheckedChange(!currentChecked)
+                    }
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(

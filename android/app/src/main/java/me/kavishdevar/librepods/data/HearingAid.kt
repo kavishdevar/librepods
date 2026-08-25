@@ -144,15 +144,23 @@ fun sendHearingAidSettings(
     sender: (ATTHandles, ByteArray) -> Unit
 ) {
     debounceJob.value?.cancel()
+    // Do not mutate the ATT cache/UI snapshot handed to us while a debounced write is pending.
+    val payload = currentData.copyOf()
     debounceJob.value = CoroutineScope(Dispatchers.IO).launch {
         delay(100.milliseconds)
         try {
-            Log.d(TAG, "Current data before update: ${currentData.joinToString(" ") { String.format("%02X", it) }}")
-            if (currentData.size < 104) {
-                Log.w(TAG, "Current data size ${currentData.size} too small, cannot send settings")
+            if (payload.size < 104) {
+                Log.w(TAG, "Current data size ${payload.size} too small, cannot send settings")
                 return@launch
             }
-            val buffer = ByteBuffer.wrap(currentData).order(ByteOrder.LITTLE_ENDIAN)
+            if (hearingAidSettings.leftEQ.size < 8 || hearingAidSettings.rightEQ.size < 8) {
+                Log.w(TAG, "Expected eight EQ bands per ear")
+                return@launch
+            }
+            if (Log.isLoggable(TAG, Log.DEBUG)) {
+                Log.d(TAG, "Updating ${payload.size}-byte hearing-aid settings payload")
+            }
+            val buffer = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
 
             // for some reason
             buffer.put(2, 0x64)
@@ -182,9 +190,7 @@ fun sendHearingAidSettings(
             // Own voice amplification
             buffer.putFloat(100, hearingAidSettings.ownVoiceAmplification)
 
-            Log.d(TAG, "Sending updated settings: ${currentData.joinToString(" ") { String.format("%02X", it) }}")
-
-            sender(ATTHandles.HEARING_AID, currentData)
+            sender(ATTHandles.HEARING_AID, payload)
         } catch (e: IOException) {
             e.printStackTrace()
         }

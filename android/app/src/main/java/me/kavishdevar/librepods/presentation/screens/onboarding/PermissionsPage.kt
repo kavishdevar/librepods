@@ -34,6 +34,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -57,11 +58,20 @@ fun PermissionsPage(
     onBackward: () -> Unit,
     onForward: () -> Unit
 ) {
-
-    var grantingAll = false
-
     val context = LocalContext.current
+    var grantingAll by remember { mutableStateOf(false) }
     val canDrawOverlays = remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+    val isIgnoringBatteryOptimizations = remember(context, powerManager) {
+        mutableStateOf(powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true)
+    }
+    val openOverlaySettings = {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            "package:${context.packageName}".toUri()
+        )
+        context.startActivity(intent)
+    }
 
     val phonePermissionState = rememberMultiplePermissionsState(
         listOf(
@@ -71,11 +81,7 @@ fun PermissionsPage(
     ) {
         if (grantingAll) {
             if (!canDrawOverlays.value) {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    "package:${context.packageName}".toUri()
-                )
-                context.startActivity(intent)
+                openOverlaySettings()
             }
         }
     }
@@ -84,7 +90,7 @@ fun PermissionsPage(
     val notificationPermissionState = rememberPermissionState("android.permission.POST_NOTIFICATIONS") {
         if (grantingAll) {
             if (!phonePermissionState.allPermissionsGranted) phonePermissionState.launchMultiplePermissionRequest()
-            else if (!canDrawOverlays.value) canDrawOverlays.value = Settings.canDrawOverlays(context)
+            else if (!canDrawOverlays.value) openOverlaySettings()
         }
     }
 
@@ -94,14 +100,13 @@ fun PermissionsPage(
             "android.permission.BLUETOOTH_CONNECT",
             "android.permission.BLUETOOTH_SCAN",
             "android.permission.BLUETOOTH",
-            "android.permission.BLUETOOTH_ADMIN",
-            "android.permission.BLUETOOTH_ADVERTISE"
+            "android.permission.BLUETOOTH_ADMIN"
         )
     ) {
         if (grantingAll) {
             if (!notificationPermissionState.status.isGranted) notificationPermissionState.launchPermissionRequest()
             else if (!phonePermissionState.allPermissionsGranted) phonePermissionState.launchMultiplePermissionRequest()
-            else if (!canDrawOverlays.value) canDrawOverlays.value = Settings.canDrawOverlays(context)
+            else if (!canDrawOverlays.value) openOverlaySettings()
         }
     }
 
@@ -111,6 +116,8 @@ fun PermissionsPage(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 canDrawOverlays.value = Settings.canDrawOverlays(context)
+                isIgnoringBatteryOptimizations.value =
+                    powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
             }
         }
 
@@ -255,11 +262,7 @@ fun PermissionsPage(
                 onClick = if (!canDrawOverlays.value) {
                     {
                         grantingAll = false
-                        val intent = Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            "package:${context.packageName}".toUri()
-                        )
-                        context.startActivity(intent)
+                        openOverlaySettings()
                     }
                 } else null,
                 description = "Show popups when AirPods are nearby or audio switches to them.",
@@ -280,6 +283,48 @@ fun PermissionsPage(
                             contentDescription = "bluetooth",
                             modifier = Modifier.size(24.dp),
                             tint = animatedOverlayIconColor
+                        )
+                    }
+                },
+            )
+
+            val animatedBatteryOptIconColor by animateColorAsState(if (isIgnoringBatteryOptimizations.value) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+            val animatedBatteryOptContainerColor by animateColorAsState(if (isIgnoringBatteryOptimizations.value) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest)
+
+            StyledListItem(
+                name = "Unrestricted Battery",
+                onClick = if (!isIgnoringBatteryOptimizations.value) {
+                    {
+                        grantingAll = false
+                        val intent = Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            "package:${context.packageName}".toUri()
+                        )
+                        try {
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        }
+                    }
+                } else null,
+                description = "Prevent OxygenOS/Android from terminating ear detection and background services.",
+                orientation = ListItemOrientation.Vertical,
+                leadingContent = {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                animatedBatteryOptContainerColor,
+                                MaterialShapes.SoftBurst.normalized()
+                                    .toShape()
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = MaterialIcons.battery_saver,
+                            contentDescription = "battery_optimization",
+                            modifier = Modifier.size(24.dp),
+                            tint = animatedBatteryOptIconColor
                         )
                     }
                 },
@@ -310,8 +355,7 @@ fun PermissionsPage(
                         if (!bluetoothPermissionsState.allPermissionsGranted) bluetoothPermissionsState.launchMultiplePermissionRequest()
                         else if (!notificationPermissionState.status.isGranted) notificationPermissionState.launchPermissionRequest()
                         else if (!phonePermissionState.allPermissionsGranted) phonePermissionState.launchMultiplePermissionRequest()
-                        else if (!canDrawOverlays.value) canDrawOverlays.value =
-                            Settings.canDrawOverlays(context)
+                        else if (!canDrawOverlays.value) openOverlaySettings()
                     },
                     modifier = Modifier
                         .height(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Narrow).height)

@@ -93,11 +93,9 @@ fun StyledScaffold(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     content: @Composable () -> Unit
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
-    val hazeState = rememberHazeState(blurEnabled = true)
-
     when (LocalDesignSystem.current) {
         DesignSystem.Material -> {
+            val actionBackdrop = rememberLayerBackdrop()
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -116,13 +114,13 @@ fun StyledScaffold(
                                             onClick = onNavigateBack,
                                             modifier = Modifier
                                                 .minimumInteractiveComponentSize()
-                                                .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Narrow)),
+                                                .size(48.dp),
                                             shape = IconButtonDefaults.mediumRoundShape
                                         ) {
                                             Icon(
                                                 Icons.AutoMirrored.Default.ArrowBack,
                                                 contentDescription = "",
-                                                modifier = Modifier.size(IconButtonDefaults.mediumIconSize),
+                                                modifier = Modifier.size(24.dp),
                                             )
                                         }
                                     }
@@ -141,7 +139,7 @@ fun StyledScaffold(
                             },
                             actions = {
                                 actionButtons.forEach { actionButton ->
-                                    actionButton(rememberLayerBackdrop())
+                                    actionButton(actionBackdrop)
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                             },
@@ -154,13 +152,14 @@ fun StyledScaffold(
                     modifier = modifier
                         .then(if (visible) Modifier.padding(paddingValues) else Modifier)
                         .fillMaxSize()
-                        .hazeSource(hazeState)
                 ) {
                     content()
                 }
             }
         }
         DesignSystem.Apple -> {
+            val isDarkTheme = isSystemInDarkTheme()
+            val hazeState = rememberHazeState(blurEnabled = true)
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 snackbarHost = { SnackbarHost(snackbarHostState) },

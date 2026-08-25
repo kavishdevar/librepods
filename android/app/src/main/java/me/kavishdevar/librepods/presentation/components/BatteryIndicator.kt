@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.data.BatteryStatus
 import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
+import me.kavishdevar.librepods.utils.BatteryLevels
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
@@ -69,17 +70,24 @@ fun BatteryIndicator(
 ) {
     val isDarkTheme = isSystemInDarkTheme()
     val batteryTextColor = if (isDarkTheme) Color.White else Color.Black
+    val known = BatteryLevels.isKnown(batteryPercentage)
     val batteryFillColor =
-        if (batteryPercentage > 25) if (isDarkTheme) Color(0xFF2ED158) else Color(0xFF35C759)
+        if (!known) (if (isDarkTheme) Color(0xFF8E8E93) else Color(0xFF8E8E93))
+        else if (batteryPercentage > 25) if (isDarkTheme) Color(0xFF2ED158) else Color(0xFF35C759)
         else if (isDarkTheme) Color(0xFFFC4244) else Color(0xFFfe373C)
 
     val initialScale = if (previousCharging) 1f else 0f
     val scaleAnim = remember { Animatable(initialScale) }
     val charging = status == BatteryStatus.CHARGING || status == BatteryStatus.OPTIMIZED_CHARGING
     val targetScale = if (charging) 1f else 0f
+    val targetProgress = if (known) (batteryPercentage / 100f).coerceIn(0f, 1f) else 0f
+    val sweepAnim = remember { Animatable(targetProgress) }
 
     LaunchedEffect(previousCharging, charging) {
         scaleAnim.animateTo(targetScale, animationSpec = tween(durationMillis = 250))
+    }
+    LaunchedEffect(batteryPercentage, status) {
+        sweepAnim.animateTo(targetProgress, animationSpec = tween(durationMillis = 400))
     }
 
     Column(
@@ -94,7 +102,7 @@ fun BatteryIndicator(
 
             val trackColor = if (isDarkTheme) Color(0xFF272728) else Color(0xFFE3E3E8)
             val optimizedLimit = 0.8f
-            val progress = batteryPercentage / 100f
+            val progress = sweepAnim.value
 
             Canvas(modifier = Modifier.size(34.dp)) {
                 val startAngle = -90f
@@ -187,7 +195,7 @@ fun BatteryIndicator(
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "$prefix $batteryPercentage%",
+            text = if (known) "$prefix ${batteryPercentage}%" else "$prefix —",
             color = batteryTextColor,
             style = TextStyle(
                 fontSize = 14.sp,

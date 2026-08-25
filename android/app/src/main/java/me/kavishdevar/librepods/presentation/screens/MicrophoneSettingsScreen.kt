@@ -15,7 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -33,7 +33,7 @@ import me.kavishdevar.librepods.presentation.viewmodel.AirPodsViewModel
 fun MicrophoneSettingsRoute(
     viewModel: AirPodsViewModel
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
     val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
@@ -76,7 +76,10 @@ fun MicrophoneSettingsScreen(
     ) {
         Spacer(modifier = Modifier.height(topPadding))
 
-        StyledList {
+        StyledList(
+            description = "Automatic is recommended. Left and Right only choose which AirPod " +
+                "supplies the microphone; this cannot change Android's Bluetooth HFP call codec."
+        ) {
             StyledListItem(
                 name = stringResource(R.string.microphone_automatic),
                 selected = selectedMode == 0,

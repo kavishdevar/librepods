@@ -1,6 +1,7 @@
 package me.kavishdevar.librepods.presentation.viewmodel
 
 import android.app.Application
+import android.app.NotificationManager
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
@@ -13,6 +14,9 @@ import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.BuildConfig
 import me.kavishdevar.librepods.billing.BillingManager
 import me.kavishdevar.librepods.data.XposedRemotePrefProvider
+import me.kavishdevar.librepods.presentation.overlays.ConnectionAlertStyle
+import me.kavishdevar.librepods.presentation.overlays.LiveAlertSupport
+import me.kavishdevar.librepods.services.AirPodsService
 import kotlin.math.roundToInt
 
 data class AppSettingsUiState(
@@ -36,6 +40,11 @@ data class AppSettingsUiState(
     val connectionSuccessful: Boolean = false,
     val showBottomSheetPopup: Boolean = true,
     val showIslandPopup: Boolean = true,
+    val showNotificationInShade: Boolean = false,
+    val connectionAlertStyle: ConnectionAlertStyle = ConnectionAlertStyle.CAMERA_CUTOUT,
+    val systemLiveAlertsSupported: Boolean = false,
+    val systemLiveAlertsAllowed: Boolean = false,
+    val backgroundServiceNoticeHidden: Boolean = false,
     val timeUntilFOSSPremiumExpiry: Long = 0L,
     val m3eEnabled: Boolean = false
 )
@@ -152,9 +161,53 @@ class AppSettingsViewModel(application: Application) : AndroidViewModel(applicat
                 connectionSuccessful = sharedPreferences.getBoolean("connection_successful", false),
                 showBottomSheetPopup = sharedPreferences.getBoolean("show_bottom_sheet_popup", true),
                 showIslandPopup = sharedPreferences.getBoolean("show_island_popup", true),
+                showNotificationInShade = sharedPreferences.getBoolean("show_notification_in_shade", false),
+                connectionAlertStyle = ConnectionAlertStyle.fromPreferences(sharedPreferences),
+                systemLiveAlertsSupported = LiveAlertSupport.isSupported,
+                systemLiveAlertsAllowed = LiveAlertSupport.canPost(getApplication()),
+                backgroundServiceNoticeHidden = isBackgroundServiceNoticeHidden(),
                 m3eEnabled = sharedPreferences.getBoolean("m3e_enabled", true)
             )
         }
+    }
+
+    fun setShowNotificationInShade(enabled: Boolean) {
+        sharedPreferences.edit { putBoolean("show_notification_in_shade", enabled) }
+        _uiState.update { it.copy(showNotificationInShade = enabled) }
+    }
+
+    fun setConnectionAlertStyle(style: ConnectionAlertStyle) {
+        sharedPreferences.edit {
+            putString(ConnectionAlertStyle.PREFERENCE_KEY, style.preferenceValue)
+            // Keep legacy preferences coherent for downgrades and older code paths.
+            putBoolean("show_island_popup", style == ConnectionAlertStyle.CAMERA_CUTOUT)
+            putBoolean("show_bottom_sheet_popup", style == ConnectionAlertStyle.BOTTOM_SHEET)
+        }
+        _uiState.update {
+            it.copy(
+                connectionAlertStyle = style,
+                showIslandPopup = style == ConnectionAlertStyle.CAMERA_CUTOUT,
+                showBottomSheetPopup = style == ConnectionAlertStyle.BOTTOM_SHEET,
+                systemLiveAlertsAllowed = LiveAlertSupport.canPost(getApplication())
+            )
+        }
+    }
+
+    fun refreshLiveAlertAccess() {
+        _uiState.update {
+            it.copy(
+                systemLiveAlertsAllowed = LiveAlertSupport.canPost(getApplication()),
+                backgroundServiceNoticeHidden = isBackgroundServiceNoticeHidden()
+            )
+        }
+    }
+
+    private fun isBackgroundServiceNoticeHidden(): Boolean {
+        val notificationManager = getApplication<Application>()
+            .getSystemService(NotificationManager::class.java)
+        return notificationManager
+            .getNotificationChannel(AirPodsService.BACKGROUND_CHANNEL_ID)
+            ?.importance == NotificationManager.IMPORTANCE_NONE
     }
 
     fun setShowPhoneBatteryInWidget(enabled: Boolean) {

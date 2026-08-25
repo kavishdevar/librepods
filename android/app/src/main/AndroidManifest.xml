@@ -10,8 +10,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
         tools:ignore="ForegroundServicesPolicy" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission
@@ -26,12 +29,13 @@
     <uses-permission
         android:name="android.permission.INTERACT_ACROSS_USERS"
         tools:ignore="ProtectedPermissions" />
-    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation"
         tools:ignore="UnusedAttribute" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -44,7 +48,7 @@
 
     <application
         android:name=".LibrePodsApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_rules"
@@ -109,7 +113,7 @@
         <service
             android:name=".services.AirPodsService"
             android:enabled="true"
-            android:exported="true"
+            android:exported="false"
             android:foregroundServiceType="connectedDevice"
             android:permission="android.permission.BLUETOOTH_CONNECT" />
         <service
@@ -143,7 +147,6 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"

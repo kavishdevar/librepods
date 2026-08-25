@@ -35,7 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -70,9 +70,9 @@ fun OpenSourceLicensesScreen() {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Spacer(modifier = Modifier.height(topPadding))
-        val context = LocalContext.current
+        val resources = LocalResources.current
         val libraries by produceLibraries {
-            context.resources.openRawResource(R.raw.aboutlibraries)
+            resources.openRawResource(R.raw.aboutlibraries)
                 .bufferedReader()
                 .use { it.readText() }
         }

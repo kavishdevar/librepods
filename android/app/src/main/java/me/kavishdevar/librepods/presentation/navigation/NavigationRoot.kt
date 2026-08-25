@@ -1,6 +1,5 @@
 package me.kavishdevar.librepods.presentation.navigation
 
-import android.util.Log
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -11,20 +10,32 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kyant.backdrop.backdrops.LayerBackdrop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.presentation.MaterialIcons
 import me.kavishdevar.librepods.presentation.components.StyledIconButton
 import me.kavishdevar.librepods.presentation.components.StyledScaffold
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.presentation.viewmodel.AirPodsUiState
 import me.kavishdevar.librepods.presentation.viewmodel.AirPodsViewModel
+
+@Immutable
+private data class NavigationChromeState(
+    val isLocallyConnected: Boolean,
+    val deviceName: String,
+    val headTrackingActive: Boolean,
+)
 
 @Composable
 fun NavigationRoot(
@@ -46,16 +57,27 @@ fun NavigationRoot(
 
     val currentScreen = backStack.last()
 
-    val state by airPodsViewModel.uiState.collectAsState()
+    val initialChromeState = remember(airPodsViewModel) {
+        airPodsViewModel.uiState.value.toNavigationChromeState()
+    }
+    val chromeStateFlow = remember(airPodsViewModel) {
+        airPodsViewModel.uiState
+            .map { it.toNavigationChromeState() }
+            .distinctUntilChanged()
+    }
+    val chromeState by chromeStateFlow.collectAsStateWithLifecycle(
+        initialValue = initialChromeState
+    )
 
     val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
 
     val title = when (currentScreen) {
         Screen.Onboarding -> ""
-        Screen.AirPodsSettings -> if (state.isLocallyConnected) state.deviceName else stringResource(R.string.app_name)
+        Screen.AirPodsSettings -> if (chromeState.isLocallyConnected) chromeState.deviceName else stringResource(R.string.app_name)
         Screen.Accessibility -> stringResource(R.string.accessibility)
         Screen.AdaptiveStrength -> stringResource(R.string.customize_adaptive_audio)
         Screen.AppSettings -> stringResource(R.string.settings)
+        Screen.ConnectionHealth -> stringResource(R.string.connection_health)
 //        Screen.CameraControl -> stringResource(R.string.camera_control)
         Screen.Equalizer -> stringResource(R.string.equalizer)
         Screen.HeadTracking -> stringResource(R.string.head_tracking)
@@ -75,7 +97,6 @@ fun NavigationRoot(
         Screen.ReleaseNotes -> ""
     }
 
-    // is this a bad idea? probably. I can't think of a better way without having to pass around a shouldShowBackButton to each screen to pass to each scaffold
     val actionButtons = when (currentScreen) {
         Screen.AirPodsSettings -> listOf<@Composable (backdrop: LayerBackdrop) -> Unit>(
                 { scaffoldBackdrop ->
@@ -84,13 +105,13 @@ fun NavigationRoot(
                             onClick = { backStack.add(Screen.AppSettings) },
                             modifier = Modifier
                                 .minimumInteractiveComponentSize()
-                                .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Uniform)),
+                                .size(48.dp),
 
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Settings,
-                                contentDescription = "settings",
-                                modifier = Modifier.size(IconButtonDefaults.mediumIconSize)
+                                contentDescription = stringResource(R.string.settings),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     } else {
@@ -106,31 +127,29 @@ fun NavigationRoot(
             { scaffoldBackdrop ->
                 if (m3eEnabled) {
                     FilledTonalIconToggleButton(
-                        checked = state.headTrackingActive,
+                        checked = chromeState.headTrackingActive,
                         onCheckedChange = { if (it) airPodsViewModel.startHeadTracking() else airPodsViewModel.stopHeadTracking() },
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
-                            .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Uniform)),
+                            .size(48.dp),
                         shape = IconButtonDefaults.mediumRoundShape
                     ) {
                         Icon(
-                            imageVector = if (state.headTrackingActive) MaterialIcons.pause else Icons.Default.PlayArrow,
-                            contentDescription = "Play/Pause",
-                            modifier = Modifier.size(IconButtonDefaults.mediumIconSize)
+                            imageVector = if (chromeState.headTrackingActive) MaterialIcons.pause else Icons.Default.PlayArrow,
+                            contentDescription = stringResource(R.string.head_tracking),
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 } else {
                     StyledIconButton(
                         onClick = {
-                            if (!state.headTrackingActive) {
+                            if (!chromeState.headTrackingActive) {
                                 airPodsViewModel.startHeadTracking()
-                                Log.d("HeadTrackingScreen", "Head tracking started")
                             } else {
                                 airPodsViewModel.stopHeadTracking()
-                                Log.d("HeadTrackingScreen", "Head tracking stopped")
                             }
                         },
-                        icon = if (state.headTrackingActive) "􀊅" else "􀊃",
+                        icon = if (chromeState.headTrackingActive) "􀊅" else "􀊃",
                         backdrop = scaffoldBackdrop
                     )
                 }
@@ -156,3 +175,10 @@ fun NavigationRoot(
         )
     }
 }
+
+private fun AirPodsUiState.toNavigationChromeState() =
+    NavigationChromeState(
+        isLocallyConnected = isLocallyConnected,
+        deviceName = deviceName,
+        headTrackingActive = headTrackingActive,
+    )

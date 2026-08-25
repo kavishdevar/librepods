@@ -43,7 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,7 +79,7 @@ private const val TAG = "UpdateHearingTestScreen"
 
 @Composable
 fun UpdateHearingTestRoute(viewModel: AirPodsViewModel) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
     val topPadding = if (m3eEnabled) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 84.dp
     val bottomPadding = if (m3eEnabled) 0.dp else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
@@ -329,4 +329,3 @@ fun UpdateHearingTestScreenPreviewMaterial() {
         }
     }
 }
-

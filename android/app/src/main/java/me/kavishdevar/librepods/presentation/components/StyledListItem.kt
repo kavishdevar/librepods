@@ -22,7 +22,9 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,25 +49,21 @@ import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
@@ -176,16 +174,38 @@ private fun StyledListItemContent(
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null
 ) {
-    val isDarkTheme = isSystemInDarkTheme()
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val surfaceDimColor = MaterialTheme.colorScheme.surfaceDim
-    var backgroundColor by remember { mutableStateOf(surfaceColor) }
-    val animatedBackgroundColor by animateColorAsState(targetValue = backgroundColor, animationSpec = tween(durationMillis = 500))
-    val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-
     when (LocalDesignSystem.current) {
         DesignSystem.Apple -> {
+            val isDarkTheme = isSystemInDarkTheme()
+            val haptics = LocalHapticFeedback.current
+            val interactionSource = remember { MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            val itemEnabled = enabled && onClick != null
+            val animatedBackgroundColor by animateColorAsState(
+                targetValue = if (isPressed && itemEnabled) {
+                    MaterialTheme.colorScheme.surfaceDim
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                animationSpec = tween(durationMillis = 120),
+                label = "list item press"
+            )
+            val itemShape = when {
+                index == 0 && count == 1 -> RoundedCornerShape(28.dp)
+                index == 0 -> RoundedCornerShape(
+                    topStart = 28.dp,
+                    topEnd = 28.dp,
+                    bottomStart = 0.dp,
+                    bottomEnd = 0.dp
+                )
+                index + 1 == count -> RoundedCornerShape(
+                    topStart = 0.dp,
+                    topEnd = 0.dp,
+                    bottomStart = 28.dp,
+                    bottomEnd = 28.dp
+                )
+                else -> RectangleShape
+            }
             val trailingContentDefault: @Composable () -> Unit = {
                 if (trailingContent == null) {
                     if (onClick != null) {
@@ -220,56 +240,15 @@ private fun StyledListItemContent(
             }
             Column (
                 modifier = Modifier
-                    .background(
-                        animatedBackgroundColor,
-                        when {
-                            (index == 0 && count == 1) -> {
-                                RoundedCornerShape(28.dp)
-                            }
-
-                            (index == 0) -> {
-                                RoundedCornerShape(
-                                    topStart = 28.dp,
-                                    topEnd = 28.dp,
-                                    bottomStart = 0.dp,
-                                    bottomEnd = 0.dp
-                                )
-                            }
-
-                            (index + 1 == count) -> {
-                                RoundedCornerShape(
-                                    topStart = 0.dp,
-                                    topEnd = 0.dp,
-                                    bottomStart = 28.dp,
-                                    bottomEnd = 28.dp
-                                )
-                            }
-
-                            else -> {
-                                RectangleShape
-                            }
-                        }
-                    )
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onPress = {
-                                if (enabled) {
-                                    backgroundColor = surfaceDimColor
-                                    tryAwaitRelease()
-                                    backgroundColor = surfaceColor
-                                }
-                            },
-                            onTap = {
-                                if (enabled) {
-                                    scope.launch {
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.ContextClick
-                                        )
-                                    }
-                                    onClick?.invoke()
-                                }
-                            }
-                        )
+                    .background(animatedBackgroundColor, itemShape)
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        enabled = itemEnabled,
+                        role = Role.Button
+                    ) {
+                        haptics.performHapticFeedback(HapticFeedbackType.ContextClick)
+                        onClick?.invoke()
                     }
                     .heightIn(min = height)
                     .padding(horizontal = 16.dp)
@@ -345,7 +324,7 @@ private fun StyledListItemContent(
             }
             Column {
                 SegmentedListItem(
-                    modifier = modifier.heightIn(min = 64.dp),
+                    modifier = modifier.heightIn(min = 56.dp),
                     shapes = ListItemDefaults.shapes().copy(
                         shape = defaultShape,
                         pressedShape = RoundedCornerShape(24.dp),
@@ -382,8 +361,8 @@ private fun StyledListItemContent(
                             text = name,
                             style = MaterialTheme.typography.labelMediumEmphasized,
                             modifier = Modifier.padding(
-                                top = 4.dp,
-                                bottom = if (description != null) 0.dp else 4.dp
+                                top = 2.dp,
+                                bottom = if (description != null) 0.dp else 2.dp
                             )
                         )
                     },

@@ -359,7 +359,7 @@ fun NewControlCenterDialogContent(
         }
         val filter = IntentFilter(AirPodsNotifications.ANC_DATA)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(ancReceiver, filter, Context.RECEIVER_EXPORTED)
+            context.registerReceiver(ancReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             context.registerReceiver(ancReceiver, filter)
         }
@@ -405,14 +405,7 @@ fun NewControlCenterDialogContent(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
-            .padding(horizontal = 24.dp)
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        awaitPointerEvent()
-                    }
-                }
-            },
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {

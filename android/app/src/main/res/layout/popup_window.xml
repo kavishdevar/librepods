@@ -44,13 +44,13 @@
             app:layout_constraintTop_toTopOf="parent"
             tools:ignore="HardcodedText" />
     </androidx.constraintlayout.widget.ConstraintLayout>
-    <VideoView
+    <ImageView
+        android:id="@+id/popup_fallback_image"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:id="@+id/video"
-        android:contentDescription="AirPods"
-        android:src="@raw/connected"
-        tools:ignore="HardcodedText" />
+        android:layout_height="192dp"
+        android:layout_marginHorizontal="24dp"
+        android:contentDescription="@string/buds"
+        android:scaleType="fitCenter" />
 
     <LinearLayout
         android:layout_width="match_parent"

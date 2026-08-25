@@ -44,7 +44,9 @@ enum class Capability {
     ADAPTIVE_AUDIO,
     ADAPTIVE_VOLUME,
     SWIPE_FOR_VOLUME,
-    HRM
+    HRM,
+    CUSTOM_EQ,
+    SPATIAL_AUDIO
 }
 
 class AirPods: AirPodsBase(
@@ -137,7 +139,9 @@ class AirPods4ANC: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.SLEEP_DETECTION,
         Capability.ADAPTIVE_VOLUME,
-        Capability.STEM_CONFIG
+        Capability.STEM_CONFIG,
+        Capability.CUSTOM_EQ,
+        Capability.SPATIAL_AUDIO
     )
 )
 
@@ -184,7 +188,9 @@ class AirPodsPro2Lightning: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.ADAPTIVE_VOLUME,
         Capability.SWIPE_FOR_VOLUME,
-        Capability.HEAD_GESTURES
+        Capability.HEAD_GESTURES,
+        Capability.CUSTOM_EQ,
+        Capability.SPATIAL_AUDIO
     )
 )
 
@@ -212,23 +218,21 @@ class AirPodsPro2USBC: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.ADAPTIVE_VOLUME,
         Capability.SWIPE_FOR_VOLUME,
-        Capability.HEAD_GESTURES
+        Capability.HEAD_GESTURES,
+        Capability.CUSTOM_EQ,
+        Capability.SPATIAL_AUDIO
     )
 )
 
 class AirPodsPro3: AirPodsBase(
-    modelNumber = listOf("A3063", "A3064", "A3065"),
+    modelNumber = listOf("A3063", "A3064", "A3065", "A3122"),
     name = "AirPods Pro 3",
-    displayName = "AirPods Pro",
-    // budCaseRes = R.drawable.airpods_pro_3
+    displayName = "AirPods Pro 3",
+    // Reuse the bundled Pro artwork until redistributable Pro 3 assets are available.
     budCaseRes = R.drawable.airpods_pro_2,
-    // budsRes = R.drawable.airpods_pro_3_buds
     budsRes = R.drawable.airpods_pro_2_buds,
-    // leftBudsRes = R.drawable.airpods_pro_3_left
     leftBudsRes = R.drawable.airpods_pro_2_left,
-    // rightBudsRes = R.drawable.airpods_pro_3_right
     rightBudsRes = R.drawable.airpods_pro_2_right,
-    // caseRes = R.drawable.airpods_pro_3_case
     caseRes = R.drawable.airpods_pro_2_case,
     capabilities = setOf(
         Capability.LISTENING_MODE,
@@ -242,7 +246,9 @@ class AirPodsPro3: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.ADAPTIVE_VOLUME,
         Capability.SWIPE_FOR_VOLUME,
-        Capability.HRM
+        Capability.HRM,
+        Capability.CUSTOM_EQ,
+        Capability.SPATIAL_AUDIO
     )
 )
 
@@ -272,6 +278,33 @@ object AirPodsModels {
     )
 
     fun getModelByModelNumber(modelNumber: String): AirPodsBase? {
-        return models.find { modelNumber in it.modelNumber }
+        val normalized = modelNumber.trim().uppercase()
+        if (normalized.isEmpty()) return null
+        return models.find { model ->
+            model.modelNumber.any { it.equals(normalized, ignoreCase = true) }
+        }
+    }
+
+    fun resolve(
+        modelNumber: String,
+        updaterIdentifier: String = "",
+        bleModelName: String? = null
+    ): AirPodsBase? {
+        getModelByModelNumber(modelNumber)?.let { return it }
+        val updater = updaterIdentifier.trim()
+        if (updater.contains("AirPodsPro1,3", ignoreCase = true)) {
+            return AirPodsPro3()
+        }
+        val ble = bleModelName.orEmpty()
+        if (ble.contains("Pro 3", ignoreCase = true)) return AirPodsPro3()
+        if (ble.contains("Pro 2", ignoreCase = true) && ble.contains("USB-C", ignoreCase = true)) {
+            return AirPodsPro2USBC()
+        }
+        if (ble.contains("Pro 2", ignoreCase = true)) return AirPodsPro2Lightning()
+        if (ble.contains("AirPods 4", ignoreCase = true) && ble.contains("ANC", ignoreCase = true)) {
+            return AirPods4ANC()
+        }
+        if (ble.contains("AirPods 4", ignoreCase = true)) return AirPods4()
+        return null
     }
 }

@@ -7,7 +7,8 @@
     android:padding="0dp"
     android:id="@+id/battery_widget"
     android:theme="@style/Theme.LibrePods.AppWidgetContainer"
-    android:background="@drawable/widget_background">
+    android:background="@drawable/widget_background"
+    tools:ignore="UseAppTint">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -265,4 +266,17 @@
                 tools:ignore="HardcodedText" />
         </LinearLayout>
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="8dp"
+        android:fontFamily="@font/sf_pro"
+        android:text="@string/widget_disconnected"
+        android:textColor="@color/white"
+        android:textSize="14sp"
+        android:visibility="gone" />
 </RelativeLayout>

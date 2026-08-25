@@ -525,4 +525,69 @@ object MaterialIcons {
         }
 
     private var _stack: ImageVector? = null
+
+    val battery_saver: ImageVector
+        get() {
+            if (_battery_saver != null) {
+                return _battery_saver!!
+            }
+            _battery_saver =
+                ImageVector.Builder(
+                    name = "battery_saver",
+                    defaultWidth = 24.dp,
+                    defaultHeight = 24.dp,
+                    viewportWidth = 24f,
+                    viewportHeight = 24f,
+                )
+                    .apply {
+                        path(
+                            fill = SolidColor(Color.Black),
+                            fillAlpha = 1f,
+                            stroke = null,
+                            strokeAlpha = 1f,
+                            strokeLineWidth = 1f,
+                            strokeLineCap = StrokeCap.Butt,
+                            strokeLineJoin = StrokeJoin.Bevel,
+                            strokeLineMiter = 1f,
+                            pathFillType = PathFillType.Companion.NonZero,
+                        ) {
+                            moveTo(7f, 22f)
+                            quadToRelative(-0.825f, 0f, -1.413f, -0.587f)
+                            reflectiveQuadTo(5f, 20f)
+                            verticalLineTo(6f)
+                            quadToRelative(0f, -0.825f, 0.588f, -1.413f)
+                            reflectiveQuadTo(7f, 4f)
+                            horizontalLineToRelative(2f)
+                            verticalLineTo(2f)
+                            horizontalLineToRelative(6f)
+                            verticalLineToRelative(2f)
+                            horizontalLineToRelative(2f)
+                            quadToRelative(0.825f, 0f, 1.413f, 0.587f)
+                            reflectiveQuadTo(19f, 6f)
+                            verticalLineToRelative(14f)
+                            quadToRelative(0f, 0.825f, -0.587f, 1.413f)
+                            reflectiveQuadTo(17f, 22f)
+                            horizontalLineTo(7f)
+                            close()
+                            moveToRelative(4f, -4f)
+                            horizontalLineToRelative(2f)
+                            verticalLineToRelative(-3f)
+                            horizontalLineToRelative(3f)
+                            verticalLineToRelative(-2f)
+                            horizontalLineToRelative(-3f)
+                            verticalLineTo(10f)
+                            horizontalLineToRelative(-2f)
+                            verticalLineToRelative(3f)
+                            horizontalLineTo(8f)
+                            verticalLineToRelative(2f)
+                            horizontalLineToRelative(3f)
+                            verticalLineToRelative(3f)
+                            close()
+                        }
+                    }
+                    .build()
+            return _battery_saver!!
+        }
+
+    private var _battery_saver: ImageVector? = null
 }

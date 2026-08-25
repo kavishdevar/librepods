@@ -16,8 +16,6 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-@file:OptIn(ExperimentalEncodingApi::class)
-
 package me.kavishdevar.librepods.presentation.components
 
 import android.content.res.Configuration
@@ -30,16 +28,24 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -48,7 +54,9 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.data.Battery
 import me.kavishdevar.librepods.data.BatteryComponent
 import me.kavishdevar.librepods.data.BatteryStatus
-import kotlin.io.encoding.ExperimentalEncodingApi
+import me.kavishdevar.librepods.presentation.theme.DesignSystem
+import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
+import me.kavishdevar.librepods.utils.BatteryLevels
 
 @Composable
 fun BatteryView(
@@ -56,15 +64,40 @@ fun BatteryView(
     budsRes: Int,
     caseRes: Int
 ) {
+    val resources = LocalResources.current
+    val budsBitmap = remember(resources, budsRes) {
+        ImageBitmap.imageResource(resources, budsRes)
+    }
+    val caseBitmap = remember(resources, caseRes) {
+        ImageBitmap.imageResource(resources, caseRes)
+    }
+
+    if (LocalDesignSystem.current == DesignSystem.Material) {
+        MaterialBatteryView(
+            batteryList = batteryList,
+            budsBitmap = budsBitmap,
+            caseBitmap = caseBitmap
+        )
+        return
+    }
+
     val left = batteryList.find { it.component == BatteryComponent.LEFT }
     val right = batteryList.find { it.component == BatteryComponent.RIGHT }
     val case = batteryList.find { it.component == BatteryComponent.CASE }
 
-    val leftLevel = left?.level ?: 0
-    val rightLevel = right?.level ?: 0
-    val caseLevel = case?.level ?: 0
+    val leftLevel = left?.level ?: BatteryLevels.UNKNOWN_LEVEL
+    val rightLevel = right?.level ?: BatteryLevels.UNKNOWN_LEVEL
+    val caseLevel = case?.level ?: BatteryLevels.UNKNOWN_LEVEL
 
-    val singleDisplayed = remember { mutableStateOf(false) }
+    val leftVisible = left != null && left.status != BatteryStatus.DISCONNECTED
+    val rightVisible = right != null && right.status != BatteryStatus.DISCONNECTED
+    val caseVisible = case != null && case.status != BatteryStatus.DISCONNECTED
+
+    val displayCombinedBuds =
+        leftVisible && rightVisible &&
+            BatteryLevels.isKnown(leftLevel) && BatteryLevels.isKnown(rightLevel) &&
+            left.status == right.status &&
+            (leftLevel - rightLevel) in -3..3
 
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -79,45 +112,39 @@ fun BatteryView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Image(
-                    bitmap = ImageBitmap.imageResource(budsRes),
+                    bitmap = budsBitmap,
                     contentDescription = stringResource(R.string.buds),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
                 )
 
-                if (
-                    left?.status == right?.status &&
-                    (leftLevel - rightLevel) in -3..3
-                ) {
+                if (displayCombinedBuds) {
                     BatteryIndicator(
                         leftLevel.coerceAtMost(rightLevel),
-                        left?.status ?: BatteryStatus.NOT_CHARGING
+                        left.status
                     )
-                    singleDisplayed.value = true
                 } else {
-                    singleDisplayed.value = false
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        if (leftLevel > 0 || left?.status != BatteryStatus.DISCONNECTED) {
+                        if (leftVisible) {
                             BatteryIndicator(
                                 leftLevel,
-                                left?.status ?: BatteryStatus.NOT_CHARGING,
+                                left.status,
                                 "\uDBC6\uDCE5"
                             )
                         }
 
-                        if (leftLevel > 0 && rightLevel > 0) {
+                        if (leftVisible && rightVisible) {
                             Spacer(modifier = Modifier.width(16.dp))
                         }
 
-                        if (rightLevel > 0 || right?.status != BatteryStatus.DISCONNECTED) {
+                        if (rightVisible) {
                             BatteryIndicator(
                                 rightLevel,
-                                right?.status ?: BatteryStatus.NOT_CHARGING,
+                                right.status,
                                 "\uDBC6\uDCE8"
                             )
                         }
@@ -130,20 +157,150 @@ fun BatteryView(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Image(
-                    bitmap = ImageBitmap.imageResource(caseRes),
+                    bitmap = caseBitmap,
                     contentDescription = stringResource(R.string.case_alt),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
                 )
 
-                if (caseLevel > 0 || case?.status != BatteryStatus.DISCONNECTED) {
+                if (caseVisible) {
                     BatteryIndicator(
                         caseLevel,
-                        case?.status ?: BatteryStatus.NOT_CHARGING,
-                        prefix = if (!singleDisplayed.value) "\uDBC3\uDE6C" else ""
+                        case.status,
+                        prefix = if (!displayCombinedBuds) "\uDBC3\uDE6C" else ""
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialBatteryView(
+    batteryList: List<Battery>,
+    budsBitmap: ImageBitmap,
+    caseBitmap: ImageBitmap
+) {
+    val left = batteryList.find { it.component == BatteryComponent.LEFT }
+        ?.takeUnless { it.status == BatteryStatus.DISCONNECTED }
+    val right = batteryList.find { it.component == BatteryComponent.RIGHT }
+        ?.takeUnless { it.status == BatteryStatus.DISCONNECTED }
+    val case = batteryList.find { it.component == BatteryComponent.CASE }
+        ?.takeUnless { it.status == BatteryStatus.DISCONNECTED }
+
+    val budsLabel = stringResource(R.string.buds)
+    val leftLabel = stringResource(R.string.left)
+    val rightLabel = stringResource(R.string.right)
+    val caseLabel = stringResource(R.string.case_alt)
+    val displayedBatteries = buildList {
+        if (left != null && right != null &&
+            BatteryLevels.isKnown(left.level) && BatteryLevels.isKnown(right.level) &&
+            left.status == right.status && (left.level - right.level) in -3..3
+        ) {
+            add(budsLabel to left.copy(level = minOf(left.level, right.level)))
+        } else {
+            left?.let { add(leftLabel to it) }
+            right?.let { add(rightLabel to it) }
+        }
+        case?.let { add(caseLabel to it) }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Image(
+                    bitmap = budsBitmap,
+                    contentDescription = stringResource(R.string.buds),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .weight(1.15f)
+                        .height(106.dp)
+                )
+                Image(
+                    bitmap = caseBitmap,
+                    contentDescription = stringResource(R.string.case_alt),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .weight(0.85f)
+                        .height(96.dp)
+                )
+            }
+
+            if (displayedBatteries.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    displayedBatteries.forEach { (label, battery) ->
+                        MaterialBatteryPill(
+                            label = label,
+                            battery = battery,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialBatteryPill(
+    label: String,
+    battery: Battery,
+    modifier: Modifier = Modifier
+) {
+    val known = BatteryLevels.isKnown(battery.level)
+    val batteryColor = when {
+        !known -> MaterialTheme.colorScheme.onSurfaceVariant
+        battery.level <= 20 -> MaterialTheme.colorScheme.error
+        battery.level <= 40 -> Color(0xFFFFB300)
+        else -> Color(0xFF36C56B)
+    }
+    val charging = battery.status == BatteryStatus.CHARGING ||
+        battery.status == BatteryStatus.OPTIMIZED_CHARGING
+
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(batteryColor, CircleShape)
+            )
+            Column {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+                Text(
+                    text = buildString {
+                        if (charging) append("⚡")
+                        append(BatteryLevels.displayPercent(battery.level))
+                    },
+                    style = MaterialTheme.typography.labelMediumEmphasized,
+                    maxLines = 1
+                )
             }
         }
     }

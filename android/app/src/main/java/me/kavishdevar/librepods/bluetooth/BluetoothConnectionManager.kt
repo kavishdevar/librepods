@@ -41,20 +41,11 @@ fun createBluetoothSocket(
         arrayOf(type, true, true, device, psm, uuid)
     )
 
-    val constructors = BluetoothSocket::class.java.declaredConstructors
-    Log.d("createSocket<psm>", "BluetoothSocket has ${constructors.size} constructors:")
-
-    constructors.forEachIndexed { index, constructor ->
-        val params = constructor.parameterTypes.joinToString(", ") { it.simpleName }
-        Log.d("createSocket<psm>", "Constructor $index: ($params)")
-    }
-
     var lastException: Exception? = null
     var attemptedConstructors = 0
 
-    for ((index, params) in constructorSpecs.withIndex()) {
+    for (params in constructorSpecs) {
         try {
-            Log.d("createSocket<psm>", "Trying constructor signature #${index + 1}")
             attemptedConstructors++
 
             val paramTypes =
@@ -62,9 +53,7 @@ fun createBluetoothSocket(
             val constructor = BluetoothSocket::class.java.getDeclaredConstructor(*paramTypes)
             constructor.isAccessible = true
             return constructor.newInstance(*params) as BluetoothSocket
-
         } catch (e: Exception) {
-            Log.e("createSocket<psm>", "Constructor signature #${index + 1} failed: ${e.message}")
             lastException = e
         }
     }

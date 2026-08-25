@@ -33,7 +33,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,7 +58,7 @@ import me.kavishdevar.librepods.presentation.viewmodel.AirPodsViewModel
 
 @Composable
 fun AdaptiveStrengthScreen(viewModel: AirPodsViewModel, navigateToPurchase: () -> Unit) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val backdrop = rememberLayerBackdrop()
 
     val m3eEnabled = LocalDesignSystem.current == DesignSystem.Material
