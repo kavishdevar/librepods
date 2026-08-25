@@ -68,8 +68,18 @@ class AirPodsController(private val context: Context, private val transport: Wea
         }
         override fun onConversationAwarenessReceived(conversationAwareness: ByteArray) { recordPacket(conversationAwareness) }
         override fun onControlCommandReceived(controlCommand: ByteArray) { recordPacket(controlCommand) }
-        override fun onDeviceInformationReceived(deviceInformation: AACPManager.AirPodsInformation) {
-            stateStore.update { it.copy(deviceName = deviceInformation.name.ifBlank { it.deviceName }, protocolStage = "READY", connected = true, connecting = false) }
+
+        // These data classes live inside AACPManager's companion object, so the
+        // explicit Companion qualifier is required for the PacketCallback ABI.
+        override fun onDeviceInformationReceived(deviceInformation: AACPManager.Companion.AirPodsInformation) {
+            stateStore.update {
+                it.copy(
+                    deviceName = deviceInformation.name.ifBlank { it.deviceName },
+                    protocolStage = "READY",
+                    connected = true,
+                    connecting = false,
+                )
+            }
         }
         override fun onHeadTrackingReceived(headTracking: ByteArray) { recordPacket(headTracking) }
         override fun onUnknownPacketReceived(packet: ByteArray) { recordPacket(packet) }
@@ -77,7 +87,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
         override fun onStemPressReceived(stemPress: ByteArray) { recordPacket(stemPress) }
         override fun onAudioSourceReceived(audioSource: ByteArray) { recordPacket(audioSource) }
         override fun onOwnershipChangeReceived(owns: Boolean) { Log.d(tag, "AACP ownership=$owns") }
-        override fun onConnectedDevicesReceived(connectedDevices: List<AACPManager.ConnectedDevice>) { Log.d(tag, "AACP connected devices=${connectedDevices.size}") }
+        override fun onConnectedDevicesReceived(connectedDevices: List<AACPManager.Companion.ConnectedDevice>) { Log.d(tag, "AACP connected devices=${connectedDevices.size}") }
         override fun onOwnershipToFalseRequest(sender: String, reasonReverseTapped: Boolean) { Log.d(tag, "AACP ownership revoke requested by $sender") }
         override fun onShowNearbyUI(sender: String) { Log.d(tag, "AACP nearby UI requested by $sender") }
         override fun onHeadphoneAccommodationReceived(eqData: FloatArray) { Log.d(tag, "AACP EQ frame received: ${eqData.size} values") }
@@ -120,6 +130,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
         return connectToDevice(device.address, device.name ?: "AirPods")
     }
 
+    @SuppressLint("MissingPermission")
     private suspend fun connectTransport(device: BluetoothDevice) {
         try {
             stateStore.update { it.copy(protocolStage = "L2CAP") }
