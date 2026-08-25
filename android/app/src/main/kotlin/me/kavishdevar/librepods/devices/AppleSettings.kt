@@ -1,5 +1,6 @@
 package me.kavishdevar.librepods.devices
 
+import androidx.annotation.IntRange
 import kotlinx.serialization.Serializable
 import me.kavishdevar.librepods.data.StemAction
 import kotlin.time.Duration
@@ -38,6 +39,6 @@ data class AppleSettings(
     val conversationalAwarenessVolume: Float = 43f,
     val conversationalAwarenessReducedVolume: Float = 20f,
 
-    val hrAlertEnabled: Boolean = true,
-    val hrmAlertThreshold: Int = 120,
+    val hrmAlertEnabled: Boolean = false,
+    @IntRange(from = 120, to = 200) val hrmAlertThreshold: Int = 150,
 ): DeviceSettings

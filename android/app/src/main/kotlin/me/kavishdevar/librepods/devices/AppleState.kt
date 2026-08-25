@@ -9,6 +9,7 @@ import me.kavishdevar.librepods.bluetooth.aacp.types.ConnectedDevice
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.aacp.types.CustomEq
 import me.kavishdevar.librepods.bluetooth.aacp.types.MagicKeyType
+import me.kavishdevar.librepods.data.apple.BuddyState
 import me.kavishdevar.librepods.data.audio.MicrophoneFrame
 import me.kavishdevar.librepods.data.audio.MicrophoneState
 import me.kavishdevar.librepods.data.heartrate.HeartRateSample
@@ -32,8 +33,7 @@ data class AppleState(
 
     val magicKeys: Map<MagicKeyType, ByteArray> = emptyMap(),
 
-    val headTrackingActive: Boolean = false,
-    val detectHeadGestures: Boolean = false,
+    val headTrackingState: BuddyState = BuddyState.INACTIVE,
 
     val loudSoundReductionEnabled: Boolean = false,
     val transparencyData: ByteArray = byteArrayOf(),
@@ -55,7 +55,7 @@ data class AppleState(
     val headphoneAccomodationEnabledForPhone: Boolean = false,
 
     val currentHeartRate: HeartRateSample? = null,
-    val hrmActive: Boolean = false,
+    val hrmState: BuddyState = BuddyState.INACTIVE,
     val heartRateInterval: Duration = 1.seconds,
 
     val aacpPackets: List<AACPPacket> = emptyList(),

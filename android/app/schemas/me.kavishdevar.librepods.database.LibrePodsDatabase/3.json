@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 2,
+    "version": 3,
     "identityHash": "721149fa5e2a13e82b73a83de312968a",
     "entities": [
       {
@@ -42,7 +42,7 @@
       },
       {
         "tableName": "AppSettingsEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `nightMode` TEXT NOT NULL, `designSystem` TEXT NOT NULL, `useHighestRefreshRate` INTEGER NOT NULL, `debugMode` INTEGER NOT NULL, `bleScanMode` INTEGER NOT NULL, `bleReportDelay` INTEGER NOT NULL, `swipeAnywhereForBack` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `nightMode` TEXT NOT NULL, `designSystem` TEXT NOT NULL, `overrideMaterialColor` INTEGER, `useHighestRefreshRate` INTEGER NOT NULL, `debugMode` INTEGER NOT NULL, `bleScanMode` INTEGER NOT NULL, `bleReportDelay` INTEGER NOT NULL, `swipeAnywhereForBack` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -61,6 +61,11 @@
             "columnName": "designSystem",
             "affinity": "TEXT",
             "notNull": true
+          },
+          {
+            "fieldPath": "overrideMaterialColor",
+            "columnName": "overrideMaterialColor",
+            "affinity": "INTEGER"
           },
           {
             "fieldPath": "useHighestRefreshRate",

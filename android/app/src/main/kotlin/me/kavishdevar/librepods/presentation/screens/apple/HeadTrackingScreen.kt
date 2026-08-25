@@ -16,16 +16,10 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-
-// this is absolutely unnecessary, why did I make this. a simple toggle would've sufficed
-
-@file:OptIn(ExperimentalEncodingApi::class)
-
 package me.kavishdevar.librepods.presentation.screens.apple
 
 import android.graphics.Paint
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,7 +41,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconToggleButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -78,12 +71,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.data.apple.BuddyState
 import me.kavishdevar.librepods.presentation.components.primitives.MaterialButtonStyle
 import me.kavishdevar.librepods.presentation.components.primitives.StyledButton
 import me.kavishdevar.librepods.presentation.components.primitives.StyledIconButton
@@ -96,13 +88,10 @@ import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AppleViewModel
 import me.kavishdevar.librepods.utils.HeadTracking
-import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
-@ExperimentalHazeMaterialsApi
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class)
 @Composable
 fun HeadTrackingScreen(
     viewModel: AppleViewModel,
@@ -111,6 +100,7 @@ fun HeadTrackingScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    val state = uiState.state
     val settings = uiState.settings
 
     DisposableEffect(Unit) {
@@ -126,7 +116,6 @@ fun HeadTrackingScreen(
     val coroutineScope = rememberCoroutineScope()
 
     var lastClickTime by remember { mutableLongStateOf(0L) }
-    var shouldExplode by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
 
@@ -137,26 +126,28 @@ fun HeadTrackingScreen(
             { scaffoldBackdrop ->
                 if (LocalDesignSystem.current == DesignSystem.Material) {
                     FilledTonalIconToggleButton(
-                        checked = uiState.state.headTrackingActive,
+                        checked = state.headTrackingState == BuddyState.ACTIVE,
                         onCheckedChange = { if (it) viewModel.startHeadTracking() else viewModel.stopHeadTracking() },
                         modifier = Modifier
                             .minimumInteractiveComponentSize()
                             .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Uniform)),
-                        shape = IconButtonDefaults.mediumRoundShape
+                        shape = IconButtonDefaults.mediumRoundShape,
+                        enabled = state.headTrackingState != BuddyState.WAITING
                     ) {
                         Icon(
-                            imageVector = if (uiState.state.headTrackingActive) MaterialIcons.Pause else Icons.Default.PlayArrow,
+                            imageVector = if (state.headTrackingState == BuddyState.ACTIVE) MaterialIcons.Pause else Icons.Default.PlayArrow,
                             contentDescription = "Play/Pause",
                             modifier = Modifier.size(IconButtonDefaults.mediumIconSize),
                         )
                     }
                 } else {
                     StyledIconButton(
-                        onClick = if (!uiState.state.headTrackingActive) viewModel::startHeadTracking else viewModel::stopHeadTracking,
-                        backdrop = scaffoldBackdrop
+                        onClick = if (state.headTrackingState != BuddyState.ACTIVE) viewModel::startHeadTracking else viewModel::stopHeadTracking,
+                        backdrop = scaffoldBackdrop,
+                        enabled = state.headTrackingState != BuddyState.WAITING
                     ) {
                         Icon(
-                            imageVector = if (uiState.state.headTrackingActive) LocalIcons.current.Pause else LocalIcons.current.Play,
+                            imageVector = if (state.headTrackingState == BuddyState.ACTIVE) LocalIcons.current.Pause else LocalIcons.current.Play,
                             contentDescription = "Play/Pause",
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onBackground
@@ -224,7 +215,7 @@ fun HeadTrackingScreen(
                         lastClickTime = System.currentTimeMillis()
                         delay(3.seconds)
                         if (System.currentTimeMillis() - lastClickTime >= 3000) {
-                            shouldExplode = true
+                            gestureText = ""
                         }
                     }
                 }
@@ -264,28 +255,13 @@ fun HeadTrackingScreen(
                         )).togetherWith(fadeOut(animationSpec = tween(150)))
                     }
                 ) { text ->
-                    if (shouldExplode) {
-                        LaunchedEffect(Unit) {
-                            CoroutineScope(coroutineScope.coroutineContext).launch {
-                                delay(750.milliseconds)
-                                gestureText = ""
-                            }
-                        }
-                        Text(
-                            text = text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            textAlign = TextAlign.Center
-                        )
-                    } else {
-                        Text(
-                            text = text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
@@ -353,7 +329,7 @@ private fun Plot() {
         shape = RoundedCornerShape(28.dp)
     ) {
         val horizontalColor = MaterialTheme.colorScheme.primary
-        val verticalColor = MaterialTheme.colorScheme.onPrimary
+        val verticalColor = MaterialTheme.colorScheme.secondaryContainer // random
 
         Box(
             modifier = Modifier

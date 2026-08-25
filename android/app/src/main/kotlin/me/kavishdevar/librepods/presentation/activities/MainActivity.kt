@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
 
             LibrePodsTheme(
                 designSystem = settings.designSystem,
+                overrideMaterialColor = settings.overrideMaterialColor,
                 darkTheme = darkTheme
             ) {
 //                For demo screenshots

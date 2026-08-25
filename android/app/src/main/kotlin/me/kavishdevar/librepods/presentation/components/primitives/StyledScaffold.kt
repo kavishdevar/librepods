@@ -67,11 +67,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.consumePositionChange
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -207,10 +204,10 @@ fun StyledScaffold(
                     val backdrop = rememberLayerBackdrop()
                     val bgColor = MaterialTheme.colorScheme.surfaceContainer
 
-                    val density = LocalDensity.current
-                    val screenWidthPx = with(density) {
-                        LocalWindowInfo.current.containerDpSize.width.toPx()
-                    }
+//                    val density = LocalDensity.current
+//                    val screenWidthPx = with(density) {
+//                        LocalWindowInfo.current.containerDpSize.width.toPx()
+//                    }
                     val isCurrentEntry = LocalIsCurrentEntry.current
                     val transitionProgress = LocalTransitionProgress.current
                     val sharedTransitionScope = LocalSharedTransitionScope.current
@@ -233,7 +230,7 @@ fun StyledScaffold(
                                                     val event = awaitPointerEvent()
 
                                                     event.changes.forEach { change ->
-                                                        change.consumePositionChange()
+                                                        change.consume()
                                                     }
                                                 } while (event.changes.any { it.pressed })
                                             }
@@ -350,7 +347,7 @@ fun StyledScaffold(
                                             val event = awaitPointerEvent()
 
                                             event.changes.forEach { change ->
-                                                change.consumePositionChange()
+                                                change.consume()
                                             }
                                         } while (event.changes.any { it.pressed })
                                     }

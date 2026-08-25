@@ -51,6 +51,7 @@ import kotlinx.coroutines.flow.debounce
 import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.att.ATTHandle
+import me.kavishdevar.librepods.data.apple.BuddyState
 import me.kavishdevar.librepods.devices.AirPodsSpecs
 import me.kavishdevar.librepods.devices.AppleSettings
 import me.kavishdevar.librepods.devices.BaseCapability
@@ -302,6 +303,7 @@ fun AppleSettingsScreen(
             }
 
             if (baseCapabilities.contains(BaseCapability.HRM)) {
+                val showAlertDisabledMessage = state.hrmState != BuddyState.ACTIVE && settings.hrmAlertEnabled
                 item(key = "spacer_heart_rate") {
                     Spacer(modifier = Modifier.height(16.dp))
                 }
@@ -309,7 +311,8 @@ fun AppleSettingsScreen(
                     StyledListItem(
                         contentText = stringResource(R.string.heart_rate),
                         onClick = navigateToHeartRateScreen,
-                        supportingText = state.currentHeartRate?.let { "${it.bpm} bpm" }
+                        supportingText = if (showAlertDisabledMessage) stringResource(R.string.heart_rate_alerts_disabled_warning) else state.currentHeartRate?.let { "${it.bpm} bpm" },
+                        orientation = if (showAlertDisabledMessage) StyledListItemOrientation.Vertical else StyledListItemOrientation.Horizontal
                     )
                 }
             }

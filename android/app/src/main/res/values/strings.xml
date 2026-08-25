@@ -332,7 +332,7 @@
     <string name="permission_description_bluetooth">Required to communicate with AirPods.</string>
     <string name="optional_permissions">Optional Permissions</string>
     <string name="notifications">Notifications</string>
-    <string name="permission_description_notification">Show battery status when connected or available nearby.</string>
+    <string name="permission_description_notification">Show battery status, alerts for high heart rate (on supported models), and more.</string>
     <string name="permission_description_phone">Respond to phone calls with head gestures.</string>
     <string name="permission_overlay">Display over other apps</string>
     <string name="permission_description_overlay">Show popups when AirPods are nearby or audio switches to them.</string>
@@ -343,7 +343,15 @@
     <string name="heart_rate_monitoring">Heart Rate Monitoring</string>
     <string name="hrm_alert_description">Sends a notification when your heart rate is above the threshold. Consumes more battery.</string>
     <string name="heart_rate_alert">Heart rate alert</string>
-    <string name="heart_rate_alert_threshold">Heart rate threshold</string>
+    <string name="heart_rate_alert_threshold">Alert threshold</string>
     <string name="call_rejected">Call rejected</string>
     <string name="call_accepted">Call accepted</string>
+    <string name="waiting_ellipsis">Waiting…</string>
+    <string name="service_running">Service Running</string>
+    <string name="foreground_notification_description">Useless notification, disable it by clicking on it.</string>
+    <string name="foreground_service_status">Foreground Service Status</string>
+    <string name="high_heart_rate_notification_text">Your heart rate is above the set threshold. (currently: %d bpm)</string>
+    <string name="high_heart_rate">High heart rate</string>
+    <string name="hrm_alert_warning">This alert does not currently account for exercise or physical activity. It is for informational purposes only and is not intended as medical advice.</string>
+    <string name="heart_rate_alerts_disabled_warning">Alerts have been disabled until reconnection or re-enabling heart rate monitoring.</string>
 </resources>

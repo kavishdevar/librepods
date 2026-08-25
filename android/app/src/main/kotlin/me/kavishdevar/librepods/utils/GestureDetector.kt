@@ -90,8 +90,8 @@ class GestureDetector {
         while (verticalAvgBuffer.size < 3) verticalAvgBuffer.add(0.0)
     }
 
-    fun startDetection(acceleration: StateFlow<Acceleration>, callback: (Boolean) -> Unit) {
-        if (isRunning) return
+    fun startDetection(acceleration: StateFlow<Acceleration>, callback: (Boolean) -> Unit): Boolean {
+        if (isRunning) return false
 
         Log.d(TAG, "Starting gesture detection...")
         isRunning = true
@@ -123,6 +123,8 @@ class GestureDetector {
                 }
             }
         }
+
+        return true
     }
     fun stopDetection() {
         if (!isRunning) return

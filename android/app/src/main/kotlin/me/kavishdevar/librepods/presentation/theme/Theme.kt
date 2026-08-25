@@ -77,6 +77,7 @@ private val AppleLightColorScheme = lightColorScheme(
 fun LibrePodsTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     designSystem: DesignSystem = DesignSystem.Material,
+    overrideMaterialColor: Color? = null,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when(designSystem) {
@@ -99,6 +100,12 @@ fun LibrePodsTheme(
             DesignSystem.Apple -> AppleIcons
         }
     ) {
+//        var colorScheme = colorScheme
+//
+//        if (designSystem == DesignSystem.Material) {
+//
+//        }
+
         MaterialExpressiveTheme(
             colorScheme = colorScheme,
             motionScheme = MotionScheme.expressive(),

@@ -45,7 +45,6 @@ class AppleRepository(
                 capabilities = state.capabilities,
                 magicKeys = state.magicKeys,
                 controlStates = state.controlStates,
-                customEq = state.customEq
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create AppleCache from AppleState for ${macAddress.toRedactedString()}", e)

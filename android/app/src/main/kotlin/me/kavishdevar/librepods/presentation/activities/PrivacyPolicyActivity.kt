@@ -65,7 +65,7 @@ class PrivacyPolicyActivity : ComponentActivity() {
 
                 StyledScaffold(
                     title = stringResource(R.string.privacy_policy),
-                    navigateBack = null
+                    navigateBack = { finish() }
                 ) { topPadding, bottomPadding ->
                     Column {
                         Spacer(modifier = Modifier.height(topPadding))

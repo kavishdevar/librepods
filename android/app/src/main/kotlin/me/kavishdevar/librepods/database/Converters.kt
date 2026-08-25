@@ -11,6 +11,10 @@ import me.kavishdevar.librepods.devices.AppleSettings
 import kotlin.time.Instant
 
 object Converters {
+    val cbor = Cbor {
+        ignoreUnknownKeys = true
+    }
+
     @ColumnTypeConverter
     fun macAddressToString(mac: MacAddress): String = mac.value
 
@@ -19,27 +23,27 @@ object Converters {
 
     @ColumnTypeConverter
     fun appleSettingsToBytes(settings: AppleSettings): ByteArray =
-        Cbor.encodeToByteArray(settings)
+        cbor.encodeToByteArray(settings)
 
     @ColumnTypeConverter
     fun bytesToAppleSettings(bytes: ByteArray): AppleSettings =
-        Cbor.decodeFromByteArray(bytes)
+        cbor.decodeFromByteArray(bytes)
 
     @ColumnTypeConverter
     fun appleMetadataToBytes(metadata: AppleMetadata): ByteArray =
-        Cbor.encodeToByteArray(metadata)
+        cbor.encodeToByteArray(metadata)
 
     @ColumnTypeConverter
     fun bytesToAppleMetadata(bytes: ByteArray): AppleMetadata =
-        Cbor.decodeFromByteArray(bytes)
+        cbor.decodeFromByteArray(bytes)
 
     @ColumnTypeConverter
     fun appleCacheToBytes(cache: AppleCache): ByteArray =
-        Cbor.encodeToByteArray(cache)
+        cbor.encodeToByteArray(cache)
 
     @ColumnTypeConverter
     fun bytesToAppleCache(bytes: ByteArray): AppleCache =
-        Cbor.decodeFromByteArray(bytes)
+        cbor.decodeFromByteArray(bytes)
 
     @ColumnTypeConverter
     fun kotlinInstantToLong(instant: Instant): Long =

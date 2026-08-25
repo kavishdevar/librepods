@@ -53,6 +53,7 @@ import me.kavishdevar.librepods.bluetooth.aacp.types.MagicKeyType
 import me.kavishdevar.librepods.bluetooth.aacp.types.MessageOpcode
 import me.kavishdevar.librepods.bluetooth.aacp.types.RTBuddyDescriptor
 import me.kavishdevar.librepods.bluetooth.aacp.types.SensorDataWxBuddyPayload
+import me.kavishdevar.librepods.data.apple.BuddyState
 import me.kavishdevar.librepods.data.audio.MicrophoneFrame
 import me.kavishdevar.librepods.data.heartrate.HeartRateSample
 import me.kavishdevar.librepods.devices.AppleDevice
@@ -64,6 +65,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 class AACPManager(private val device: AppleDevice) {
     private val macParts = device.macAddress.value.split(":")
@@ -72,6 +74,28 @@ class AACPManager(private val device: AppleDevice) {
     private var socket: BluetoothSocket? = null
 
     private val rtBuddyManager = RTBuddyManager(::sendPacket)
+
+    private suspend fun sendDelayedInitPackets() {
+        socket?.let {
+            while (!it.isConnected) {
+                Log.i(TAG, "waiting for connection...")
+                delay(500.milliseconds)
+            }
+            Log.i(TAG, "initializing connection")
+
+            connectService4()
+            delay(200.milliseconds)
+            sendSourceFeatureCapabilities()
+            delay(200.milliseconds)
+            sendNotificationRequest()
+            delay(200.milliseconds)
+            sendCountryCode()
+            delay(200.milliseconds)
+            sendRequestMagicKeys((MagicKeyType.IRK.value + MagicKeyType.ENC_KEY.value).toByte())
+        } ?: run {
+            Log.e(TAG, "socket is null after creation")
+        }
+    }
 
     fun connect(): Boolean {
         if (socket != null && socket!!.isConnected) {
@@ -99,19 +123,9 @@ class AACPManager(private val device: AppleDevice) {
             }
 
             CoroutineScope(Dispatchers.IO).launch {
-                while(!socket.isConnected) {
-                    Log.i(TAG, "waiting for connection...")
-                    delay(500.milliseconds)
-                }
-                Log.i(TAG, "initializing connection")
-
-                connectService4()
-                delay(200.milliseconds)
-                sendSourceFeatureCapabilities()
-                delay(200.milliseconds)
-                sendNotificationRequest()
-                delay(200.milliseconds)
-                sendRequestMagicKeys((MagicKeyType.IRK.value + MagicKeyType.ENC_KEY.value).toByte())
+                sendDelayedInitPackets()
+                delay(3.seconds) // just android stuff ig
+                sendDelayedInitPackets()
             }
 
             CoroutineScope(Dispatchers.IO).launch {
@@ -1031,6 +1045,8 @@ class AACPManager(private val device: AppleDevice) {
                 microphoneFrames = emptyList(),
                 controlStates = emptyMap(),
                 aacpPackets = emptyList(),
+                headTrackingState = BuddyState.INACTIVE,
+                hrmState = BuddyState.INACTIVE,
                 currentHeartRate = null
             )
         }
@@ -1051,36 +1067,6 @@ class AACPManager(private val device: AppleDevice) {
         )
 
         return sendPacket(packet)
-    }
-
-    fun parseCustomEqPacket(packet: ByteArray): CustomEq {
-        val data = packet.sliceArray(6 until packet.size)
-
-        if (data.size < 7) {
-            Log.e(TAG, "custom EQ packet length less than 7, returning default")
-            return CustomEq(1, 50, 50, 50)
-        }
-
-        val lengthLow = data[0].toInt() and 0xFF
-        val lengthHigh = data[1].toInt() and 0xFF
-
-        val length = (lengthHigh shl 8) or lengthLow
-
-        if (length != 5) {
-            Log.w(TAG, "parseCustomEqPacket: unexpected length ($length). parsing normally")
-        }
-
-        val state = data[3].toInt()
-        val low = data[4].toInt()
-        val mid = data[5].toInt()
-        val high = data[6].toInt()
-
-        return CustomEq(
-            state,
-            low,
-            mid,
-            high
-        )
     }
 
     fun requestMicrophoneStream(): Boolean {
@@ -1183,16 +1169,18 @@ class AACPManager(private val device: AppleDevice) {
                                     if (value and 0x8000 != 0) value - 0x10000 else value
                                 }
 
+                    if (device.state.value.headTrackingState != BuddyState.ACTIVE) {
+                        device.updateState {
+                            it.copy(
+                                headTrackingState = BuddyState.ACTIVE
+                            )
+                        }
+                    }
+
                     HeadTracking.addAccel(i16(device.settings.value.headGesturesVerticalOffset).toFloat(), i16(device.settings.value.headGesturesHorizontalOffset).toFloat())
                 }
 
-                SensorServiceType.HEARTRATE -> {
-                    Log.d(
-                        TAG,
-                        "Received sensor data for service: ${data.command.service}, payload: ${data.command.payload.toByteArray().toHexString()}"
-                    )
-                }
-
+                SensorServiceType.HEARTRATE,
                 SensorServiceType.HEARTRATEv2 -> {
                     val payload = data.command.payload.toByteArray()
                     val timestamp = Clock.System.now()
@@ -1208,10 +1196,10 @@ class AACPManager(private val device: AppleDevice) {
                             return
                         }
 
-                        if (!device.state.value.hrmActive) {
+                        if (device.state.value.hrmState != BuddyState.ACTIVE) {
                             device.updateState {
                                 it.copy(
-                                    hrmActive = true
+                                    hrmState = BuddyState.ACTIVE
                                 )
                             }
                         }

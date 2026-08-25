@@ -169,6 +169,7 @@ private fun <T : Any> SwipeBackSceneContent(
     PredictiveBackHandler { progressFlow ->
         try {
             progressFlow.collect { backEvent ->
+                if (previousEntry == null) return@collect
                 val progress = backEvent.progress
 
                 transitionProgress = -progress

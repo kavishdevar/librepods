@@ -1,6 +1,5 @@
 package me.kavishdevar.librepods.presentation.navigation
 
-import android.annotation.SuppressLint
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
@@ -11,7 +10,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation3.runtime.NavBackStack
@@ -44,18 +42,31 @@ fun AppNavGraph(
 
     val currentDevice: Device<*, *, *>? = devices[backStack.lastOrNull()?.let { (it as? DeviceScreen)?.macAddress }]
 
-    @SuppressLint("UnrememberedMutableState")
-    val currentConnectionState by (currentDevice as? AppleDevice)?.connectionState?.collectAsState()?: mutableStateOf(ConnectionState.DISCONNECTED)
+    LaunchedEffect(currentDevice) {
+        val device = currentDevice as? AppleDevice ?: return@LaunchedEffect
 
-    LaunchedEffect(currentConnectionState) {
-        if (currentConnectionState == ConnectionState.DISCONNECTED) {
-            while (
-                backStack.size > 1 &&
-                backStack.lastOrNull() is DeviceScreen
-            ) {
-                val completed = CompletableDeferred<Unit>()
-                backRequests.send(completed)
-                completed.await()
+        var wasConnected = false
+
+        device.connectionState.collect { state ->
+            when (state) {
+                ConnectionState.CONNECTED -> {
+                    wasConnected = true
+                }
+
+                ConnectionState.DISCONNECTED -> {
+                    if (!wasConnected) return@collect
+
+                    while (
+                        backStack.size > 1 &&
+                        backStack.lastOrNull() is DeviceScreen
+                    ) {
+                        val completed = CompletableDeferred<Unit>()
+                        backRequests.send(completed)
+                        completed.await()
+                    }
+                }
+
+                else -> Unit
             }
         }
     }

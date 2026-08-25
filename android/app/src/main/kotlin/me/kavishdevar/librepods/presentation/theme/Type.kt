@@ -106,6 +106,7 @@ val AppleTypography = Typography().run {
         labelSmallEmphasized = labelSmallEmphasized.copy(
             fontFamily = interFamily,
             fontSize = 14.sp,
+            lineHeight = 18.sp,
             fontWeight = FontWeight.Bold
         )
     )

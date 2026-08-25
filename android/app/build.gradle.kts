@@ -77,7 +77,7 @@ android {
     defaultConfig {
         applicationId = "me.kavishdevar.librepods"
         targetSdk = 37
-        versionCode = 80
+        versionCode = 85
         versionName = appVersionName
     }
     buildTypes {

@@ -1,9 +1,8 @@
-package me.kavishdevar.librepods.data.heartrate
+package me.kavishdevar.librepods.database.heartrate
 
 import androidx.room3.Dao
 import androidx.room3.Insert
 import androidx.room3.Query
-import me.kavishdevar.librepods.database.heartrate.HeartRateSampleEntity
 import kotlin.time.Instant
 
 @Dao

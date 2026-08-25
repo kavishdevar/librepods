@@ -4,7 +4,6 @@ import me.kavishdevar.librepods.bluetooth.aacp.types.CustomEq
 import me.kavishdevar.librepods.bluetooth.aacp.types.MessageOpcode
 import me.kavishdevar.librepods.devices.PacketDestination
 
-
 data class CustomEqPacket(
     val customEq: CustomEq,
     override val destination: PacketDestination
@@ -26,10 +25,10 @@ data class CustomEqPacket(
             val length = payload[0].toInt()
             require(length == 5) { "Invalid length for CustomEqPacket: $length" }
 
-            val state = payload[2].toInt()
-            val low = payload[3].toInt()
-            val mid = payload[4].toInt()
-            val high = payload[5].toInt()
+            val state = payload[3].toInt()
+            val low = payload[4].toInt()
+            val mid = payload[5].toInt()
+            val high = payload[6].toInt()
 
             val customEq = CustomEq(state, low, mid, high)
 

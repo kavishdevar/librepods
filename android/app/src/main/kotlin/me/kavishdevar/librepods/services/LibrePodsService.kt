@@ -77,7 +77,7 @@ import kotlin.time.toJavaInstant
 private const val TAG = "LibrePodsService"
 
 @SuppressLint("MissingPermission")
-class LibrePodsService : Service() {
+class LibrePodsService: Service() {
     inner class LocalBinder : Binder() {
         fun getService(): LibrePodsService = this@LibrePodsService
     }
@@ -120,9 +120,8 @@ class LibrePodsService : Service() {
 
     private val telephonyCallback = object: TelephonyCallback(), TelephonyCallback.CallStateListener {
         override fun onCallStateChanged(state: Int) {
-            isCallRinging = state == TelephonyManager.CALL_STATE_RINGING
-
             if (state == TelephonyManager.CALL_STATE_RINGING) {
+                isCallRinging = true
                 _devices.value.values.firstOrNull { device ->
                     device is AppleDevice &&
                     device.connectionState.value == ConnectionState.CONNECTED &&
@@ -159,6 +158,16 @@ class LibrePodsService : Service() {
                         } catch (e: Exception) {
                             Log.e(TAG, "Error accepting call", e)
                         }
+                    }
+                }
+            } else {
+                if (isCallRinging) {
+                    _devices.value.values.firstOrNull { device ->
+                        device is AppleDevice &&
+                        device.connectionState.value == ConnectionState.CONNECTED &&
+                        device.state.value.componentState.any { it.status == ComponentStatus.IN_EAR }
+                    }.let { device ->
+                        (device as AppleDevice).stopHeadGestureDetection()
                     }
                 }
             }
@@ -272,17 +281,19 @@ class LibrePodsService : Service() {
                         "Loaded metadata for device ${device.macAddress.toRedactedString()}: $metadata"
                     )
 
-
                     device.loadInitialState(
                         state = AppleState().copy(
                             capabilities = cache.capabilities,
                             magicKeys = cache.magicKeys,
                             controlStates = cache.controlStates,
-                            customEq = cache.customEq,
                         ),
                         settings = settings,
                         metadata = metadata
                     )
+
+                    if (device.settings.value.hrmAlertEnabled) {
+                        device.startHr()
+                    }
                 }
 
                 deviceJobs[MacAddress(bluetoothDevice.address)] = mutableListOf()
@@ -577,7 +588,6 @@ class LibrePodsService : Service() {
                             capabilities = cache.capabilities,
                             magicKeys = cache.magicKeys,
                             controlStates = cache.controlStates,
-                            customEq = cache.customEq,
                         ),
                         settings = settings,
                         metadata = metadata
@@ -794,7 +804,8 @@ class LibrePodsService : Service() {
 
                         processHeartRateSample(
                             heartRateSample = heartRateSample,
-                            interval = state.heartRateInterval
+                            interval = state.heartRateInterval,
+                            alertThreshold = deviceSettings.hrmAlertThreshold
                         )
                     }
                 }
@@ -996,19 +1007,25 @@ class LibrePodsService : Service() {
 
     fun startForegroundNotification() {
         val disconnectedNotificationChannel = NotificationChannel(
-            "background_service_status",
-            "Background Service Status",
+            "foreground_service_status",
+            getString(R.string.foreground_service_status),
             NotificationManager.IMPORTANCE_NONE
+        )
+
+        val hrmAlertChannel = NotificationChannel(
+            "hrm_alert",
+            getString(R.string.heart_rate_alert),
+            NotificationManager.IMPORTANCE_HIGH
         )
 
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.createNotificationChannel(disconnectedNotificationChannel)
+        notificationManager.createNotificationChannel(hrmAlertChannel)
 
-        val notificationSettingsIntent =
-            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                putExtra(Settings.EXTRA_CHANNEL_ID, "background_service_status")
-            }
+        val notificationSettingsIntent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            putExtra(Settings.EXTRA_CHANNEL_ID, "foreground_service_status")
+        }
 
         val pendingIntentNotifDisable = PendingIntent.getActivity(
             this,
@@ -1017,9 +1034,9 @@ class LibrePodsService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, "background_service_status")
-            .setSmallIcon(R.drawable.ic_airpods).setContentTitle("Background Service Running")
-            .setContentText("Useless notification, disable it by clicking on it.")
+        val notification = NotificationCompat.Builder(this, "foreground_service_status")
+            .setSmallIcon(R.drawable.ic_airpods).setContentTitle(getString(R.string.service_running))
+            .setContentText(getString(R.string.foreground_notification_description))
             .setContentIntent(pendingIntentNotifDisable).setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW).setOngoing(true).build()
 
@@ -1180,13 +1197,6 @@ class LibrePodsService : Service() {
                     device.disableAudio(this)
                     device.disconnectAudio(this)
                 }
-
-                // not the right place because the stream doesn't switch to the remaining bud when the active one is removed
-                if (device is AppleDevice && device.state.value.hrmActive) {
-                    device.updateState {
-                        it.copy(hrmActive = false)
-                    }
-                }
             }
         }
 
@@ -1210,41 +1220,73 @@ class LibrePodsService : Service() {
         }
     }
 
-    private fun processHeartRateSample(heartRateSample: HeartRateSample, interval: Duration) {
+    private fun processHeartRateSample(heartRateSample: HeartRateSample, interval: Duration, alertThreshold: Int) {
         CoroutineScope(Dispatchers.IO).launch {
             Log.d(TAG, "inserting to local db")
             heartRateRepository.insert(heartRateSample)
         }
 
-        if (SdkExtensions.getExtensionVersion(Build.VERSION_CODES.UPSIDE_DOWN_CAKE) >= 7) {
-            if (checkSelfPermission(HealthPermission.getWritePermission(HeartRateRecord::class)) != PackageManager.PERMISSION_GRANTED) return
-            val healthConnectHeartRateSample = HeartRateRecord.Sample(
-                time = heartRateSample.timestamp.toJavaInstant(),
-                beatsPerMinute = heartRateSample.bpm.toLong()
-            )
+        CoroutineScope(Dispatchers.Default).launch {
+            val notificationManager = getSystemService(NotificationManager::class.java)
 
-            val zoneOffset = ZoneOffset.systemDefault().rules.getOffset(heartRateSample.timestamp.toJavaInstant())
+            if (heartRateSample.bpm > alertThreshold) {
+                val notification = NotificationCompat.Builder(this@LibrePodsService, "hrm_alert")
+                    .setSmallIcon(R.drawable.ic_pulse_alert)
+                    .setContentTitle(getString(R.string.high_heart_rate))
+                    .setContentText(
+                        getString(
+                            R.string.high_heart_rate_notification_text,
+                            heartRateSample.bpm
+                        )
+                    )
+                    .setPriority(NotificationCompat.PRIORITY_MAX)
+                    .setOngoing(true)
+                    .build()
 
-            val heartRateRecord = HeartRateRecord(
-                startTime = (heartRateSample.timestamp - interval).toJavaInstant(),
-                endTime = heartRateSample.timestamp.toJavaInstant(),
-                startZoneOffset = zoneOffset,
-                endZoneOffset = zoneOffset,
-                samples = listOf(healthConnectHeartRateSample),
-                metadata = androidx.health.connect.client.records.metadata.Metadata.autoRecorded(
-                    device = androidx.health.connect.client.records.metadata.Device(type = androidx.health.connect.client.records.metadata.Device.TYPE_HEARABLE)
+                notificationManager.notify(999, notification)
+            } else {
+                if (notificationManager.activeNotifications.any { it.id == 999 }) {
+                    notificationManager.cancel(999)
+                }
+            }
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            if (SdkExtensions.getExtensionVersion(Build.VERSION_CODES.UPSIDE_DOWN_CAKE) >= 7) {
+                if (checkSelfPermission(HealthPermission.getWritePermission(HeartRateRecord::class)) != PackageManager.PERMISSION_GRANTED) return@launch
+                val healthConnectHeartRateSample = HeartRateRecord.Sample(
+                    time = heartRateSample.timestamp.toJavaInstant(),
+                    beatsPerMinute = heartRateSample.bpm.toLong()
                 )
-            )
 
-            if (healthConnectClient != null) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    healthConnectClient!!.insertRecords(listOf(heartRateRecord))
+                val zoneOffset =
+                    ZoneOffset.systemDefault().rules.getOffset(heartRateSample.timestamp.toJavaInstant())
+
+                val heartRateRecord = HeartRateRecord(
+                    startTime = (heartRateSample.timestamp - interval).toJavaInstant(),
+                    endTime = heartRateSample.timestamp.toJavaInstant(),
+                    startZoneOffset = zoneOffset,
+                    endZoneOffset = zoneOffset,
+                    samples = listOf(healthConnectHeartRateSample),
+                    metadata = androidx.health.connect.client.records.metadata.Metadata.autoRecorded(
+                        device = androidx.health.connect.client.records.metadata.Device(type = androidx.health.connect.client.records.metadata.Device.TYPE_HEARABLE)
+                    )
+                )
+
+                if (healthConnectClient != null) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            healthConnectClient!!.insertRecords(listOf(heartRateRecord))
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error inserting heart rate record", e)
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "Health Connect client not available")
                 }
             } else {
-                Log.w(TAG, "Health Connect client not available")
+                Log.d(TAG, "U SDK Extension <7")
             }
-        } else {
-            Log.d(TAG, "U SDK Extension <7")
         }
     }
 
