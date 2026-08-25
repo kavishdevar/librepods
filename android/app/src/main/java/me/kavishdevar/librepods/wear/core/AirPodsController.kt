@@ -32,6 +32,8 @@ class AirPodsController(private val context: Context, private val transport: Wea
     private var connectedDevice: BluetoothDevice? = null
     private var aacpReaderJob: Job? = null
     private var readyWatchJob: Job? = null
+    private var reconnectJob: Job? = null
+    private var manualDisconnect = false
 
     private val bleListener = object : BLEManager.AirPodsStatusListener {
         override fun onDeviceStatusChanged(device: BLEManager.AirPodsStatus, previousStatus: BLEManager.AirPodsStatus?) = applyBleStatus(device)
@@ -67,18 +69,33 @@ class AirPodsController(private val context: Context, private val transport: Wea
             AirPodsProtocolDiagnostics.parseEarDetection(earDetection)?.let { (left, right) -> onEarDetection(left, right) }
         }
         override fun onConversationAwarenessReceived(conversationAwareness: ByteArray) { recordPacket(conversationAwareness) }
-        override fun onControlCommandReceived(controlCommand: ByteArray) { recordPacket(controlCommand) }
+        override fun onControlCommandReceived(controlCommand: ByteArray) {
+            recordPacket(controlCommand)
+            runCatching { AACPManager.ControlCommand.fromByteArray(controlCommand) }
+                .onSuccess { command ->
+                    when (AACPManager.ControlCommandIdentifiers.fromByte(command.identifier)) {
+                        AACPManager.ControlCommandIdentifiers.LISTENING_MODE -> {
+                            when (command.value.firstOrNull()?.toInt()?.and(0xFF)) {
+                                1 -> onListeningModeChanged(ListeningMode.OFF)
+                                2 -> onListeningModeChanged(ListeningMode.ANC)
+                                3 -> onListeningModeChanged(ListeningMode.TRANSPARENCY)
+                                else -> Unit
+                            }
+                        }
+                        AACPManager.ControlCommandIdentifiers.EAR_DETECTION_CONFIG -> {
+                            stateStore.update { it.copy(earDetectionEnabled = command.value.firstOrNull()?.toInt()?.and(0xFF) == 1) }
+                        }
+                        AACPManager.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG -> {
+                            stateStore.update { it.copy(conversationalAwarenessEnabled = command.value.firstOrNull()?.toInt()?.and(0xFF) == 1) }
+                        }
+                        else -> Unit
+                    }
+                }
+        }
 
-        // These data classes live inside AACPManager's companion object, so the
-        // explicit Companion qualifier is required for the PacketCallback ABI.
         override fun onDeviceInformationReceived(deviceInformation: AACPManager.Companion.AirPodsInformation) {
             stateStore.update {
-                it.copy(
-                    deviceName = deviceInformation.name.ifBlank { it.deviceName },
-                    protocolStage = "READY",
-                    connected = true,
-                    connecting = false,
-                )
+                it.copy(deviceName = deviceInformation.name.ifBlank { it.deviceName }, protocolStage = "READY", connected = true, connecting = false)
             }
         }
         override fun onHeadTrackingReceived(headTracking: ByteArray) { recordPacket(headTracking) }
@@ -106,6 +123,8 @@ class AirPodsController(private val context: Context, private val transport: Wea
 
     @SuppressLint("MissingPermission")
     fun connectToDevice(address: String, name: String = "AirPods"): Boolean {
+        manualDisconnect = false
+        reconnectJob?.cancel()
         markConnecting()
         return try {
             val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return fail("Bluetooth is unavailable")
@@ -169,10 +188,33 @@ class AirPodsController(private val context: Context, private val transport: Wea
                     recordPacket(packet)
                     manager.receivePacket(packet)
                 }
-                if (connectedDevice != null) onError("AACP socket closed by device")
+                if (!manualDisconnect && connectedDevice != null) scheduleReconnect("AACP socket closed by device")
             } catch (e: Throwable) {
-                if (connectedDevice != null) onError("AACP reader stopped: ${e.message ?: e.javaClass.simpleName}", e)
+                if (!manualDisconnect && connectedDevice != null) scheduleReconnect("AACP reader stopped: ${e.message ?: e.javaClass.simpleName}")
             }
+        }
+    }
+
+    private fun scheduleReconnect(reason: String) {
+        if (manualDisconnect || connectedDevice == null || reconnectJob?.isActive == true) return
+        reconnectJob = scope.launch {
+            onError(reason)
+            val device = connectedDevice ?: return@launch
+            for (attempt in 1..3) {
+                if (manualDisconnect) return@launch
+                delay(attempt * 1000L)
+                Log.i(tag, "AACP reconnect attempt $attempt/3")
+                runCatching { transport.close() }
+                runCatching { aacp?.unbindTransport(); aacp?.bindTransport(transport) }
+                stateStore.update { it.copy(connecting = true, connected = false, protocolStage = "RECONNECT_$attempt", lastError = null) }
+                try {
+                    connectTransport(device)
+                    if (aacp?.sessionState == AACPManager.SessionState.READY) return@launch
+                } catch (e: Throwable) {
+                    Log.w(tag, "Reconnect attempt $attempt failed", e)
+                }
+            }
+            onError("AACP reconnect failed after 3 attempts")
         }
     }
 
@@ -190,11 +232,38 @@ class AirPodsController(private val context: Context, private val transport: Wea
     fun onBattery(left: Int?, right: Int?, caseBattery: Int?) { stateStore.update { it.copy(leftBattery = left, rightBattery = right, caseBattery = caseBattery) } }
     fun onEarDetection(leftInEar: Boolean, rightInEar: Boolean) { stateStore.update { it.copy(leftInEar = leftInEar, rightInEar = rightInEar) } }
     fun onListeningModeChanged(mode: ListeningMode) { stateStore.update { it.copy(listeningMode = mode) } }
+
+    /** Verified AACP control identifier 0x0D: Off=1, ANC=2, Transparency=3. */
+    fun setListeningMode(mode: ListeningMode): Boolean {
+        val value = when (mode) { ListeningMode.OFF -> 1; ListeningMode.ANC -> 2; ListeningMode.TRANSPARENCY -> 3 }.toByte()
+        val sent = aacp?.sendControlCommand(AACPManager.ControlCommandIdentifiers.LISTENING_MODE.value, byteArrayOf(value, 0, 0, 0)) == true
+        if (sent) onListeningModeChanged(mode)
+        return sent
+    }
+
+    /** Verified AACP control identifier 0x28: 1=enabled, 2=disabled. */
+    fun setConversationalAwareness(enabled: Boolean): Boolean {
+        val value = if (enabled) 1 else 2
+        val sent = aacp?.sendControlCommand(AACPManager.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG.value, byteArrayOf(value.toByte(), 0, 0, 0)) == true
+        if (sent) stateStore.update { it.copy(conversationalAwarenessEnabled = enabled) }
+        return sent
+    }
+
+    /** Verified AACP control identifier 0x0A: 1=enabled, 2=disabled. */
+    fun setEarDetection(enabled: Boolean): Boolean {
+        val value = if (enabled) 1 else 2
+        val sent = aacp?.sendControlCommand(AACPManager.ControlCommandIdentifiers.EAR_DETECTION_CONFIG.value, byteArrayOf(value.toByte(), 0, 0, 0)) == true
+        if (sent) stateStore.update { it.copy(earDetectionEnabled = enabled) }
+        return sent
+    }
+
     fun onError(message: String, cause: Throwable? = null) { Log.e(tag, message, cause); stateStore.update { it.copy(connecting = false, connected = false, protocolStage = "FAILED", lastError = message) } }
     private fun fail(message: String, cause: Throwable? = null): Boolean { onError(message, cause); return false }
 
     fun disconnect() {
+        manualDisconnect = true
         connectedDevice = null
+        reconnectJob?.cancel(); reconnectJob = null
         readyWatchJob?.cancel(); readyWatchJob = null
         aacpReaderJob?.cancel(); aacpReaderJob = null
         runCatching { transport.close() }
