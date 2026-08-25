@@ -45,11 +45,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
     private val aacpCallback = object : AACPManager.PacketCallback {
         override fun onBatteryInfoReceived(batteryInfo: ByteArray) {
             recordPacket(batteryInfo)
-            val parsed = AirPodsProtocolDiagnostics.parseBattery(batteryInfo)
-            if (parsed == null) {
-                Log.w(tag, "AACP battery frame rejected: ${AirPodsProtocolDiagnostics.hex(batteryInfo)}")
-                return
-            }
+            val parsed = AirPodsProtocolDiagnostics.parseBattery(batteryInfo) ?: return
             val left = parsed.firstOrNull { it.type == AirPodsProtocolDiagnostics.Component.LEFT }
             val right = parsed.firstOrNull { it.type == AirPodsProtocolDiagnostics.Component.RIGHT }
             val case = parsed.firstOrNull { it.type == AirPodsProtocolDiagnostics.Component.CASE }
@@ -61,47 +57,32 @@ class AirPodsController(private val context: Context, private val transport: Wea
                     leftCharging = left?.charging ?: it.leftCharging,
                     rightCharging = right?.charging ?: it.rightCharging,
                     caseCharging = case?.charging ?: it.caseCharging,
-                    protocolStage = "READY",
-                    connected = true,
-                    connecting = false,
+                    protocolStage = "READY", connected = true, connecting = false,
                 )
             }
         }
 
         override fun onEarDetectionReceived(earDetection: ByteArray) {
             recordPacket(earDetection)
-            AirPodsProtocolDiagnostics.parseEarDetection(earDetection)?.let { (left, right) ->
-                onEarDetection(left, right)
-            }
+            AirPodsProtocolDiagnostics.parseEarDetection(earDetection)?.let { (left, right) -> onEarDetection(left, right) }
         }
-
         override fun onConversationAwarenessReceived(conversationAwareness: ByteArray) { recordPacket(conversationAwareness) }
         override fun onControlCommandReceived(controlCommand: ByteArray) { recordPacket(controlCommand) }
-        override fun onDeviceInformationReceived(deviceInformation: AACPManager.Companion.AirPodsInformation) {
-            stateStore.update {
-                it.copy(
-                    deviceName = deviceInformation.name.ifBlank { it.deviceName },
-                    protocolStage = "READY",
-                    connected = true,
-                    connecting = false,
-                )
-            }
+        override fun onDeviceInformationReceived(deviceInformation: AACPManager.AirPodsInformation) {
+            stateStore.update { it.copy(deviceName = deviceInformation.name.ifBlank { it.deviceName }, protocolStage = "READY", connected = true, connecting = false) }
         }
         override fun onHeadTrackingReceived(headTracking: ByteArray) { recordPacket(headTracking) }
-        override fun onUnknownPacketReceived(packet: ByteArray) {
-            recordPacket(packet)
-            Log.d(tag, "AACP unknown packet: ${AirPodsProtocolDiagnostics.hex(packet)}")
-        }
+        override fun onUnknownPacketReceived(packet: ByteArray) { recordPacket(packet) }
         override fun onProximityKeysReceived(proximityKeys: ByteArray) { recordPacket(proximityKeys) }
         override fun onStemPressReceived(stemPress: ByteArray) { recordPacket(stemPress) }
         override fun onAudioSourceReceived(audioSource: ByteArray) { recordPacket(audioSource) }
-        override fun onOwnershipChangeReceived(owns: Boolean) { recordPacket(null); Log.d(tag, "AACP ownership=$owns") }
-        override fun onConnectedDevicesReceived(connectedDevices: List<AACPManager.Companion.ConnectedDevice>) { recordPacket(null) }
+        override fun onOwnershipChangeReceived(owns: Boolean) { Log.d(tag, "AACP ownership=$owns") }
+        override fun onConnectedDevicesReceived(connectedDevices: List<AACPManager.ConnectedDevice>) { Log.d(tag, "AACP connected devices=${connectedDevices.size}") }
         override fun onOwnershipToFalseRequest(sender: String, reasonReverseTapped: Boolean) { Log.d(tag, "AACP ownership revoke requested by $sender") }
         override fun onShowNearbyUI(sender: String) { Log.d(tag, "AACP nearby UI requested by $sender") }
-        override fun onHeadphoneAccommodationReceived(eqData: FloatArray) { recordPacket(null) }
-        override fun onCustomEqReceived(customEq: CustomEq) { recordPacket(null) }
-        override fun onCapabilitiesReceived(capabilities: List<Capability>) { recordPacket(null) }
+        override fun onHeadphoneAccommodationReceived(eqData: FloatArray) { Log.d(tag, "AACP EQ frame received: ${eqData.size} values") }
+        override fun onCustomEqReceived(customEq: CustomEq) { Log.d(tag, "AACP custom EQ received") }
+        override fun onCapabilitiesReceived(capabilities: List<Capability>) { Log.d(tag, "AACP capabilities=${capabilities.size}") }
     }
 
     fun initialize(aacpManager: AACPManager, bleManager: BLEManager) {
@@ -117,8 +98,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
     fun connectToDevice(address: String, name: String = "AirPods"): Boolean {
         markConnecting()
         return try {
-            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
-                ?: return fail("Bluetooth is unavailable")
+            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return fail("Bluetooth is unavailable")
             if (!adapter.isEnabled) return fail("Bluetooth is disabled")
             val device = adapter.getRemoteDevice(address)
             connectedDevice = device
@@ -157,9 +137,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
                         return@launch
                     }
                 }
-                if (manager.sessionState != AACPManager.SessionState.READY) {
-                    onError("AACP handshake timeout (${manager.sessionState})")
-                }
+                if (manager.sessionState != AACPManager.SessionState.READY) onError("AACP handshake timeout (${manager.sessionState})")
             }
         } catch (e: Throwable) {
             onError("AACP connection failed: ${e.message ?: e.javaClass.simpleName}", e)
@@ -190,12 +168,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
     private fun recordPacket(packet: ByteArray?) {
         if (packet == null) return
         val frame = AirPodsProtocolDiagnostics.decode(packet)
-        stateStore.update {
-            it.copy(
-                lastPacketOpcode = AirPodsProtocolDiagnostics.opcodeName(frame?.opcode),
-                lastPacketHex = AirPodsProtocolDiagnostics.hex(packet),
-            )
-        }
+        stateStore.update { it.copy(lastPacketOpcode = AirPodsProtocolDiagnostics.opcodeName(frame?.opcode), lastPacketHex = AirPodsProtocolDiagnostics.hex(packet)) }
     }
 
     private fun applyBleStatus(device: BLEManager.AirPodsStatus) {
@@ -214,7 +187,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
         readyWatchJob?.cancel(); readyWatchJob = null
         aacpReaderJob?.cancel(); aacpReaderJob = null
         runCatching { transport.close() }
-        aacp?.let { if (it.sessionState != AACPManager.SessionState.IDLE) it.unbindTransport() }
+        aacp?.unbindTransport()
         stateStore.update { it.copy(connected = false, connecting = false, protocolStage = "IDLE") }
     }
 
