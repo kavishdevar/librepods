@@ -22,6 +22,7 @@ import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
+import me.kavishdevar.librepods.bluetooth.AACPManager.Companion.ControlCommandIdentifiers
 import me.kavishdevar.librepods.wear.bluetooth.WearBluetoothScanner
 import me.kavishdevar.librepods.wear.core.AirPodsController
 import me.kavishdevar.librepods.wear.core.AirPodsDevice
@@ -71,6 +72,25 @@ fun AirPodsHomeScreen(
                         }
                     }
                     item { EarStatusText(state) }
+
+                    item { ListHeader { Text("Settings") } }
+                    state.adaptiveStrengthPercent()?.let { percent ->
+                        item {
+                            StepperRow("Adaptive strength", percent) { value ->
+                                if (!controller.setControlByte(ControlCommandIdentifiers.AUTO_ANC_STRENGTH, 100 - value)) {
+                                    controller.onError("Failed to set adaptive strength")
+                                }
+                            }
+                        }
+                    }
+                    settingItems(state, controller)
+                    infoItems(state)
+
+                    item {
+                        Button(onClick = { controller.refreshState() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Refresh state")
+                        }
+                    }
                     item {
                         Button(onClick = { controller.disconnect() }, modifier = Modifier.fillMaxWidth()) {
                             Text("Disconnect")
@@ -93,6 +113,43 @@ fun AirPodsHomeScreen(
             }
         }
     }
+}
+
+/** Model, firmware and serial reported by the AirPods device information packet. */
+private fun ScalingLazyListScope.infoItems(state: AirPodsState) {
+    val rows = listOfNotNull(
+        state.modelNumber?.let { "Model" to it },
+        state.firmwareVersion?.let { "Firmware" to it },
+        state.serialNumber?.let { "Serial" to it },
+        state.address?.let { "Address" to it },
+    )
+    if (rows.isEmpty()) return
+    item { ListHeader { Text("About") } }
+    rows.forEach { (label, value) ->
+        item(key = "info_$label") {
+            Column(Modifier.fillMaxWidth()) {
+                Text(label, style = MaterialTheme.typography.labelSmall)
+                Text(value, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/** Boolean control command toggles; only settings already reported by the AirPods are shown. */
+private fun ScalingLazyListScope.settingItems(
+    state: AirPodsState,
+    controller: AirPodsController,
+) {
+    BooleanSettings.filter { (_, identifier) -> state.controlValues.containsKey(identifier) }
+        .forEach { (label, identifier) ->
+            item(key = identifier.name) {
+                ToggleRow(label, state.isControlEnabled(identifier)) { enabled ->
+                    if (!controller.setControlBoolean(identifier, enabled)) {
+                        controller.onError("Failed to set $label")
+                    }
+                }
+            }
+        }
 }
 
 private fun ScalingLazyListScope.deviceItems(

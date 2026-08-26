@@ -58,7 +58,12 @@ class AirPodsController(private val context: Context, private val transport: Wea
         override fun onControlCommandReceived(controlCommand: ByteArray) {
             recordPacket(controlCommand)
             runCatching { AACPManager.ControlCommand.fromByteArray(controlCommand) }.onSuccess { command ->
-                when (AACPManager.Companion.ControlCommandIdentifiers.fromByte(command.identifier)) {
+                val identifier = AACPManager.Companion.ControlCommandIdentifiers.fromByte(command.identifier)
+                val first = command.value.firstOrNull()?.toInt()?.and(0xFF)
+                if (identifier != null && first != null) {
+                    stateStore.update { it.copy(controlValues = it.controlValues + (identifier to first)) }
+                }
+                when (identifier) {
                     AACPManager.Companion.ControlCommandIdentifiers.LISTENING_MODE -> when (command.value.firstOrNull()?.toInt()?.and(0xFF)) { 1 -> onListeningModeChanged(ListeningMode.OFF); 2 -> onListeningModeChanged(ListeningMode.ANC); 3 -> onListeningModeChanged(ListeningMode.TRANSPARENCY); else -> Unit }
                     AACPManager.Companion.ControlCommandIdentifiers.EAR_DETECTION_CONFIG -> stateStore.update { it.copy(earDetectionEnabled = command.value.firstOrNull()?.toInt()?.and(0xFF) == 1) }
                     AACPManager.Companion.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG -> stateStore.update { it.copy(conversationalAwarenessEnabled = command.value.firstOrNull()?.toInt()?.and(0xFF) == 1) }
@@ -66,7 +71,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
                 }
             }
         }
-        override fun onDeviceInformationReceived(deviceInformation: AACPManager.Companion.AirPodsInformation) { stateStore.update { it.copy(deviceName = deviceInformation.name.ifBlank { it.deviceName }, protocolStage = "READY", connected = true, connecting = false) } }
+        override fun onDeviceInformationReceived(deviceInformation: AACPManager.Companion.AirPodsInformation) { stateStore.update { it.copy(deviceName = deviceInformation.name.ifBlank { it.deviceName }, modelNumber = deviceInformation.modelNumber.ifBlank { null }, firmwareVersion = deviceInformation.version1.ifBlank { null }, serialNumber = deviceInformation.serialNumber.ifBlank { null }, protocolStage = "READY", connected = true, connecting = false) } }
         override fun onHeadTrackingReceived(headTracking: ByteArray) { recordPacket(headTracking) }
         override fun onUnknownPacketReceived(packet: ByteArray) { recordPacket(packet) }
         override fun onProximityKeysReceived(proximityKeys: ByteArray) { recordPacket(proximityKeys) }
@@ -153,6 +158,8 @@ class AirPodsController(private val context: Context, private val transport: Wea
         is AirPodsCommand.SetListeningMode -> setListeningMode(command.mode)
         is AirPodsCommand.SetEarDetection -> setEarDetection(command.enabled)
         is AirPodsCommand.SetConversationalAwareness -> setConversationalAwareness(command.enabled)
+        is AirPodsCommand.SetControlBoolean -> setControlBoolean(command.identifier, command.enabled)
+        is AirPodsCommand.SetControlByte -> setControlByte(command.identifier, command.value)
     }
 
     /**
@@ -175,6 +182,25 @@ class AirPodsController(private val context: Context, private val transport: Wea
     }
     fun setConversationalAwareness(enabled: Boolean): Boolean { val value = if (enabled) 1 else 2; val sent = aacp?.sendControlCommand(AACPManager.Companion.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG.value, byteArrayOf(value.toByte(), 0, 0, 0)) == true; if (sent) stateStore.update { it.copy(conversationalAwarenessEnabled = enabled) }; return sent }
     fun setEarDetection(enabled: Boolean): Boolean { val value = if (enabled) 1 else 2; val sent = aacp?.sendControlCommand(AACPManager.Companion.ControlCommandIdentifiers.EAR_DETECTION_CONFIG.value, byteArrayOf(value.toByte(), 0, 0, 0)) == true; if (sent) stateStore.update { it.copy(earDetectionEnabled = enabled) }; return sent }
+
+    /** Boolean control commands are encoded as `0x01` enabled / `0x02` disabled. */
+    fun setControlBoolean(identifier: AACPManager.Companion.ControlCommandIdentifiers, enabled: Boolean): Boolean =
+        setControlByte(identifier, if (enabled) 0x01 else 0x02)
+
+    fun setControlByte(identifier: AACPManager.Companion.ControlCommandIdentifiers, value: Int): Boolean {
+        val sent = aacp?.sendControlCommand(identifier.value, byteArrayOf(value.toByte(), 0, 0, 0)) == true
+        if (sent) {
+            stateStore.update { it.copy(controlValues = it.controlValues + (identifier to value)) }
+            when (identifier) {
+                AACPManager.Companion.ControlCommandIdentifiers.EAR_DETECTION_CONFIG ->
+                    stateStore.update { it.copy(earDetectionEnabled = value == 0x01) }
+                AACPManager.Companion.ControlCommandIdentifiers.CONVERSATION_DETECT_CONFIG ->
+                    stateStore.update { it.copy(conversationalAwarenessEnabled = value == 0x01) }
+                else -> Unit
+            }
+        }
+        return sent
+    }
     fun onError(message: String, cause: Throwable? = null) { Log.e(tag, message, cause); stateStore.update { it.copy(connecting = false, connected = false, protocolStage = "FAILED", lastError = message) } }
     private fun fail(message: String, cause: Throwable? = null): Boolean { onError(message, cause); return false }
     fun disconnect() { manualDisconnect = true; connectedDevice = null; reconnectJob?.cancel(); reconnectJob = null; readyWatchJob?.cancel(); readyWatchJob = null; aacpReaderJob?.cancel(); aacpReaderJob = null; runCatching { transport.close() }; aacp?.unbindTransport(); stateStore.update { it.copy(connected = false, connecting = false, protocolStage = "IDLE") } }
