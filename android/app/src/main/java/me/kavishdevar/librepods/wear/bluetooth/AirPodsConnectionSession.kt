@@ -1,5 +1,6 @@
 package me.kavishdevar.librepods.wear.bluetooth
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
@@ -41,6 +42,7 @@ class AirPodsConnectionSession(
     override val attInput get() = requireSocket(attSocket).inputStream
     override val attOutput get() = requireSocket(attSocket).outputStream
 
+    @SuppressLint("MissingPermission")
     @Synchronized
     fun connectAacp(device: BluetoothDevice) {
         if (mutableState.value == State.CONNECTING || mutableState.value == State.CONNECTED) return
@@ -62,6 +64,7 @@ class AirPodsConnectionSession(
         }
     }
 
+    @SuppressLint("MissingPermission")
     @Synchronized
     fun connect(
         device: BluetoothDevice,

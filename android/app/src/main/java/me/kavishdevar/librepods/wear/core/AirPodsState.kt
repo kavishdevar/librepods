@@ -3,11 +3,15 @@ package me.kavishdevar.librepods.wear.core
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import me.kavishdevar.librepods.bluetooth.AACPManager
 
 /** Immutable state exposed by the autonomous Wear AirPods controller. */
 data class AirPodsState(
     val deviceName: String = "AirPods",
     val address: String? = null,
+    val modelNumber: String? = null,
+    val firmwareVersion: String? = null,
+    val serialNumber: String? = null,
     val connected: Boolean = false,
     val connecting: Boolean = false,
     val leftBattery: Int? = null,
@@ -22,6 +26,8 @@ data class AirPodsState(
     val rightInEar: Boolean? = null,
     val earDetectionEnabled: Boolean? = null,
     val conversationalAwarenessEnabled: Boolean? = null,
+    /** First byte of every control command value reported by the AirPods, keyed by identifier. */
+    val controlValues: Map<AACPManager.Companion.ControlCommandIdentifiers, Int> = emptyMap(),
     val protocolStage: String = "IDLE",
     val lastPacketOpcode: String? = null,
     val lastPacketHex: String? = null,

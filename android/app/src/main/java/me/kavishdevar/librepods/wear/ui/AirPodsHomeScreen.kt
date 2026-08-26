@@ -1,134 +1,232 @@
 package me.kavishdevar.librepods.wear.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material3.AppScaffold
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
+import me.kavishdevar.librepods.bluetooth.AACPManager.Companion.ControlCommandIdentifiers
 import me.kavishdevar.librepods.wear.bluetooth.WearBluetoothScanner
 import me.kavishdevar.librepods.wear.core.AirPodsController
 import me.kavishdevar.librepods.wear.core.AirPodsDevice
+import me.kavishdevar.librepods.wear.core.AirPodsState
 
-/** Compact Wear UI: system pairing first, LibrePods protocol second. */
+/** Wear home screen: status, battery, AirPods controls and paired device list. */
 @Composable
 fun AirPodsHomeScreen(
     controller: AirPodsController,
     scanner: WearBluetoothScanner,
     onOpenSystemBluetooth: () -> Unit,
     onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
 ) {
     val state by controller.state.collectAsState()
     val devices by scanner.devices.collectAsState()
+    val listState = rememberScalingLazyListState()
 
-    Column(
-        modifier = modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("LibrePods", style = MaterialTheme.typography.titleSmall)
-        Text(
-            when {
-                state.connecting -> "Connecting…"
-                state.connected -> "Connected"
-                state.lastError != null -> state.lastError!!
-                else -> "System Bluetooth"
-            },
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        if (state.connected || state.leftBattery != null || state.rightBattery != null || state.caseBattery != null) {
-            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), Arrangement.SpaceEvenly) {
-                BatteryRow("L", state.leftBattery, state.leftCharging)
-                BatteryRow("R", state.rightBattery, state.rightCharging)
-                BatteryRow("C", state.caseBattery, state.caseCharging)
-            }
-        }
-
-        if (state.connected) {
-            ListeningModeRow(selected = state.listeningMode, onSelected = { mode ->
-                if (!controller.setListeningMode(mode)) controller.onError("Failed to set listening mode")
-            })
-            Row(
-                Modifier.fillMaxWidth().padding(top = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)
+    MaterialTheme {
+        AppScaffold {
+            ScreenScaffold(scrollState = listState) { contentPadding ->
+            ScalingLazyColumn(
+                state = listState,
+                contentPadding = contentPadding,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                ToggleChip("Ear", state.earDetectionEnabled == true) { enabled ->
-                    if (!controller.setEarDetection(enabled)) controller.onError("Failed to set ear detection")
+                item { ListHeader { Text(state.deviceName) } }
+                item { StatusText(state) }
+
+                if (state.connected || state.leftBattery != null || state.rightBattery != null || state.caseBattery != null) {
+                    item { BatteryRow(state) }
                 }
-                ToggleChip("Conv", state.conversationalAwarenessEnabled == true) { enabled ->
-                    if (!controller.setConversationalAwareness(enabled)) controller.onError("Failed to set conversation awareness")
+
+                if (state.connected) {
+                    item {
+                        ListeningModeRow(selected = state.listeningMode) { mode ->
+                            if (!controller.setListeningMode(mode)) controller.onError("Failed to set listening mode")
+                        }
+                    }
+                    item {
+                        ToggleRow("Ear detection", state.earDetectionEnabled == true) { enabled ->
+                            if (!controller.setEarDetection(enabled)) controller.onError("Failed to set ear detection")
+                        }
+                    }
+                    item {
+                        ToggleRow("Conversation", state.conversationalAwarenessEnabled == true) { enabled ->
+                            if (!controller.setConversationalAwareness(enabled)) controller.onError("Failed to set conversation awareness")
+                        }
+                    }
+                    item { EarStatusText(state) }
+
+                    item { ListHeader { Text("Settings") } }
+                    state.adaptiveStrengthPercent()?.let { percent ->
+                        item {
+                            StepperRow("Adaptive strength", percent) { value ->
+                                if (!controller.setControlByte(ControlCommandIdentifiers.AUTO_ANC_STRENGTH, 100 - value)) {
+                                    controller.onError("Failed to set adaptive strength")
+                                }
+                            }
+                        }
+                    }
+                    settingItems(state, controller)
+                    infoItems(state)
+
+                    item {
+                        Button(onClick = { controller.refreshState() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Refresh state")
+                        }
+                    }
+                    item {
+                        Button(onClick = { controller.disconnect() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Disconnect")
+                        }
+                    }
+                } else {
+                    item { ListHeader { Text("Paired devices") } }
+                    if (devices.isEmpty()) {
+                        item { Text("No paired devices", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+                    }
+                    deviceItems(devices, controller)
+                    item {
+                        Button(onClick = onOpenSystemBluetooth, modifier = Modifier.fillMaxWidth()) { Text("Pair in settings") }
+                    }
+                    item {
+                        Button(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("Refresh") }
+                    }
+                }
                 }
             }
         }
+    }
+}
 
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            if (devices.isEmpty()) {
-                item { Text("No paired AirPods", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(4.dp)) }
-            }
-            items(devices, key = { it.address }) { device ->
-                DeviceRow(device) { controller.connectToDevice(device.address, device.name) }
+/** Model, firmware and serial reported by the AirPods device information packet. */
+private fun ScalingLazyListScope.infoItems(state: AirPodsState) {
+    val rows = listOfNotNull(
+        state.modelNumber?.let { "Model" to it },
+        state.firmwareVersion?.let { "Firmware" to it },
+        state.serialNumber?.let { "Serial" to it },
+        state.address?.let { "Address" to it },
+    )
+    if (rows.isEmpty()) return
+    item { ListHeader { Text("About") } }
+    rows.forEach { (label, value) ->
+        item(key = "info_$label") {
+            Column(Modifier.fillMaxWidth()) {
+                Text(label, style = MaterialTheme.typography.labelSmall)
+                Text(value, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+    }
+}
 
-        Row(
-            Modifier.fillMaxWidth().padding(top = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)
-        ) {
-            Button(onClick = onOpenSystemBluetooth) { Text("Pair") }
-            Button(onClick = onRefresh) { Text("Refresh") }
+/** Boolean control command toggles; only settings already reported by the AirPods are shown. */
+private fun ScalingLazyListScope.settingItems(
+    state: AirPodsState,
+    controller: AirPodsController,
+) {
+    BooleanSettings.filter { (_, identifier) -> state.controlValues.containsKey(identifier) }
+        .forEach { (label, identifier) ->
+            item(key = identifier.name) {
+                ToggleRow(label, state.isControlEnabled(identifier)) { enabled ->
+                    if (!controller.setControlBoolean(identifier, enabled)) {
+                        controller.onError("Failed to set $label")
+                    }
+                }
+            }
+        }
+}
+
+private fun ScalingLazyListScope.deviceItems(
+    devices: List<AirPodsDevice>,
+    controller: AirPodsController,
+) {
+    devices.forEach { device ->
+        item(key = device.address) {
+            Button(
+                onClick = { controller.connectToDevice(device.address, device.name) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column {
+                    Text(device.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (device.bonded) "Paired · tap to connect" else "Nearby",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun DeviceRow(device: AirPodsDevice, onClick: () -> Unit) {
+private fun StatusText(state: AirPodsState) {
+    val status = when {
+        state.connecting -> "Connecting… (${state.protocolStage})"
+        state.connected -> "Connected"
+        state.lastError != null -> state.lastError
+        else -> "Not connected"
+    }
+    Text(
+        status.orEmpty(),
+        style = MaterialTheme.typography.labelMedium,
+        textAlign = TextAlign.Center,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun EarStatusText(state: AirPodsState) {
+    if (state.leftInEar == null && state.rightInEar == null) return
+    val text = "In ear: ${state.leftInEar.asEarLabel()} / ${state.rightInEar.asEarLabel()}"
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+private fun Boolean?.asEarLabel(): String = when (this) {
+    true -> "yes"
+    false -> "no"
+    null -> "—"
+}
+
+@Composable
+private fun BatteryRow(state: AirPodsState) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 3.dp),
-        Arrangement.SpaceBetween,
-        Alignment.CenterVertically
+        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(if (device.appleManufacturer) " ${device.name}" else device.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (device.bonded) "Paired · tap to connect" else "BLE", style = MaterialTheme.typography.labelSmall)
-        }
-        Text(device.rssi?.let { "${it} dBm" } ?: "—", style = MaterialTheme.typography.labelSmall)
+        BatteryCell("L", state.leftBattery, state.leftCharging)
+        BatteryCell("R", state.rightBattery, state.rightCharging)
+        BatteryCell("C", state.caseBattery, state.caseCharging)
     }
 }
 
 @Composable
-private fun BatteryRow(label: String, level: Int?, charging: Boolean) {
-    val value = if (level in 0..100) "$level%" else "--"
+private fun BatteryCell(label: String, level: Int?, charging: Boolean) {
+    val value = if (level != null && level in 0..100) "$level%" else "--"
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, style = MaterialTheme.typography.labelSmall)
-        Text(if (charging && value != "--") "$value ⚡" else value, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun ToggleChip(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    if (checked) {
-        Button(onClick = { onCheckedChange(false) }) { Text("$label ON") }
-    } else {
-        OutlinedButton(onClick = { onCheckedChange(true) }) { Text("$label OFF") }
+        Text(if (charging && value != "--") "$value +" else value, style = MaterialTheme.typography.bodySmall)
     }
 }

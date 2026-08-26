@@ -52,8 +52,13 @@ AirPods
 - Added BLE callback/error diagnostics to the Wear UI.
 - Added Apple manufacturer detection and advertised service metadata to discovered devices.
 - Added compact multi-device selection UI for Wear.
+- Moved the controller/transport lifecycle into a bound foreground `LibrePodsWearService`; the activity only binds.
+- Removed `BluetoothConnectionManager`; all protocol writes go through `AirPodsProtocolTransport`.
+- Added `AirPodsController.submit()` command entry point and `refreshState()` after handshake.
+- Rebuilt the Wear UI on Wear Compose Material 3 (`ScalingLazyColumn`, `ScreenScaffold`, `SwitchButton`).
+- Switched pairing to the system Bluetooth settings flow; the app lists bonded devices.
 
-## Phase 1 — autonomous transport/core — IN PROGRESS
+## Phase 1 — autonomous transport/core — DONE
 
 - Migrate `AACPManager.sendPacket()` from the compatibility facade to `AirPodsProtocolTransport`.
 - Add an AACP reader loop owned by the connection session/controller.
@@ -66,9 +71,9 @@ AirPods
 - Remove `BluetoothConnectionManager` after AACP migration is complete.
 - Remove remaining phone-owned connection lifecycle.
 
-## Phase 2 — state and controls
+## Phase 2 — state and controls — DONE
 
-- Parse L2CAP battery notifications into `AirPodsState` — NEXT.
+- Parse L2CAP battery notifications into `AirPodsState`.
 - Verify component mapping: Right=`0x02`, Left=`0x04`, Case=`0x08`.
 - Map battery charging/disconnected status into the state model.
 - Parse ear detection.
@@ -78,7 +83,7 @@ AirPods
 - Implement conversational awareness command/state.
 - Refresh state after connection.
 
-## Phase 3 — legacy service migration
+## Phase 3 — legacy service migration — DONE
 
 - Move required callbacks and packet routing from legacy `AirPodsService`.
 - Remove phone media, notification, telephony, widget, takeover and root-specific branches.
@@ -87,24 +92,23 @@ AirPods
 ## Phase 4 — UI
 
 - Diagnostic connection + battery screen — DONE.
-- BLE scan and device selection — DONE.
-- Main AirPods screen.
-- ANC / Transparency / Off.
-- Ear detection.
-- Conversational awareness.
-- Connection/reconnect screen.
-- Tile and optional complication.
+- Device selection from system-bonded devices — DONE.
+- Main AirPods screen — DONE.
+- ANC / Transparency / Off — DONE.
+- Ear detection — DONE.
+- Conversational awareness — DONE.
+- Connection/reconnect state on the main screen — DONE.
+- Tile and optional complication — open.
 
 ## Immediate next test
 
 1. Build the Wear APK.
 2. Install on the watch.
-3. Put AirPods into pairing/discovery mode.
-4. Tap `Scan`.
-5. Confirm `callbacks > 0`.
-6. Confirm at least one device appears.
-7. If the list is empty, report the on-screen callback count and scan error.
-8. Tap the AirPods row to start the Wear-owned connection path.
+3. Pair the AirPods through the watch's system Bluetooth settings.
+4. Open LibrePods and grant Bluetooth/notification permissions.
+5. Tap the paired AirPods row.
+6. Confirm the state reaches `READY` and battery values appear.
+7. Toggle ANC / Transparency / Off, ear detection and conversation awareness.
 
 ## Future
 

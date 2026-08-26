@@ -14,6 +14,7 @@
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".LibrePodsApplication"
@@ -23,6 +24,10 @@
         android:label="LibrePods Wear"
         android:supportsRtl="true"
         android:theme="@style/Theme.LibrePods">
+
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
 
         <activity
             android:name=".MainActivity"
