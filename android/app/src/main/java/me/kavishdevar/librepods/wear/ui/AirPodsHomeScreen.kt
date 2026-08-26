@@ -60,6 +60,23 @@ fun AirPodsHomeScreen(
             }
         }
 
+        if (state.connected) {
+            ListeningModeRow(selected = state.listeningMode, onSelected = { mode ->
+                if (!controller.setListeningMode(mode)) controller.onError("Failed to set listening mode")
+            })
+            Row(
+                Modifier.fillMaxWidth().padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally)
+            ) {
+                ToggleChip("Ear", state.earDetectionEnabled == true) { enabled ->
+                    if (!controller.setEarDetection(enabled)) controller.onError("Failed to set ear detection")
+                }
+                ToggleChip("Conv", state.conversationalAwarenessEnabled == true) { enabled ->
+                    if (!controller.setConversationalAwareness(enabled)) controller.onError("Failed to set conversation awareness")
+                }
+            }
+        }
+
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(1.dp)
@@ -103,5 +120,14 @@ private fun BatteryRow(label: String, level: Int?, charging: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, style = MaterialTheme.typography.labelSmall)
         Text(if (charging && value != "--") "$value ⚡" else value, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun ToggleChip(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    if (checked) {
+        Button(onClick = { onCheckedChange(false) }) { Text("$label ON") }
+    } else {
+        OutlinedButton(onClick = { onCheckedChange(true) }) { Text("$label OFF") }
     }
 }
