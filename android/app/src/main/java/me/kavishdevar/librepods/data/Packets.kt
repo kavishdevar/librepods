@@ -18,11 +18,7 @@
 
 package me.kavishdevar.librepods.data
 
-import android.os.Parcelable
 import android.util.Log
-import kotlinx.parcelize.Parcelize
-
-// TODO: Remove everything but Battery-related stuff
 
 enum class Enums(val value: ByteArray) {
     NOISE_CANCELLATION(byteArrayOf(0x0d)),
@@ -45,30 +41,26 @@ object BatteryStatus {
     const val OPTIMIZED_CHARGING = 5
 }
 
-@Parcelize
-data class Battery(val component: Int, val level: Int, val status: Int) : Parcelable {
-    fun getComponentName(): String? {
-        return when (component) {
-            BatteryComponent.LEFT -> "LEFT"
-            BatteryComponent.RIGHT -> "RIGHT"
-            BatteryComponent.CASE -> "CASE"
-            else -> null
-        }
+/** Plain Wear OS data model; it does not need Android Parcelable overhead. */
+data class Battery(val component: Int, val level: Int, val status: Int) {
+    fun getComponentName(): String? = when (component) {
+        BatteryComponent.LEFT -> "LEFT"
+        BatteryComponent.RIGHT -> "RIGHT"
+        BatteryComponent.CASE -> "CASE"
+        else -> null
     }
 
-    fun getStatusName(): String? {
-        return when (status) {
-            BatteryStatus.CHARGING -> "CHARGING"
-            BatteryStatus.NOT_CHARGING -> "NOT_CHARGING"
-            BatteryStatus.DISCONNECTED -> "DISCONNECTED"
-            BatteryStatus.OPTIMIZED_CHARGING -> "OPTIMIZED_CHARGING"
-            else -> null
-        }
+    fun getStatusName(): String? = when (status) {
+        BatteryStatus.CHARGING -> "CHARGING"
+        BatteryStatus.NOT_CHARGING -> "NOT_CHARGING"
+        BatteryStatus.DISCONNECTED -> "DISCONNECTED"
+        BatteryStatus.OPTIMIZED_CHARGING -> "OPTIMIZED_CHARGING"
+        else -> null
     }
 }
 
 enum class NoiseControlMode {
-    OFF,  NOISE_CANCELLATION, TRANSPARENCY, ADAPTIVE
+    OFF, NOISE_CANCELLATION, TRANSPARENCY, ADAPTIVE
 }
 
 class AirPodsNotifications {
@@ -90,7 +82,6 @@ class AirPodsNotifications {
     class EarDetection {
         private val notificationBit = 6.toByte()
         private val notificationPrefix = Enums.PREFIX.value + notificationBit
-
         var status: List<Byte> = listOf(0x01, 0x01)
 
         fun setStatus(data: ByteArray) {
@@ -98,78 +89,46 @@ class AirPodsNotifications {
         }
 
         fun isEarDetectionData(data: ByteArray): Boolean {
-            if (data.size != 8) {
-                return false
-            }
-            val prefixHex = notificationPrefix.joinToString("") { "%02x".format(it) }
-            val dataHex = data.joinToString("") { "%02x".format(it) }
-            return dataHex.startsWith(prefixHex)
+            if (data.size != 8) return false
+            return data.startsWith(notificationPrefix)
         }
     }
 
     class ANC {
         private val notificationPrefix = Enums.NOISE_CANCELLATION_PREFIX.value
-
         var status: Int = 1
             private set
 
         fun isANCData(data: ByteArray): Boolean {
-            if (data.size != 11) {
-                return false
-            }
-            val prefixHex = notificationPrefix.joinToString("") { "%02x".format(it) }
-            val dataHex = data.joinToString("") { "%02x".format(it) }
-            return dataHex.startsWith(prefixHex)
+            if (data.size != 11) return false
+            return data.startsWith(notificationPrefix)
         }
 
         fun setStatus(data: ByteArray) {
             when (data.size) {
-                // if the whole packet is given
-                11 -> {
-                    status = data[7].toInt()
-                }
-                // if only the data is given
-                1 -> {
-                    status = data[0].toInt()
-                }
-                // if the value of control command is given
-                4 -> {
-                    status = data[0].toInt()
-                }
-                else -> {
-                    Log.d("ANC", "Invalid ANC data size: ${data.size}")
-                }
+                11 -> status = data[7].toInt()
+                1, 4 -> status = data[0].toInt()
+                else -> Log.d("ANC", "Invalid ANC data size: ${data.size}")
             }
         }
 
-        val name: String =
-            when (status) {
+        val name: String
+            get() = when (status) {
                 1 -> "OFF"
                 2 -> "ON"
                 3 -> "TRANSPARENCY"
                 4 -> "ADAPTIVE"
                 else -> "UNKNOWN"
             }
-
     }
 
     class BatteryNotification {
-        private var first: Battery = Battery(BatteryComponent.LEFT, 0, BatteryStatus.DISCONNECTED)
-        private var second: Battery = Battery(BatteryComponent.RIGHT, 0, BatteryStatus.DISCONNECTED)
-        private var case: Battery = Battery(BatteryComponent.CASE, 0, BatteryStatus.DISCONNECTED)
+        private var first = Battery(BatteryComponent.LEFT, 0, BatteryStatus.DISCONNECTED)
+        private var second = Battery(BatteryComponent.RIGHT, 0, BatteryStatus.DISCONNECTED)
+        private var case = Battery(BatteryComponent.CASE, 0, BatteryStatus.DISCONNECTED)
 
         fun isBatteryData(data: ByteArray): Boolean {
-            if (data.joinToString("") { "%02x".format(it) }.startsWith("040004000400")) {
-                Log.d("BatteryNotification", "Battery data starts with 040004000400. Most likely is a battery packet.")
-            } else {
-                return false
-            }
-            if (data.size != 22) {
-                Log.d("BatteryNotification", "Battery data size is not 22, probably being used with Airpods with fewer or more battery count.")
-                return false
-            }
-            Log.d("BatteryNotification", data.joinToString("") { "%02x".format(it) }.startsWith("040004000400").toString())
-            return data.joinToString("") { "%02x".format(it) }.startsWith("040004000400")
+            return data.size == 22 && data.startsWith(byteArrayOf(0x04, 0x00, 0x04, 0x00, 0x04, 0x00))
         }
 
         fun setBatteryDirect(
@@ -178,7 +137,7 @@ class AirPodsNotifications {
             rightLevel: Int,
             rightCharging: Boolean,
             caseLevel: Int,
-            caseCharging: Boolean
+            caseCharging: Boolean,
         ) {
             first = Battery(BatteryComponent.LEFT, leftLevel, if (leftCharging) BatteryStatus.CHARGING else BatteryStatus.NOT_CHARGING)
             second = Battery(BatteryComponent.RIGHT, rightLevel, if (rightCharging) BatteryStatus.CHARGING else BatteryStatus.NOT_CHARGING)
@@ -186,34 +145,10 @@ class AirPodsNotifications {
         }
 
         fun setBattery(data: ByteArray) {
-            if (data.size != 22) {
-                return
-            }
-//            first = if (data[10].toInt() == BatteryStatus.DISCONNECTED) {
-//                Battery(first.component, first.level, data[10].toInt())
-//            } else {
-//                Battery(data[7].toInt(), data[9].toInt(), data[10].toInt())
-//            }
-//            second = if (data[15].toInt() == BatteryStatus.DISCONNECTED) {
-//                Battery(second.component, second.level, data[15].toInt())
-//            } else {
-//                Battery(data[12].toInt(), data[14].toInt(), data[15].toInt())
-//            }
-//            case = if (data[20].toInt() == BatteryStatus.DISCONNECTED && case.status != BatteryStatus.DISCONNECTED) {
-//                Battery(case.component, case.level, data[20].toInt())
-//            } else {
-//                Battery(data[17].toInt(), data[19].toInt(), data[20].toInt())
-//            }
-//            sometimes it shows battery as -1%, just skip all that and set it normally
-            first = Battery(
-                data[7].toInt(), data[9].toInt(), data[10].toInt()
-            )
-            second = Battery(
-                data[12].toInt(), data[14].toInt(), data[15].toInt()
-            )
-            case = Battery(
-                data[17].toInt(), data[19].toInt(), data[20].toInt()
-            )
+            if (data.size != 22) return
+            first = Battery(data[7].toInt(), data[9].toInt(), data[10].toInt())
+            second = Battery(data[12].toInt(), data[14].toInt(), data[15].toInt())
+            case = Battery(data[17].toInt(), data[19].toInt(), data[20].toInt())
         }
 
         fun getBattery(): List<Battery> {
@@ -224,19 +159,12 @@ class AirPodsNotifications {
     }
 
     class ConversationalAwarenessNotification {
-        @Suppress("PrivatePropertyName")
-        private val NOTIFICATION_PREFIX = Enums.CONVERSATION_AWARENESS_RECEIVE_PREFIX.value
-
+        private val notificationPrefix = Enums.CONVERSATION_AWARENESS_RECEIVE_PREFIX.value
         var status: Byte = 0
             private set
 
         fun isConversationalAwarenessData(data: ByteArray): Boolean {
-            if (data.size != 10) {
-                return false
-            }
-            val prefixHex = NOTIFICATION_PREFIX.joinToString("") { "%02x".format(it) }
-            val dataHex = data.joinToString("") { "%02x".format(it) }
-            return dataHex.startsWith(prefixHex)
+            return data.size == 10 && data.startsWith(notificationPrefix)
         }
 
         fun setData(data: ByteArray) {
@@ -245,12 +173,17 @@ class AirPodsNotifications {
     }
 }
 
+private fun ByteArray.startsWith(prefix: ByteArray): Boolean {
+    if (size < prefix.size) return false
+    return prefix.indices.all { this[it] == prefix[it] }
+}
+
 fun isHeadTrackingData(data: ByteArray): Boolean {
     if (data.size <= 60) return false
 
     val prefixPattern = byteArrayOf(
         0x04, 0x00, 0x04, 0x00, 0x17, 0x00, 0x00, 0x00,
-        0x10, 0x00
+        0x10, 0x00,
     )
 
     for (i in prefixPattern.indices) {
@@ -258,8 +191,5 @@ fun isHeadTrackingData(data: ByteArray): Boolean {
     }
 
     if (data[10] != 0x44.toByte() && data[10] != 0x45.toByte()) return false
-
-    if (data[11] != 0x00.toByte()) return false
-
-    return true
+    return data[11] == 0x00.toByte()
 }

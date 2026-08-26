@@ -1,0 +1,29 @@
+name: Wear OS build
+
+on:
+  push:
+    branches:
+      - wearos/initial-cleanup
+  pull_request:
+    branches:
+      - wearos/initial-cleanup
+
+jobs:
+  debug-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Build Wear debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace

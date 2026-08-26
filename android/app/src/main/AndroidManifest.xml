@@ -1,158 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- The application is intentionally Wear OS-only and talks to AirPods directly. -->
     <uses-feature
-        android:name="android.hardware.telephony"
-        android:required="false" />
+        android:name="android.hardware.type.watch"
+        android:required="true" />
 
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
-        tools:ignore="ForegroundServicesPolicy" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_PRIVILEGED"
-        tools:ignore="ProtectedPermissions" />
-    <uses-permission
-        android:name="android.permission.MODIFY_PHONE_STATE"
-        tools:ignore="ProtectedPermissions" />
-    <uses-permission
-        android:name="android.permission.LOCAL_MAC_ADDRESS"
-        tools:ignore="ProtectedPermissions" />
-    <uses-permission
-        android:name="android.permission.INTERACT_ACROSS_USERS"
-        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation"
-        tools:ignore="UnusedAttribute" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-<!--    <uses-permission android:name="android.permission.INTERNET" />-->
-<!--    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"-->
-<!--        android:maxSdkVersion="30" />-->
-<!--    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"-->
-<!--        android:maxSdkVersion="30" />-->
-    <uses-permission android:name="com.android.vending.BILLING" />
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".LibrePodsApplication"
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="LibrePods Wear"
         android:supportsRtl="true"
-        android:theme="@style/Theme.LibrePods"
-        android:description="@string/app_description"
-        tools:ignore="UnusedAttribute" >
-        <receiver
-            android:name=".presentation.widgets.NoiseControlWidget"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
+        android:theme="@style/Theme.LibrePods">
 
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/noise_control_widget_info" />
-        </receiver>
-
-        <receiver
-            android:name=".presentation.widgets.BatteryWidget"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/battery_widget_info" />
-        </receiver>
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
 
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.LibrePods">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="librepods"
-                    android:host="add-magic-keys" />
-            </intent-filter> -->
         </activity>
 
-        <activity
-            android:name=".QuickSettingsDialogActivity"
-            android:exported="false"
-            android:theme="@style/Theme.TransparentDialog"
-            android:launchMode="singleTask"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-             />
-
         <service
-            android:name=".services.AirPodsService"
+            android:name=".wear.service.LibrePodsWearService"
             android:enabled="true"
-            android:exported="true"
-            android:foregroundServiceType="connectedDevice"
-            android:permission="android.permission.BLUETOOTH_CONNECT" />
-        <service
-            android:name=".services.AirPodsQSService"
-            android:exported="true"
-            android:icon="@drawable/airpods"
-            android:label="ANC Mode"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
-<!--        <service-->
-<!--            android:name=".services.AppListenerService"-->
-<!--            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"-->
-<!--            android:exported="true">-->
-<!--            <intent-filter>-->
-<!--                <action android:name="android.accessibilityservice.AccessibilityService" />-->
-<!--            </intent-filter>-->
-<!--            <meta-data-->
-<!--                android:name="android.accessibilityservice"-->
-<!--                android:resource="@xml/app_listener_service_config" />-->
-<!--        </service>-->
-        <receiver
-            android:name=".receivers.BootReceiver"
-            android:enabled="true"
-            android:exported="true"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.provider"
             android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
+            android:foregroundServiceType="connectedDevice" />
     </application>
 
 </manifest>
