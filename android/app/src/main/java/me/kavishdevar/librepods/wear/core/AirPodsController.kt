@@ -113,7 +113,7 @@ class AirPodsController(private val context: Context, private val transport: Wea
             startAacpReader(manager); check(manager.startSession()) { "AACP handshake could not be sent" }
             stateStore.update { it.copy(protocolStage = "HANDSHAKE_SENT", connecting = true, connected = false) }
             readyWatchJob?.cancel(); readyWatchJob = scope.launch {
-                repeat(50) { delay(100); if (manager.sessionState == AACPManager.SessionState.READY) { stateStore.update { it.copy(protocolStage = "READY", connecting = false, connected = true, lastError = null) }; return@launch } }
+                repeat(50) { delay(100); if (manager.sessionState == AACPManager.SessionState.READY) { stateStore.update { it.copy(protocolStage = "READY", connecting = false, connected = true, lastError = null) }; refreshState(); return@launch } }
                 if (manager.sessionState != AACPManager.SessionState.READY) onError("AACP handshake timeout (${manager.sessionState})")
             }
         } catch (e: Throwable) { onError("AACP connection failed: ${e.message ?: e.javaClass.simpleName}", e); runCatching { transport.close() } }
@@ -144,6 +144,29 @@ class AirPodsController(private val context: Context, private val transport: Wea
     fun onBattery(left: Int?, right: Int?, caseBattery: Int?) { stateStore.update { it.copy(leftBattery = left, rightBattery = right, caseBattery = caseBattery) } }
     fun onEarDetection(leftInEar: Boolean, rightInEar: Boolean) { stateStore.update { it.copy(leftInEar = leftInEar, rightInEar = rightInEar) } }
     fun onListeningModeChanged(mode: ListeningMode) { stateStore.update { it.copy(listeningMode = mode) } }
+
+    /** Execute a typed controller command; used by UI and service entry points. */
+    fun submit(command: AirPodsCommand): Boolean = when (command) {
+        AirPodsCommand.Connect -> connectToBondedAirPods()
+        AirPodsCommand.Disconnect -> { disconnect(); true }
+        AirPodsCommand.RefreshState -> refreshState()
+        is AirPodsCommand.SetListeningMode -> setListeningMode(command.mode)
+        is AirPodsCommand.SetEarDetection -> setEarDetection(command.enabled)
+        is AirPodsCommand.SetConversationalAwareness -> setConversationalAwareness(command.enabled)
+    }
+
+    /**
+     * Ask the AirPods to re-send their current state.
+     *
+     * The notification request is the only inherited packet that makes the
+     * device replay battery, ear detection and control command values, so it
+     * doubles as a state refresh once the session is READY.
+     */
+    fun refreshState(): Boolean {
+        val manager = aacp ?: return false
+        if (manager.sessionState != AACPManager.SessionState.READY) return false
+        return manager.sendNotificationRequest()
+    }
 
     fun setListeningMode(mode: ListeningMode): Boolean {
         val value = when (mode) { ListeningMode.OFF -> 1; ListeningMode.ANC -> 2; ListeningMode.TRANSPARENCY -> 3 }.toByte()
