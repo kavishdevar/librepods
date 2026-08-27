@@ -736,96 +736,107 @@ fun AirPodsSettingsScreen(
 
                             val animatedShapeColor by animateColorAsState(if (reconnecting) primaryContainerColor else secondaryContainerColor)
 
-                            Box(
-                                modifier = Modifier
-                                    .size(240.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceBright,
-                                        CircleShape
-                                    )
-                                    .clickable(
-                                        interactionSource = null,
-                                        indication = ripple(
-                                            bounded = false,
-                                            radius = 120.dp
-                                        ),
-                                        enabled = !reconnecting,
-                                        onClick = {}
-                                    )
-                                    .pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onTap = {
-                                                if (!reconnecting) {
-                                                    currentMorphIndex = 1
-                                                    reconnecting = true
-                                                    reconnectFromSavedMac()
-                                                }
-                                            },
-                                            onPress = {
-                                                if (!reconnecting) {
-                                                    morphProgress.animateTo(
-                                                        targetValue = 1f,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                            stiffness = Spring.StiffnessLow
+                            if (state.connectionSuccessful) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(240.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceBright,
+                                            CircleShape
+                                        )
+                                        .clickable(
+                                            interactionSource = null,
+                                            indication = ripple(
+                                                bounded = false,
+                                                radius = 120.dp
+                                            ),
+                                            enabled = !reconnecting,
+                                            onClick = {}
+                                        )
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(
+                                                onTap = {
+                                                    if (!reconnecting) {
+                                                        currentMorphIndex = 1
+                                                        reconnecting = true
+                                                        reconnectFromSavedMac()
+                                                    }
+                                                },
+                                                onPress = {
+                                                    if (!reconnecting) {
+                                                        morphProgress.animateTo(
+                                                            targetValue = 1f,
+                                                            animationSpec = spring(
+                                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                                stiffness = Spring.StiffnessLow
+                                                            )
                                                         )
-                                                    )
-                                                    tryAwaitRelease()
-                                                    morphProgress.animateTo(
-                                                        targetValue = 0f,
-                                                        animationSpec = spring(
-                                                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                            stiffness = Spring.StiffnessLow
+                                                        tryAwaitRelease()
+                                                        morphProgress.animateTo(
+                                                            targetValue = 0f,
+                                                            animationSpec = spring(
+                                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                                stiffness = Spring.StiffnessLow
+                                                            )
                                                         )
-                                                    )
+                                                    }
                                                 }
-                                            }
-                                        )
-                                    }
-                                    .drawWithContent {
-                                        val activeMorph = morphs[currentMorphIndex]
+                                            )
+                                        }
+                                        .drawWithContent {
+                                            val activeMorph = morphs[currentMorphIndex]
 
-                                        val shapePath = activeMorph.toPath(
-                                            progress = morphProgress.value,
-                                            path = path
-                                        )
+                                            val shapePath = activeMorph.toPath(
+                                                progress = morphProgress.value,
+                                                path = path
+                                            )
 
-                                        val bounds = shapePath.getBounds()
+                                            val bounds = shapePath.getBounds()
 
-                                        val scale = min(size.width/bounds.width, size.height/bounds.height) * 0.8f
+                                            val scale = min(
+                                                size.width / bounds.width,
+                                                size.height / bounds.height
+                                            ) * 0.8f
 
-                                        scaleMatrix.reset()
+                                            scaleMatrix.reset()
 
-                                        scaleMatrix.scale(x = scale, y = scale)
+                                            scaleMatrix.scale(x = scale, y = scale)
 
-                                        shapePath.transform(scaleMatrix)
+                                            shapePath.transform(scaleMatrix)
 
-                                        shapePath.translate(size.center - shapePath.getBounds().center)
+                                            shapePath.translate(size.center - shapePath.getBounds().center)
 
-                                        drawPath(
-                                            path = shapePath,
-                                            color = animatedShapeColor
-                                        )
+                                            drawPath(
+                                                path = shapePath,
+                                                color = animatedShapeColor
+                                            )
 
-                                        drawContent()
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = if (reconnecting) MaterialIcons.bluetooth_searching else MaterialIcons.headset_off,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(84.dp),
-                                    tint = if (reconnecting) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                                            drawContent()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = if (reconnecting) MaterialIcons.bluetooth_searching else MaterialIcons.headset_off,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(84.dp),
+                                        tint = if (reconnecting) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+
+                                Spacer(Modifier.height(40.dp))
+
+                                Text(
+                                    text = if (reconnecting) stringResource(R.string.reconnecting) else stringResource(R.string.tap_to_reconnect),
+                                    style = MaterialTheme.typography.labelSmallEmphasized,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                Text(
+                                    text = stringResource(R.string.not_connected),
+                                    style = MaterialTheme.typography.labelMediumEmphasized,
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
-
-                            Spacer(Modifier.height(40.dp))
-
-                            Text(
-                                text = if (reconnecting) stringResource(R.string.reconnecting) else stringResource(R.string.tap_to_reconnect),
-                                style = MaterialTheme.typography.labelSmallEmphasized,
-                                color = MaterialTheme.colorScheme.primary
-                            )
                         }
 
                         if (!BuildConfig.PLAY_BUILD) {
