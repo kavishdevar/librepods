@@ -191,6 +191,9 @@ fun OnboardingScreen(
                                 NotSupportedPage(
                                     bypassCompatibilityCheck = {
                                         bypassDeviceCheck(sharedPreferences)
+                                        animationScope.launch {
+                                            state.animateScrollToItem(3)
+                                        }
                                     }
                                 )
                             }
