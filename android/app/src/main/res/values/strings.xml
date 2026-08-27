@@ -290,4 +290,5 @@
     <string name="permissions">Permissions</string>
     <string name="privacy_policy">Privacy Policy</string>
     <string name="i_agree">I agree</string>
+    <string name="compatibility_check_bypassed">Compatibility check bypassed. Are you sure your device is compatible?</string>
 </resources>
