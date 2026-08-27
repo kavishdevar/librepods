@@ -160,8 +160,6 @@ val demoState = AirPodsUiState(
 
     dynamicEndOfCharge = true,
 
-    connectionSuccessful = true,
-
     customEq = CustomEq(state = 2, low = 65, mid = 50, high = 70),
 
     controlStates = mapOf(
