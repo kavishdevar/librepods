@@ -1,6 +1,6 @@
 import java.util.Properties
 
-val appVersionName = "1.0.0-rc2"
+val appVersionName = "1.0.0-rc1"
 
 plugins {
     alias(libs.plugins.android.application)
