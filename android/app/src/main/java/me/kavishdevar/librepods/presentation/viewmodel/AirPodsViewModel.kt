@@ -105,7 +105,7 @@ data class AirPodsUiState(
 )
 
 val demoInstance = AirPodsInstance(
-    name = "AirPods Pro",
+    name = "[DEMO] AirPods Pro",
     model = AirPodsModels.getModelByModelNumber("A3064")!!,
     actualModelNumber = "A3064",
     serialNumber = "JXF9Q94A40",
