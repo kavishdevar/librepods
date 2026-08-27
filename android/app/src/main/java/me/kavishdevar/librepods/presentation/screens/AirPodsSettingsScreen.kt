@@ -833,14 +833,16 @@ fun AirPodsSettingsScreen(
                             } else {
                                 Text(
                                     text = stringResource(R.string.airpods_not_connected),
-                                    style = MaterialTheme.typography.labelMediumEmphasized,
+                                    style = MaterialTheme.typography.headlineMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 if (sharedPreferences.getBoolean("bypass_device_check.v2", false)) {
+                                    Spacer(modifier = Modifier.height(16.dp))
                                     Text(
                                         text = stringResource(R.string.compatibility_check_bypassed),
-                                        style = MaterialTheme.typography.labelSmallEmphasized,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }
