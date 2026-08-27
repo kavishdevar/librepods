@@ -47,6 +47,7 @@ import me.kavishdevar.librepods.presentation.theme.LibrePodsTheme
 import me.kavishdevar.librepods.utils.XposedState
 import me.kavishdevar.librepods.utils.bypassDeviceCheck
 import me.kavishdevar.librepods.utils.isSupported
+import me.kavishdevar.librepods.utils.removeDeviceCheckBypass
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -202,6 +203,9 @@ fun OnboardingScreen(
                                     onBackward = {
                                         animationScope.launch {
                                             if (state.canScrollBackward) state.animateScrollToItem(if (isSupported) 1 else 2)
+                                            if (!isSupported) {
+                                                removeDeviceCheckBypass(sharedPreferences)
+                                            }
                                         }
                                     },
                                     onForward = onOnboardingComplete

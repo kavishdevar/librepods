@@ -42,3 +42,7 @@ fun isSupported(sharedPreferences: SharedPreferences): Boolean {
 fun bypassDeviceCheck(sharedPreferences: SharedPreferences) {
     sharedPreferences.edit{ putBoolean("bypass_device_check.v2", true) }
 }
+
+fun removeDeviceCheckBypass(sharedPreferences: SharedPreferences) {
+    sharedPreferences.edit{ putBoolean("bypass_device_check.v2", false) }
+}
