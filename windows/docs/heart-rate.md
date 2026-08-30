@@ -1,10 +1,15 @@
-# Heart rate on Windows — why it doesn't work
+# Heart rate on Windows — status
 
-**Short version:** AirPods Pro 3 will *accept* the heart-rate request on Windows
-and *acknowledge* it, but they never send any readings. This is an **intentional
-Apple-ecosystem restriction**, not a bug in LibrePods or in the Windows driver.
-The feature is therefore **off by default** and hidden behind a warning in
-**Settings ▸ Experimental**.
+**Short version: there is no working version of heart-rate monitoring on Windows
+yet.** The AirPods Pro 3 *accept* the heart-rate request and *acknowledge* it, but
+they never send any readings. The feature is therefore **off by default** and hidden
+behind a warning in **Settings ▸ Experimental**. This page records everything that
+was tested, so nobody has to repeat it.
+
+Tested on AirPods Pro 3 (A3063), AAP-reported firmware `81.2675000075000000.6877`.
+Worth knowing: nobody has heart rate working on this firmware generation on **any**
+platform, including Android — on older firmware it did work there. So the firmware
+version is a factor as much as the host.
 
 ---
 
@@ -58,7 +63,7 @@ Every plausible transport/host cause was investigated and eliminated:
 
 Even the LibrePods author gets no data from his unit on a non-Apple host.
 
-## Why it's a host gate — identity ruled out, privilege is the real line
+## The leading explanation: a host-privilege gate, not host identity
 
 AirPods restrict biometric (heart-rate) data, but the restriction is **not on the
 host's *identity*** — it's on being the buds' **primary, privileged host**. Two
@@ -123,8 +128,8 @@ and they return no readings.
 
 **Settings ▸ Experimental ▸ "Show heart-rate monitoring (experimental)"** only
 un-hides the heart-rate card on the device page. It does **not** make the feature
-work. Expect the card to stay empty. It's kept for the day the Apple-host gate
-can actually be bypassed on Windows.
+work. Expect the card to stay empty. It's kept for the day a working path on Windows
+is found.
 
 ## References
 

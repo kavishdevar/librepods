@@ -56,6 +56,18 @@ inf2cat /driver:<pkg-dir> /os:10_X64
 The driver is not attestation-signed, so Windows must be in test mode. **Advanced
 users only; back up your BitLocker recovery key and make a restore point first.**
 
+The easy path — a compiled package is committed in [`prebuilt/`](prebuilt), so no
+Visual Studio or WDK is needed to install it (only `signtool` from the SDK):
+
+```powershell
+.\install.ps1 -PackageDir .\prebuilt      # creates a test cert, signs, trusts, installs
+```
+
+Or the whole stack at once (both drivers + apps) with
+[`../../installer/install.ps1`](../../installer/install.ps1).
+
+Manually, step by step:
+
 ```powershell
 # 1. test cert + sign
 $c = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=LibrePods Test" -CertStoreLocation Cert:\LocalMachine\My
@@ -73,5 +85,11 @@ Uninstall: `pnputil /delete-driver LibrePodsAAP.inf /uninstall`, then
 
 ## Status
 
-Compiles, links, and passes the inf2cat signability test. On-hardware
-integration testing (open channel + AAP battery/ANC round-trip) is the next step.
+Working and in daily use: the AAP channel opens on hardware and carries battery,
+noise control, ear detection, the hi-res mic uplink and the rest. The channel runs
+in L2CAP **Basic** mode (ERTM is not serialized to the wire by `bthport` for a
+client profile driver — see the comments in `L2cap.c`).
+
+The ATT/GATT channel (PSM `0x001F`, used by the hearing aid) is opened **lazily**,
+on the first `LpAttSend`, not on connect — an idle ATT channel gets torn down by the
+buds after ~30 s and that teardown stalls the AAP channel on the shared ACL.

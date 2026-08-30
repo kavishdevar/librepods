@@ -1,7 +1,7 @@
 # LibrePodsMic — virtual audio (microphone) driver
 
-The virtual-microphone driver for the [hi-res mic feature](../../../docs/windows/hires-mic/PLAN.md):
-Windows sees a "LibrePods Microphone" that the app feeds with the AirPods'
+The virtual-microphone driver for the [hi-res mic feature](../../docs/hires-mic/PLAN.md):
+Windows sees a **LibrePods** microphone that the daemon feeds with the AirPods'
 decoded AAC-ELD audio, so any app (Teams, Zoom, Discord, OBS…) can use it.
 
 ## Origin / license
@@ -15,22 +15,35 @@ This is based on the **Microsoft ACX `AudioCodec` sample** from
 - it uses **ACX** on top of **KMDF** — the same framework family as our
   `LibrePodsAAP` driver (unlike SYSVAD's older PortCls).
 
-We will trim it to capture-only and swap the audio source (`Common/WaveReader.cpp`)
-for a PCM feed pushed from the app over an IOCTL/ring buffer.
+It was trimmed to capture-only (the render circuit is gone, so no phantom speaker
+grabs the default output) and its audio source swapped for a PCM feed pushed from
+user mode over an IOCTL.
 
 ## Status
+
+Done and in daily use:
 
 - [x] **Builds** with VS2026 + WDK 28000 (ACX headers present) — `AudioCodec.sys`.
 - [x] **Installs + a virtual mic appears** — `install.ps1` (elevated, Test Mode)
   signs + catalogs the driver and creates the `ROOT\AudioCodec` device via
-  devcon. Confirmed on hardware: Windows shows **"Microphone (AudioCodec Device)"**
-  in Sound -> Input (and a matching output). **Phase 1 done.**
-- [ ] Rename AudioCodec -> LibrePodsMic (INF device description).
-- [ ] Trim to capture-only; add the IOCTL PCM bridge (Phase 2) so the app can
-  push the AirPods' decoded audio into the mic.
+  devcon. A **LibrePods** microphone shows up in Sound ▸ Input.
+- [x] **Capture-only** — the render (speaker) circuit was removed from `Device.cpp`.
+- [x] **PCM bridge** — `Common/MicPipe.{h,cpp}`: a spin-locked ring buffer and a
+  control device `\\.\LibrePodsMic` with `IOCTL_LIBREPODS_MIC_WRITE_PCM`
+  (`0x0022A000`). `StreamEngine::ProcessPacket` drains the ring instead of the
+  sample's WAV/tone dummy; an underrun reads as silence.
+- [x] **Capture-activity counter** — `IOCTL_LIBREPODS_MIC_STATUS` advances while an
+  app records, which is how the daemon auto-starts and auto-stops the AAP uplink.
+- [x] The capture circuit is restricted to **48 kHz mono 16-bit** (what the decoded
+  AirPods stream is resampled to).
+
+A **prebuilt, ready-to-install package** is committed in [`prebuilt/`](prebuilt) —
+no Visual Studio or WDK needed to install it.
 
 ## Build
 
-`build-wsl.cmd` on the Windows host (VS + WDK) →
-`AudioCodec/Driver/x64/Release/AudioCodec.sys`. See
-[`../../../docs/windows/hires-mic/PLAN.md`](../../../docs/windows/hires-mic/PLAN.md) for the roadmap.
+On the Windows host (VS + WDK), build `AudioCodec/Driver/AudioCodec.sln` (or
+`msbuild AudioCodec/Driver/AudioCodec.vcxproj /p:Configuration=Release /p:Platform=x64`)
+→ `AudioCodec/Driver/x64/Release/AudioCodec.sys`, which `install.ps1` picks up by
+default. See [`../../docs/hires-mic/PLAN.md`](../../docs/hires-mic/PLAN.md) for the
+design and the protocol notes.

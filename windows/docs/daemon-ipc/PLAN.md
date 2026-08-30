@@ -1,5 +1,11 @@
 # LibrePods Windows daemon + IPC — plan
 
+> **Status: done and shipped.** `librepodsd` owns the drivers, the AAP session and
+> the mic pipeline; the WinUI app is a thin IPC client. The two Rust front-ends this
+> plan was written against (`librepods-tray.exe` and the iced `librepods.exe`) no
+> longer exist on Windows — read their names below as history. See the Status
+> section at the bottom for where things actually landed.
+
 **Goal:** kill the exclusive-driver tug-of-war. Today both `librepods-tray.exe`
 and `librepods.exe` want the single, **exclusive** driver handle, so only one can
 run — hence the fragile "Open App" handoff, lingering daemon/zombie processes,
@@ -45,8 +51,8 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
   - `SetAnc(u8)` (1..=4)
   - `SetMicMode { auto: bool, manual: bool }`
   - `GetState`
-  - (volume stays **client-side** via WASAPI — it's not the exclusive resource,
-    so no need to route it through the daemon.)
+  - (volume was planned as **client-side** WASAPI; it ended up in the daemon
+    instead — see the Status section, `SetVolume` / `StepVolume` / `ToggleMute`.)
 - **Daemon → Client `Event`:**
   - `State(Snapshot { connected, battery{l,r,case,headphone}, anc, dev_name,
     mic_recording, auto_mode })` — pushed on every change, and once on connect.
@@ -80,11 +86,12 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
 4. **Polish.** Daemon single-instance + autostart-on-demand + reconnect; installer
    ships `librepodsd.exe` and drops the exclusive-handoff shortcut logic.
 
-## Status — Phases 1–2 DONE ✅ (validated on hardware)
+## Status — DONE ✅ (validated on hardware)
 
-- **`librepodsd`** owns the driver + AAP session + hi-res mic; the **tray is a
-  thin IPC client** and they coexist. Confirmed on hardware: battery / ANC /
-  volume / mic all shown + controlled over IPC, auto-reconnect, overlay cards.
+- **`librepodsd`** owns both drivers, the AAP session and the hi-res mic; the UI is
+  a thin IPC client. Confirmed on hardware: battery / ANC / volume / mic / ear
+  detection / hearing aid all shown and controlled over IPC, auto-reconnect,
+  overlay cards.
 - **IPC = two one-directional named pipes** (`PIPE_EVENTS` daemon→client,
   `PIPE_CMDS` client→daemon), NDJSON, **async** (per-connection queue + writer
   thread each side). This was forced by two bugs hit on the way:
@@ -96,42 +103,31 @@ librepodsd.exe ──┤       IPC: \\.\pipe\LibrePods  (NDJSON)
      froze the menu. Both sides now decouple I/O onto their own threads.
   - Also: the named-pipe DACL must grant the same-user client (`D:(A;;GA;;;AU)…`);
     the default null descriptor denied it.
-- **BLE 'connect?' prompt** (beyond the plan): `le.rs` watches (passive, and only
-  while disconnected) for the AirPods proximity advertisement and sends
-  `Event::ConnectPrompt`; the tray shows a clickable, accent-themed overlay card;
-  a click → `Command::Connect`.
-- **Never-steal policy**: the daemon never auto-connects — it waits for the
-  prompt/Connect, and **releases on any drop** (never reconnects on its own,
-  which would steal the AirPods back from the iPhone). Connect retries ~18 s for
-  resilience.
-- **Phase 3 (full app as a client)** — NOT done; the app still uses the
-  Open-App handoff. The daemon's own session vs the app's session over one L2CAP
-  channel is the open design question (state-client vs raw-L2CAP-proxy).
+- **Volume moved into the daemon** (`daemon/src/volume.rs`, WASAPI
+  `IAudioEndpointVolume`), against the original plan: the daemon is then the single
+  arbiter, reports volume in the `Snapshot`, serves `SetVolume` / `StepVolume` /
+  `ToggleMute`, and can duck for Conversational Awareness without an IPC round-trip.
+- **The command surface grew well past the sketch** — ANC, feature toggles
+  (conversational awareness, adaptive volume, allow-off), per-control values, mic
+  mode, hearing aid, heart rate (experimental), rename, connect / disconnect /
+  repair, shutdown. See `ipc/src/lib.rs` for the wire types.
+- **BLE proximity** (beyond the plan): `le.rs` watches passively — and only while
+  disconnected — for the AirPods proximity advertisement. It first drove a
+  "connect?" prompt (`Event::ConnectPrompt`); today the daemon **auto-connects**
+  when they appear and re-arms after a >45 s absence.
+- **Single front-end, not two.** The plan assumed the tray and the iced app would
+  coexist as clients. In practice the Rust tray was retired and the iced app was
+  never ported: the **WinUI 3 app carries its own tray** and is the only client, so
+  "Phase 3" was resolved by replacing the front-end rather than porting it. The IPC
+  design is unchanged, and nothing stops a second client from connecting.
 
-## Phase 3 — the "web-app" model (approach A, user's decision)
+## Phase 3 — the "web-app" model (historical)
 
-The user's framing: **tray and app are both clients; the daemon is the single
-server/arbiter** — like a web app where many clients interact but every action is
-**atomic, serialized through the server**. So the app does NOT run its own AAP
-session on Windows: it renders its iced GUI from the daemon's state and sends
-commands, exactly like the tray. One connection, one owner, no dual sessions.
-
-Implementation sketch (to do together, with hardware testing):
-1. **Extend the protocol** (`librepods-ipc`) with everything the full app shows/
-   controls that the tray doesn't: device info (model / serials / firmware), the
-   available ANC modes, ear-detection state, conversational awareness, etc.
-   (add `#[serde(default)]` to new `Snapshot` fields). New `Command`s for the
-   extra controls. The daemon already serializes commands (single `apply_command`).
-2. **Daemon**: parse + publish the extra data in the `Snapshot` (its session
-   already parses battery/ANC/ear; add the rest).
-3. **App (`app`, Windows only)**: source the GUI's state from the
-   daemon IPC instead of a live session. The clean shape: abstract the app's
-   "state source" — Linux = the `bluer` session (unchanged), Windows = an IPC
-   client of the daemon. The iced GUI renders from the state stream either way.
-   This is the big, riskier change — do it behind `#[cfg(windows)]`, test each
-   step, keep Linux untouched.
-- **Do NOT** rewrite the app's core blindly (it would break the working app);
-  implement + validate on hardware with the user present.
+The original Phase 3 was to make the iced `librepods.exe` a client too, so tray and
+app could coexist with the daemon as the single arbiter — every action atomic and
+serialized through the server, no dual AAP sessions. That framing still describes
+the architecture; it was reached by writing the **WinUI 3 client** instead of
+porting the iced app, which was then dropped on Windows.
 
 ## Mic aligns with PR #655 ✅
 
@@ -139,18 +135,18 @@ Our Windows hi-res mic uses the **same** AAP commands (`START_AUDIO`/`STOP_AUDIO
 0x58), AAC-ELD params (64 kHz true → resample 48 kHz, 480-sample/7.5 ms mono, ASC
 `F8 E6 30 00`), 0x58 framing (22-byte AU header), and decoder (FFmpeg libavcodec,
 LGPL) as Linux [PR #655](https://github.com/librepods-org/librepods/pull/655) —
-so the decode/protocol is shareable. Deltas: we add a ×3 make-up gain (mic ran
-quiet); PR #655 has a **missing-SDU watchdog** we don't (follow-up). When both
-land in `cross-platform`, unify the decode into the shared crate.
+so the decode/protocol is shareable. Deltas: we add a ×3 make-up gain with a tanh
+soft-limit (the mic ran quiet), and our stall handling deliberately **never tears
+down the channel** — it re-sends `START_AUDIO` in place (rate-limited to once per
+5 s), because a silent uplink is usually just nobody speaking. Unifying the decode
+into a shared crate is still open.
 
 ## Risks / notes
 
-- **Multi-client pipe:** the daemon must serve several pipe instances at once
-  (tray + app) and broadcast to all — one reader thread per client + a shared
-  broadcast channel (or a small async runtime).
-- **Mic ownership:** the daemon becomes the single owner of both the driver and
-  `\\.\LibrePodsMic` — cleaner than today (the tray owned them).
-- **Phase 3 is the big one** (shared code); Phases 1–2 already remove the pain
-  and can ship on their own.
-- **Shared modules:** move `aap`/`driver`/`eld`/`micpipe`/`a2dp` into the daemon
-  (or a small `librepods-win-core` lib if the app later needs them in-proc too).
+- **Multi-client pipe:** the daemon serves several pipe instances at once and
+  broadcasts to all — one reader thread per client + a shared broadcast channel.
+- **Mic ownership:** the daemon is the single owner of both the AAP driver and
+  `\\.\LibrePodsMic`, so no UI can take the handles from under it.
+- **Shared modules:** `aap` / `driver` / `eld` / `micpipe` / `a2dp` / `volume` all
+  live in the daemon. If in-proc access is ever needed elsewhere, split them into a
+  small `librepods-win-core` lib.

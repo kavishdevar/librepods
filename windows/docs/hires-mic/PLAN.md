@@ -1,6 +1,8 @@
-# Hi-res AirPods microphone on Windows — feature branch
+# Hi-res AirPods microphone on Windows
 
-**Branch:** `windows-hires-mic` (off `cross-platform`; merges back into it when done).
+**Status: shipped** — the feature works end to end and is on by default (see the
+Status section at the bottom for what each phase settled). Developed on the branch
+`windows-hires-mic`, now part of the Windows port.
 
 **Goal:** expose the AirPods' hi-res (AAC-ELD) microphone as a **native Windows
 microphone**, so any app (Teams, Zoom, Discord, OBS…) can use it — the same
@@ -16,6 +18,8 @@ second one is the clean, dependency-free path (no third-party VB-Cable). Base it
 on Microsoft's **SYSVAD** sample (a virtual audio device with capture + render
 endpoints, no hardware). NOTE: audio drivers use **PortCls/AVStream** or the
 newer **ACX** framework — different from the KMDF+BRB approach of `LibrePodsAAP`.
+*(What we ended up using is the MS **ACX `AudioCodec`** sample rather than SYSVAD —
+ACX on KMDF, already ROOT-enumerated and with a capture circuit.)*
 
 ## Architecture
 
@@ -98,8 +102,8 @@ the sink.
   fixes: mic frames are **480 samples @ 64 kHz** (not 48 kHz — the 4-byte ASC
   lies; confirmed by the +180/AU timestamp = a 24 kHz clock over 7.5 ms frames),
   so resample **64000 → 48000**; capture circuit restricted to **48 kHz only**;
-  and a **~150 ms silence cushion** on the ring to absorb the bursty per-packet
-  feed. Pitch went ~105 → ~122 Hz (ref ~148), zero click/gap artifacts. Audio is
+  and a **silence cushion** on the ring (80 ms in the shipped code) to absorb the
+  bursty per-packet feed. Pitch went ~105 → ~122 Hz (ref ~148), zero click/gap artifacts. Audio is
   a bit quiet (a gain stage would help) and mono (single mic capsule).
 - **Phase 4 — essentially COMPLETE** ✅ (plug-and-play). Done:
   - **A2DP auto-reset** — toggle the AirPods' AudioSink (0x110B) service to
@@ -113,6 +117,15 @@ the sink.
   - **Minimal FFmpeg** (7.1, aac-only) — avcodec 69 MB → 0.7 MB.
   - **Name** "LibrePods" (device-agnostic).
   - Single-instance guard.
-  - Follow-ups: exact per-device dynamic name (IPolicyConfig, needs a debugger),
-    VendorID spoofing (Apple DID), 2 s stall watchdog, apple-wireshark RE.
-- Phase 3 (protocol from PR #655 + AAC-ELD) and Phase 4 (integration) to follow.
+
+> The pipeline described above as living in "the tray" was later moved into
+> `librepodsd`, which now owns the drivers and the decode; the UI is a thin IPC
+> client. See [`../daemon-ipc/PLAN.md`](../daemon-ipc/PLAN.md).
+
+**Follow-ups still open:** exact per-device dynamic name (IPolicyConfig, needs a
+debugger), VendorID spoofing (Apple DID), and unifying the decode with PR #655 in a
+shared crate. Robustness lessons learned since (all applied in the daemon): never
+tear down the AAP L2CAP channel for a stall — a silence is usually just nobody
+speaking, so re-send `START_AUDIO` in place, rate-limited; re-arm `START_AUDIO`
+after any reconnect, because the AirPods forget stream state; and open the ATT
+channel lazily, since an idle one gets torn down and stalls AAP on the shared ACL.

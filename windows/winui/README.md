@@ -8,23 +8,22 @@ A native **C# / WinUI 3 (Windows App SDK)** front-end for LibrePods.
 
 | | |
 |---|---|
-| ![Devices pane](docs/screenshot-nav.png) | ![Narrow single-column layout](docs/screenshot-narrow.png) |
-| Navigation pane (devices + settings) | Responsive: one column when narrow |
+| ![Light theme](docs/screenshot-device-light.png) | ![Narrow single-column layout](docs/screenshot-narrow.png) |
+| The device page in the light theme | Responsive: one column when narrow |
 | ![Settings](docs/screenshot-settings.png) | ![Tray menu](docs/screenshot-tray.png) |
-| Settings (theme, default front-end) | Tray menu (battery + Noise Control + Mute) |
-| ![Toast notification](docs/screenshot-toast.png) | ![Connection island](docs/screenshot-island.png) |
-| Native Windows toast (ANC change) | iOS-style connection island |
- It is the native Windows client, alongside a lightweight Rust tray
-(`librepods-tray.exe`). Both are thin IPC clients of the same Rust daemon,
-**`librepodsd.exe`**, which owns the driver, the AAP session and the hi-res mic.
+| Settings (theme, language, experimental) | Tray menu (battery + Noise Control + Mute) |
+| ![Hearing aid](docs/screenshot-hearing.png) | ![Connection island](docs/screenshot-island.png) |
+| Hearing aid controls | iOS-style connection island |
+ It is the Windows client — a thin IPC client of the Rust daemon,
+**`librepodsd.exe`**, which owns the drivers, the AAP session and the hi-res mic.
+(An earlier lightweight Rust tray was retired; this app carries its own tray.)
 
 This app is **primarily a tray app**:
 
 - It starts **hidden to the system tray**.
 - Left-click the tray icon (or **Open** in its menu) shows the main window.
 - Closing the window **hides it back to the tray** — it does not exit.
-- **Quit** in the tray menu exits the app. (It does *not* stop the daemon; the
-  Rust tray's own Quit is what shuts the daemon down.)
+- **Quit** in the tray menu exits the app and shuts the daemon down with it.
 
 ## What it talks to
 

@@ -1,29 +1,29 @@
 # LibrePods — Windows docs
 
-Docs are grouped **by operating system**, because the Windows stack shares
-one codebase but each OS has its own integration story, drivers, and gotchas.
+Notes for the Windows port: the drivers, the daemon, and the reverse-engineering
+that each feature needed.
 
-## [`windows/`](windows/) 🪟
-The Windows port (the bulk of the porting effort — Linux already worked).
-- **[`windows/HANDOFF.md`](windows/HANDOFF.md)** — the technical handoff/log:
-  daemon + IPC architecture, drivers, hi-res mic, features, TODOs, and the
-  reverse-engineering notes.
-- **[`windows/daemon-ipc/PLAN.md`](windows/daemon-ipc/PLAN.md)** — the daemon +
-  named-pipe IPC design (why `librepodsd` owns the driver and the UIs are clients).
-- **[`windows/hires-mic/PLAN.md`](windows/hires-mic/PLAN.md)** — the AAC-ELD
-  virtual-microphone plan (protocol, decode, driver).
+- **[`daemon-ipc/PLAN.md`](daemon-ipc/PLAN.md)** — the daemon + named-pipe IPC
+  design: why `librepodsd` owns the drivers and the UIs are thin clients.
+- **[`hires-mic/PLAN.md`](hires-mic/PLAN.md)** — the hi-res AirPods microphone:
+  the AAP uplink protocol, AAC-ELD decoding, and the virtual audio driver.
+- **[`heart-rate.md`](heart-rate.md)** — why there is no working heart-rate
+  monitoring on Windows yet, and everything that was ruled out.
+- **[`aap-packet-discovery.md`](aap-packet-discovery.md)** — how to capture
+  ground-truth AAP traffic on macOS/iOS to confirm or discover packets.
 
-## Linux 🐧
-Linux is the original desktop target and needs no port-specific driver docs — it
-uses BlueZ/PulseAudio directly. See the **[`linux/` README](../../linux/README.md)**
-at the repo root for setup and usage.
+Setup and usage live in the **[Windows README](../README.md)**; the drivers have
+their own notes in [`../drivers/aap`](../drivers/aap) and
+[`../drivers/mic`](../drivers/mic).
 
-## Android 🤖
-See the repo-root **[README](../../README.md)** (Android section) and the Android
-app sources.
+## Other platforms
+- **Linux** — [`linux/README.md`](../../linux/README.md) (BlueZ/PipeWire, no
+  port-specific driver needed).
+- **Android** — the repo-root [README](../../README.md) and the app sources.
 
 ## Protocol (OS-agnostic)
-The AAP/AACP protocol notes live at the repo root and apply to every platform:
+AAP/AACP notes apply to every platform:
 **[`AAP Definitions.md`](../../AAP%20Definitions.md)**,
 **[`docs/control_commands.md`](../../docs/control_commands.md)**,
-**[`Proximity Pairing Message.md`](../../Proximity%20Pairing%20Message.md)**.
+**[`docs/opcodes.md`](../../docs/opcodes.md)**,
+**[`docs/device-info.md`](../../docs/device-info.md)**.
