@@ -115,8 +115,8 @@
 
   <!-- ===== MicCard ===== -->
   <data name="MicTitle.Text" xml:space="preserve"><value>Hi-res Microphone</value></data>
-  <data name="MicAutoSwitch.Header" xml:space="preserve"><value>Auto-enable on recording</value></data>
-  <data name="MicEnableBtn.Content" xml:space="preserve"><value>Enable hi-res mic now</value></data>
+  <data name="MicAutoSwitch.Header" xml:space="preserve"><value>Use it automatically when an app records</value></data>
+  <data name="MicEnableBtn.Content" xml:space="preserve"><value>Use the microphone</value></data>
 
   <!-- ===== HearingAidCard ===== -->
   <data name="HearingAidTitle.Text" xml:space="preserve"><value>Hearing assistance</value></data>
@@ -202,8 +202,8 @@
   <data name="Action_Quit" xml:space="preserve"><value>Quit</value></data>
   <data name="Action_Connect" xml:space="preserve"><value>Connect</value></data>
 
-  <data name="Mic_Recording" xml:space="preserve"><value>Microphone: recording</value></data>
-  <data name="Mic_Idle" xml:space="preserve"><value>Microphone: idle</value></data>
+  <data name="Mic_Recording" xml:space="preserve"><value>In use - recording in high quality</value></data>
+  <data name="Mic_Idle" xml:space="preserve"><value>Not in use</value></data>
 
   <data name="Anc_Off" xml:space="preserve"><value>Off</value></data>
   <data name="Anc_NoiseCancellation" xml:space="preserve"><value>Noise Cancellation</value></data>

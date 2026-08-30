@@ -6,6 +6,8 @@
 #![windows_subsystem = "windows"]
 #![allow(dead_code)]
 
+// No longer called — kept for a quick revert if the stereo-restore ever proves
+// necessary; see the note in set_mic(). (Crate-level allow(dead_code) covers it.)
 mod a2dp;
 mod aap;
 mod bt;
@@ -450,21 +452,41 @@ fn l2cap_reader(pipe: Arc<Pipe>, ctx: Ctx) {
     }
 }
 
-/// Enable/disable the hi-res mic stream (manual path), with the A2DP restore.
+/// Enable/disable the hi-res mic stream (manual path).
 fn set_mic(ctx: &Ctx, on: bool) {
     let was = ctx.mic_on.swap(on, Ordering::Relaxed);
     if on && !was {
         if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
             let _ = drv.send(&aap::START_AUDIO);
         }
-        ctx.overlay("Hi-res microphone on");
+        ctx.overlay("Using the AirPods microphone");
     } else if !on && was {
-        if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
-            let _ = drv.send(&aap::STOP_AUDIO);
-        }
-        ctx.overlay("Microphone released — restoring stereo…");
-        a2dp::reset(ctx.mac);
-        ctx.overlay("Stereo restored");
+        // Deliberately NOT sending STOP_AUDIO — see the note below. Clearing
+        // `mic_on` is enough: the receive loop stops decoding the 0x58 uplink and
+        // the virtual mic goes silent, which is what "off" means to the user. The
+        // buds keep the uplink armed until the session ends, and that is the point.
+        //
+        // No A2DP restore either. A btvs capture (trace/audio/audio-1.pcapng, 244 s) showed
+        // every AVDTP SET_CONFIGURATION is identical SBC 44.1 kHz **JointStereo**, with
+        // zero RECONFIGURE and no SCO/HFP anywhere — the hi-res uplink never degrades
+        // playback to mono, so there is nothing to restore. Worse, a2dp::reset() is a
+        // BluetoothSetServiceState disable/enable: in that same capture the AAP channel
+        // (PSM 0x1001) opened once, went silent, and was never rebuilt while A2DP was
+        // torn down and re-set-up five times — the churn that bricks the driver into
+        // Code 38. Dropping it also removes a ~2.65 s audio dropout on every release.
+        //
+        // WHY STOP_AUDIO IS GONE (measured 2026-08-30, live over the l2cap-tx pipe):
+        // sending it is what breaks playback to a single side. Leaving mic mode puts
+        // the buds in a state where only one bud renders; it self-heals after minutes.
+        // Re-sending START_AUDIO restores stereo INSTANTLY, which proves mic mode
+        // itself is fine and only the exit is broken. This is also what a2dp::reset()
+        // was really "curing": it rebuilt the audio link right after the bad exit, at
+        // the cost of killing the AAP channel and bricking the driver into Code 38.
+        // So we never leave mic mode mid-session. The uplink stays armed until the
+        // session ends (a disconnect resets the buds anyway).
+        //
+        // No overlay here either: nothing is "released", so announcing it was both
+        // wrong and noise. Going quiet is the honest signal.
     }
     ctx.push_state();
 }
@@ -895,7 +917,11 @@ fn run_receiver(ctx: Ctx) {
         let _ = driver.send(&aap::SET_FEATURES);
         thread::sleep(Duration::from_millis(300));
         let _ = driver.send(&aap::REQUEST_NOTIFS);
-        ctx.state.lock().unwrap().connected = true;
+        {
+            let mut st = ctx.state.lock().unwrap();
+            st.connected = true;
+            st.link_stale = false; // fresh session — whatever was wedged is gone
+        }
         pending_card = true;
         ctx.push_state();
         log("run_receiver: handshake done, connected=true");
@@ -951,6 +977,16 @@ fn run_receiver(ctx: Ctx) {
         // it isn't a clean 2, so we can see what "cased" vs "both-out-resting"
         // actually report (the teardown decision hinges on them differing).
         let mut status_diag = Instant::now();
+        // Zombie-channel detection. The channel can sit OPEN but silent for as long
+        // as Windows still sees the AirPods (observed: 56 minutes) — `status_fails`
+        // is reset every pass in that case, so the loop never releases and never
+        // rebuilds, and the in-place mic re-arm below is gated behind `mic_on`. With
+        // the mic off nothing ever nudges it: the AirPods are attached to the PC but
+        // not to us, and the hi-res mic is dead. We surface that as `link_stale` so
+        // the app can offer "Repair connection" (its button used to be hidden,
+        // because `connected` stays true), and we nudge in place first.
+        let mut link_stale = false;
+        let mut last_link_nudge = Instant::now();
         // Last time an AAP packet actually arrived. The driver State drops to 0
         // both on a transient channel re-negotiation (e.g. both buds just left the
         // ears) and on a real disconnect (cased / on the phone) — status alone
@@ -996,6 +1032,12 @@ fn run_receiver(ctx: Ctx) {
                 if n > 0 {
                     got_data = true;
                     last_data = Instant::now();
+                    if link_stale {
+                        link_stale = false;
+                        ctx.state.lock().unwrap().link_stale = false;
+                        ctx.push_state();
+                        log("run_receiver: AAP channel talking again — link_stale cleared");
+                    }
                     let data = &buf[..n];
                     // Forward the raw packet to the full app (if attached) so it
                     // runs its own AAP session over us.
@@ -1076,7 +1118,7 @@ fn run_receiver(ctx: Ctx) {
                                     // uplink is fully operational end-to-end. Announce once.
                                     if !mic_announced {
                                         mic_announced = true;
-                                        ctx.overlay("Microphone ready — hi-res active");
+                                        ctx.overlay("Microphone ready — high quality");
                                     }
                                 }
                             }
@@ -1333,6 +1375,34 @@ fn run_receiver(ctx: Ctx) {
                             let _ = driver.send(&aap::START_AUDIO);
                             last_mic_rearm = Instant::now();
                         }
+                        // Zombie channel: open, the OS still sees the buds, but nothing
+                        // has arrived for a long while and the mic isn't on (so the
+                        // re-arm above never fires). Nudge IN PLACE first — re-assert
+                        // the noise mode we already believe is active. That's a write
+                        // the buds accept, it changes nothing audible, and if the link
+                        // is alive at all they answer with a 0x0D control status, which
+                        // clears the flag above. We deliberately do NOT drop + reopen
+                        // the driver here: that is what "Repair connection" does, and
+                        // repeated drop+reopen churn is what bricks it into Code 38.
+                        // Recovery stays the user's call — we just make it offerable.
+                        if !ctx.mic_on.load(Ordering::Relaxed)
+                            && last_data.elapsed() >= Duration::from_secs(30)
+                        {
+                            if !link_stale {
+                                link_stale = true;
+                                ctx.state.lock().unwrap().link_stale = true;
+                                ctx.push_state();
+                                log("run_receiver: AAP channel silent >30s with mic off — link_stale set");
+                            }
+                            if last_link_nudge.elapsed() >= Duration::from_secs(30) {
+                                let mode = ctx.state.lock().unwrap().anc;
+                                if mode != 0 {
+                                    log("run_receiver: nudging the silent channel in place (re-assert noise mode)");
+                                    let _ = driver.send(&aap::anc_command(mode));
+                                }
+                                last_link_nudge = Instant::now();
+                            }
+                        }
                         false
                     } else {
                         status_fails += 1;
@@ -1389,7 +1459,7 @@ fn poll_mic(ctx: Ctx) {
                 if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
                     let _ = drv.send(&aap::START_AUDIO);
                 }
-                ctx.overlay("Microphone in use — hi-res on");
+                ctx.overlay("Using the AirPods microphone");
                 ctx.push_state();
             }
         } else {
@@ -1397,12 +1467,9 @@ fn poll_mic(ctx: Ctx) {
             if on && idle >= MIC_IDLE_STOP_POLLS {
                 on = false;
                 ctx.mic_on.store(false, Ordering::Relaxed);
-                if let Some(drv) = ctx.driver_cell.lock().unwrap().clone() {
-                    let _ = drv.send(&aap::STOP_AUDIO);
-                }
-                ctx.overlay("Microphone released — restoring stereo…");
-                a2dp::reset(ctx.mac);
-                ctx.overlay("Stereo restored");
+                // No STOP_AUDIO, no A2DP restore and no overlay — see the note in
+                // set_mic(). Clearing `mic_on` stops the decoding; the uplink stays
+                // armed so we never cross the exit that leaves playback on one side.
                 ctx.push_state();
             }
         }

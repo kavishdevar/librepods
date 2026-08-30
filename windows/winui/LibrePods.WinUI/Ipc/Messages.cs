@@ -26,6 +26,12 @@ public sealed class Battery
 public sealed class Snapshot
 {
     [JsonPropertyName("connected")] public bool Connected { get; set; }
+
+    /// The session is nominally up but the AAP channel has gone silent: the AirPods
+    /// are attached to Windows yet not talking to the daemon, so the hi-res mic and
+    /// live notifications are dead. Surfaces "Repair connection" -- Connected alone
+    /// stays true forever in that state and used to hide the button exactly then.
+    [JsonPropertyName("link_stale")] public bool LinkStale { get; set; }
     [JsonPropertyName("dev_name")] public string DevName { get; set; } = "";
     [JsonPropertyName("battery")] public Battery Battery { get; set; } = new();
 

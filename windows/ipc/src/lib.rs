@@ -43,6 +43,14 @@ pub struct Battery {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     pub connected: bool,
+    /// The AAP session is nominally up (`connected`) but the channel has gone
+    /// silent — the AirPods are attached to Windows yet not talking to us, so the
+    /// hi-res mic and every live notification are dead. The app surfaces "Repair
+    /// connection" on this, because `connected` alone stays true forever in that
+    /// state and used to hide the button exactly when it was needed.
+    /// (serde default: older snapshots.)
+    #[serde(default)]
+    pub link_stale: bool,
     pub dev_name: String,
     pub battery: Battery,
     /// Noise-control mode: 0 = unknown, 1 = off, 2 = ANC, 3 = transparency, 4 = adaptive.

@@ -106,8 +106,8 @@
 
   <!-- ===== MicCard ===== -->
   <data name="MicTitle.Text" xml:space="preserve"><value>Microfone de alta resolução</value></data>
-  <data name="MicAutoSwitch.Header" xml:space="preserve"><value>Ativar automaticamente ao gravar</value></data>
-  <data name="MicEnableBtn.Content" xml:space="preserve"><value>Ativar microfone agora</value></data>
+  <data name="MicAutoSwitch.Header" xml:space="preserve"><value>Usar automaticamente quando uma app grava</value></data>
+  <data name="MicEnableBtn.Content" xml:space="preserve"><value>Usar o microfone</value></data>
 
   <!-- ===== HearingAidCard ===== -->
   <data name="HearingAidTitle.Text" xml:space="preserve"><value>Assistência auditiva</value></data>
@@ -193,8 +193,8 @@
   <data name="Action_Quit" xml:space="preserve"><value>Sair</value></data>
   <data name="Action_Connect" xml:space="preserve"><value>Ligar</value></data>
 
-  <data name="Mic_Recording" xml:space="preserve"><value>Microfone: a gravar</value></data>
-  <data name="Mic_Idle" xml:space="preserve"><value>Microfone: inativo</value></data>
+  <data name="Mic_Recording" xml:space="preserve"><value>Em uso - a gravar em alta qualidade</value></data>
+  <data name="Mic_Idle" xml:space="preserve"><value>Não está a ser usado</value></data>
 
   <data name="Anc_Off" xml:space="preserve"><value>Desligado</value></data>
   <data name="Anc_NoiseCancellation" xml:space="preserve"><value>Cancelamento de Ruído</value></data>

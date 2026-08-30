@@ -42,13 +42,21 @@ public sealed partial class DeviceHeader : UserControl
         }
 
         StatusText.Text = Localize.Get(s.Connected ? "Status_Connected" : "Status_Disconnected");
+        // Green = talking to us; Orange = attached but the channel went silent
+        // (Repair appears); Gray = not connected.
         StatusDot.Fill = new SolidColorBrush(
-            s.Connected ? Microsoft.UI.Colors.LimeGreen : Microsoft.UI.Colors.Gray);
+            !s.Connected ? Microsoft.UI.Colors.Gray
+            : s.LinkStale ? Microsoft.UI.Colors.Orange
+            : Microsoft.UI.Colors.LimeGreen);
         ConnectButton.Visibility = s.Connected ? Visibility.Collapsed : Visibility.Visible;
-        // Rename + Disconnect only make sense while connected; Repair only while not.
+        // Rename + Disconnect only make sense while connected. Repair is offered
+        // while disconnected AND while the link is stale -- the AirPods attached to
+        // Windows but no longer talking to the daemon. In that state Connected stays
+        // true forever, so keying Repair off it alone hid the button exactly when it
+        // was needed, and the only way to surface it was to turn Bluetooth off.
         RenameBtn.Visibility = s.Connected ? Visibility.Visible : Visibility.Collapsed;
         DisconnectButton.Visibility = s.Connected ? Visibility.Visible : Visibility.Collapsed;
-        RepairButton.Visibility = s.Connected ? Visibility.Collapsed : Visibility.Visible;
+        RepairButton.Visibility = (!s.Connected || s.LinkStale) ? Visibility.Visible : Visibility.Collapsed;
         if (!s.Connected) ExitEdit();
     }
 
