@@ -11,6 +11,7 @@
 mod a2dp;
 mod aap;
 mod bt;
+mod devnode;
 mod driver;
 mod eld;
 mod gatt;
@@ -160,6 +161,24 @@ struct Ctx {
     /// transitional ANC echoes the AirPods emit while switching modes quickly
     /// (they briefly report Off), so the UI/toasts don't flicker through Off.
     anc_cmd: Arc<Mutex<Option<(u8, Instant)>>>,
+    /// True while an audio-reclaim campaign is running — one at a time, so a
+    /// burst of losses can't stack campaigns fighting each other for the buds.
+    reclaiming: Arc<AtomicBool>,
+    /// Set whenever we lose the AirPods to another device; consumed by the next
+    /// successful handshake, which then rebuilds the audio route. See
+    /// `force_audio_rebuild` for why a plain reconnect is not enough.
+    audio_rebuild_pending: Arc<AtomicBool>,
+    /// The user pressed Disconnect. Distinguishes "we are idle because you told us
+    /// to let go" from "we are idle because another device took the buds" — only
+    /// the second may resume by itself. Cleared by Connect / Repair.
+    user_disconnected: Arc<AtomicBool>,
+    /// When the last reclaim campaign ended. Cooldown: a phone that really owns
+    /// the buds (a call — tier 1 on its side) must not be fought over and over.
+    last_reclaim: Arc<Mutex<Option<Instant>>>,
+    /// When "Repair connection" last ran. Debounce: a frustrated double/triple
+    /// click drops and reopens the exclusive driver handle several times a
+    /// second, and that churn is exactly what leaves the devnode in Code 38.
+    last_repair: Arc<Mutex<Option<Instant>>>,
     dev_name: Arc<Mutex<String>>,
     mac: u64,
 }
@@ -450,6 +469,242 @@ fn l2cap_reader(pipe: Arc<Pipe>, ctx: Ctx) {
             }
         }
     }
+}
+
+/// Audio-ownership priority, mirroring the hierarchy Apple itself routes by:
+///
+///   1. Calls / FaceTime (highest)  — steals the audio from anything
+///   2. User-initiated playback     — steals it from other media
+///   3. Background audio / system sounds — ignored unless manually triggered
+///
+/// An iPhone notification chime is **tier 3**. By Apple's own order it must not
+/// take the AirPods away from a tier-1 or tier-2 session on this host — but the
+/// buds hand them over anyway, and we don't control the buds' side. So we
+/// enforce the rule from here: after a loss we reclaim the audio route only when
+/// THIS host held tier 1 or tier 2 at the moment the link dropped.
+///
+/// At tier 3 we hold nothing worth defending, so we let go and wait for the BLE
+/// watcher — the previous behaviour, unchanged. And when the *phone* is at tier 1
+/// (a real call) it keeps the buds: our campaign is bounded and backs off, so the
+/// higher tier still wins wherever it lives.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Tier {
+    /// Tier 1 — an app is capturing the AirPods microphone through us.
+    Call,
+    /// Tier 2 — a user-started playback session is running (SMTC says Playing).
+    Playback,
+    /// Tier 3 — nothing of ours is playing; a system sound at most.
+    Background,
+}
+
+impl Tier {
+    /// Tiers 1 and 2 own the route and are worth reclaiming; tier 3 is not.
+    fn defends_audio(self) -> bool {
+        self != Tier::Background
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Tier::Call => "1/call",
+            Tier::Playback => "2/playback",
+            Tier::Background => "3/background",
+        }
+    }
+}
+
+/// Turn one AAP 0x2E entry into something the UI can show, trying the sources in
+/// order of how much they can be trusted:
+///
+///   1. our own radios      — certain: this is the PC the user is looking at
+///   2. paired to this PC   — Windows' own name + Class of Device (authoritative)
+///   3. nothing             — say so, and show the address
+///
+/// A phone sharing the AirPods with us is normally NOT paired to this PC, so in
+/// practice it lands on step 3 and shows as "Other device" with its address. That
+/// is as far as the evidence goes; naming it "iPhone" would be invention.
+fn describe_device(addr: u64, flags: [u8; 2], local_radios: &[u64]) -> ipc::ConnectedDevice {
+    let b = addr.to_be_bytes();
+    let address = format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        b[2], b[3], b[4], b[5], b[6], b[7]
+    );
+    if local_radios.contains(&addr) {
+        return ipc::ConnectedDevice {
+            address,
+            is_this_pc: true,
+            name: "This PC".into(),
+            kind: "pc".into(),
+        };
+    }
+    if let Some((name, cod)) = bt::paired_device(addr) {
+        if !name.is_empty() {
+            return ipc::ConnectedDevice {
+                address,
+                is_this_pc: false,
+                kind: bt::kind_from_cod(cod).into(),
+                name,
+            };
+        }
+    }
+    // Nothing else to go on. The 0x2E flag bytes look like state, not class (see
+    // aap::flags_hex), so we do NOT guess a type from them — an iPhone labelled
+    // "Computer" is worse than no label at all.
+    let _ = flags;
+    ipc::ConnectedDevice {
+        address,
+        is_this_pc: false,
+        name: "Other device".into(),
+        kind: "unknown".into(),
+    }
+}
+
+/// What this host currently holds the audio route for. `media::is_playing()`
+/// needs COM on the calling thread (run_receiver already did `media::init()`).
+fn host_tier(ctx: &Ctx) -> Tier {
+    if ctx.mic_on.load(Ordering::Relaxed) {
+        Tier::Call
+    } else if media::is_playing() || volume::any_render_active() {
+        // Two probes, because neither alone is enough: SMTC catches browsers and
+        // media players (and keeps reporting through a brief device switch),
+        // while the Core Audio session walk catches everything that just renders
+        // — Teams, Discord, games — which is most of what you would be doing when
+        // a phone notification steals the buds.
+        Tier::Playback
+    } else {
+        Tier::Background
+    }
+}
+
+/// Ask the OS to connect/disconnect the audio, off-thread (the call blocks for
+/// seconds) and serialized, so a stale request can never undo a newer one.
+fn audio_request(mac: u64, connect: bool, why: &'static str) {
+    let verb = if connect { "connect" } else { "disconnect" };
+    thread::spawn(move || match bt::request_audio(mac, connect) {
+        // Always log the Win32 codes, not just the bool. Every one of these has
+        // been logging `= false` with no way to tell why: 0 = ERROR_SUCCESS,
+        // 5 = access denied (needs elevation), 1168 = not found, 1167 = device
+        // not connected. The bool alone made the reclaim campaign undebuggable.
+        Some(ok) => {
+            let (a, b) = bt::last_service_codes();
+            log(&format!("bt: {why} {verb} audio = {ok} (AudioSink={a} Handsfree={b})"));
+        }
+        None => log(&format!("bt: {why} {verb} audio superseded by a newer request — skipped")),
+    });
+}
+
+/// Don't fight for the buds again within this long of the last campaign.
+const RECLAIM_COOLDOWN: Duration = Duration::from_secs(60);
+
+/// Waits before each reclaim attempt, ~39 s in total.
+///
+/// The first version gave up after three tries over 10 s and that was measurably
+/// too impatient: in the 2026-08-31 Teams capture the campaign gave up at
+/// 12:42:49 and the AAP session came back at 12:42:52 — three seconds late, so
+/// the one moment we could have acted was the one we had just stopped watching.
+/// A phone notification returns the buds in seconds; a real call on the phone
+/// keeps them, and that case is ended by the tier re-check inside the loop
+/// rather than by a short deadline.
+const RECLAIM_BACKOFF_MS: [u64; 8] = [1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 8_000, 10_000];
+
+/// Force Windows to tear down and rebuild the audio link: disable the AirPods'
+/// audio services, then re-enable them.
+///
+/// This is, exactly, what the user does by hand — Disconnect then Connect — and
+/// by their account it is the ONLY thing that reliably brings the sound back
+/// after a phone takes the buds: "em que perco o audio tenho que desligar e
+/// voltar a ligar, mesmo em chamada, que nao recupera".
+///
+/// Reconnecting the AAP session is not enough. Windows keeps the device, the
+/// endpoint and the profile all nominally healthy while the audio plays
+/// elsewhere, so it has no reason to rebuild the stream on its own; the buds
+/// come back attached but silent.
+///
+/// Timing is everything here. `BluetoothSetServiceState` needs the device to be
+/// CONNECTED: across the 2026-08-31 logs it returned ERROR_SUCCESS on every call
+/// made while the AirPods were attached and ERROR_INVALID_PARAMETER (87) on every
+/// call made while they were away. So this must run after the link is back, never
+/// during the handover — which is why it hangs off the handshake rather than off
+/// the loss.
+///
+/// This is what the retired `a2dp::reset()` really did; it was dropped because
+/// the churn wedged the driver into Code 38, which we now both understand and
+/// recover from automatically.
+fn force_audio_rebuild(mac: u64) {
+    let _ = bt::request_audio(mac, false);
+    let (a, b) = bt::last_service_codes();
+    log(&format!("reclaim: forced rebuild — disable codes AudioSink={a} Handsfree={b}"));
+    thread::sleep(Duration::from_millis(1_000));
+    let _ = bt::request_audio(mac, true);
+    let (a, b) = bt::last_service_codes();
+    log(&format!("reclaim: forced rebuild — enable codes AudioSink={a} Handsfree={b}"));
+}
+
+/// Reclaim the audio route after a lower-tier event on another device took the
+/// AirPods away from a tier-1/2 session here. Runs on its own thread; leaves
+/// `connect_requested` set while it works so the AAP session re-opens the moment
+/// the link is back, and clears it if the campaign gives up.
+fn spawn_reclaim(ctx: &Ctx, tier: Tier) {
+    if ctx.reclaiming.swap(true, Ordering::SeqCst) {
+        return; // a campaign is already running
+    }
+    log(&format!("reclaim: host held tier {} — reclaiming the audio route", tier.label()));
+    let ctx = ctx.clone();
+    thread::spawn(move || {
+        media::init(); // is_playing() needs COM on this thread too
+        let mut won = false;
+        for (i, wait) in RECLAIM_BACKOFF_MS.iter().enumerate() {
+            thread::sleep(Duration::from_millis(*wait));
+            // The user pressed Disconnect, or the connect loop gave up.
+            if !ctx.connect_requested.load(Ordering::Relaxed) {
+                log("reclaim: no longer requested — standing down");
+                break;
+            }
+            // Re-check the tier: if the call ended or the playback stopped while we
+            // waited, we have nothing left to defend and asking for the buds would
+            // be a steal. This, not a deadline, is what ends a campaign against a
+            // phone that legitimately owns them.
+            if !host_tier(&ctx).defends_audio() {
+                log("reclaim: host dropped to tier 3/background — standing down");
+                break;
+            }
+            if bt::is_connected(ctx.mac) {
+                // The link is back. The rebuild itself is done off the handshake
+                // (see `audio_rebuild_pending`), so that it happens on EVERY
+                // recovery — including the ones where nothing was playing at the
+                // time and no campaign ever ran. Toggling here too would just
+                // double the dropout.
+                log("reclaim: link back — audio rebuild will follow the handshake");
+                won = true;
+                break;
+            }
+            // Deliberately NOT calling set_audio_connected here.
+            //
+            // `BluetoothSetServiceState` needs the device to be connected: across
+            // the 2026-08-31 logs it returned ERROR_SUCCESS every time the AirPods
+            // were attached (13:39:04, 13:39:10, 14:06:50, 14:06:56) and
+            // ERROR_INVALID_PARAMETER (87) every time they were not (12:54, 13:02,
+            // 14:01, 14:03, 14:36, 14:37). The old campaign called it only while
+            // they were away with the phone — the one moment it cannot work — which
+            // is why every attempt logged `= false` and nothing was ever reclaimed.
+            //
+            // So we wait instead. The work happens above, once `is_connected` turns
+            // true: A2DP comes back on its own, and a call gets force_audio_rebuild.
+            log(&format!(
+                "reclaim: attempt {} — AirPods still away, waiting for the link",
+                i + 1
+            ));
+        }
+        if won {
+            log("reclaim: audio route restored");
+            ctx.overlay("Audio restored");
+        } else {
+            // Give the buds up: the phone kept them (its own tier 1), so stop
+            // asking. The BLE watcher re-arms on their next appearance.
+            log("reclaim: gave up — the other device keeps the AirPods");
+            ctx.connect_requested.store(false, Ordering::Relaxed);
+        }
+        *ctx.last_reclaim.lock().unwrap() = Some(Instant::now());
+        ctx.reclaiming.store(false, Ordering::SeqCst);
+    });
 }
 
 /// Enable/disable the hi-res mic stream (manual path).
@@ -783,40 +1038,53 @@ fn apply_command(ctx: &Ctx, cmd: Command) {
             // The user accepted the prompt — let the session start, and ask the OS
             // to (re)connect the audio in case the device was BT-disconnected.
             ctx.connect_requested.store(true, Ordering::Relaxed);
+            ctx.user_disconnected.store(false, Ordering::Relaxed);
+            audio_request(ctx.mac, true, "user");
+        }
+        Command::RebuildAudio => {
+            // Deliberately does NOT touch the AAP session: in the failure this
+            // exists for, the session is perfectly healthy and rebuilding it is
+            // both useless and disruptive. Only the audio services are toggled.
+            log("cmd: rebuild audio route (user)");
+            ctx.overlay("Rebuilding the audio route…");
             let mac = ctx.mac;
-            thread::spawn(move || {
-                let ok = bt::set_audio_connected(mac, true);
-                log(&format!("bt: connect audio = {ok}"));
-            });
+            thread::spawn(move || force_audio_rebuild(mac));
         }
         Command::RepairConnection => {
             // Force a clean reconnect: make sure the session is requested (in case we
             // were waiting on a prompt) and ask run_receiver to drop + reopen the
             // driver so a wedged / desynced link gets a fresh AAP session + ATT
             // channel. Also nudge the OS to (re)connect audio.
+            // Debounce: each repair drops and reopens the exclusive driver handle.
+            // Clicking it three times in two seconds (the log shows exactly that)
+            // churns the devnode until it sticks in Code 38 and every later open
+            // fails — the "driver in an error state" the user ends up in.
+            {
+                const REPAIR_DEBOUNCE: Duration = Duration::from_secs(5);
+                let mut last = ctx.last_repair.lock().unwrap();
+                if last.is_some_and(|t| t.elapsed() < REPAIR_DEBOUNCE) {
+                    log("cmd: repair connection — ignored (one is already in flight)");
+                    return;
+                }
+                *last = Some(Instant::now());
+            }
             log("cmd: repair connection — forcing a clean reconnect");
             ctx.connect_requested.store(true, Ordering::Relaxed);
+            ctx.user_disconnected.store(false, Ordering::Relaxed);
             ctx.wants_reconnect.store(true, Ordering::Relaxed);
-            let mac = ctx.mac;
-            thread::spawn(move || {
-                let ok = bt::set_audio_connected(mac, true);
-                log(&format!("bt: repair connect audio = {ok}"));
-            });
+            audio_request(ctx.mac, true, "repair");
         }
         Command::Disconnect => {
             // Real disconnect: drop the control session AND ask the OS to
             // disconnect the audio (toggle the A2DP/HFP services off). Never
             // auto-reconnect on our own (a prompt is required).
             ctx.connect_requested.store(false, Ordering::Relaxed);
+            ctx.user_disconnected.store(true, Ordering::Relaxed);
             ctx.state.lock().unwrap().connected = false;
             *ctx.driver_cell.lock().unwrap() = None;
             ctx.push_state();
             ctx.overlay("Disconnected");
-            let mac = ctx.mac;
-            thread::spawn(move || {
-                let ok = bt::set_audio_connected(mac, false);
-                log(&format!("bt: disconnect audio = {ok}"));
-            });
+            audio_request(ctx.mac, false, "user");
         }
         Command::SetName { name } => {
             if !name.is_empty() && name.len() <= 64 {
@@ -862,16 +1130,29 @@ fn run_receiver(ctx: Ctx) {
     volume::init(); // COM for the CA volume duck (same MTA)
     log("run_receiver: media init done");
     let mut last_anc = 0u8;
+    // Hosts the AirPods report themselves connected to (AAP 0x2E), and our own
+    // radio address so we can tell ourselves apart from the phone.
+    let mut last_devices: Vec<(u64, [u8; 2])> = Vec::new();
+    let local_radios = bt::local_radio_addresses();
+    log(&format!(
+        "bt: local radio(s): {}",
+        local_radios.iter().map(|a| format!("{a:012x}")).collect::<Vec<_>>().join(", ")
+    ));
     let mut last_case_present: Option<bool> = None;
     let mut pending_card = false;
     // Consecutive failures to reach the AirPods. After a few (they're on the
     // iPhone / gone), we give up so we DON'T keep stealing them back — reset the
     // gate and wait for a fresh prompt/Connect.
     let mut reach_fails = 0u32;
+    // Throttles the "have the AirPods come home?" check in the idle gate below.
+    let mut resume_poll = Instant::now() - Duration::from_secs(60);
     // The user asked to connect — keep trying for a generous window (the AirPods
     // may take a few seconds to become reachable) before giving up. We never
     // *steal* here: a failed connect() doesn't pull them, and once connected a
     // drop releases the gate (below).
+    // Consecutive `Driver::open()` failures. Distinct from `reach_fails`: this
+    // one is about the *devnode*, not the AirPods.
+    let mut open_fails = 0u32;
     let give_up = |ctx: &Ctx, fails: &mut u32| {
         *fails += 1;
         if *fails >= 12 {
@@ -881,14 +1162,41 @@ fn run_receiver(ctx: Ctx) {
         }
     };
     loop {
-        // Gate: stay idle until the user accepts the "connect?" prompt.
+        // Gate: stay idle until the user accepts the "connect?" prompt — OR until
+        // Windows has the AirPods connected again on its own.
+        //
+        // That second clause is what was missing, and it is the whole reason a
+        // phone call killed the PC audio for good. On a real call the buds stay
+        // with the phone for minutes: we exhaust the ~18 s of connect retries,
+        // `give_up` clears connect_requested, and then nothing ever tries again.
+        // The BLE watcher cannot help — it re-arms only after the buds have been
+        // ABSENT for 45 s and reappear, and during the call they are present and
+        // advertising the whole time. Measured 2026-08-31: released at 14:37:05,
+        // gave up at 14:38:17, and the session only came back at 14:38:33 because
+        // the user pressed Connect by hand.
+        //
+        // Resuming on `is_connected` steals nothing: the OS link is already up, so
+        // the buds have come home by themselves and we are only reopening our own
+        // AAP channel. An explicit Disconnect still wins — that is a decision, not
+        // a loss, so `user_disconnected` holds us off until Connect/Repair.
         if !ctx.connect_requested.load(Ordering::Relaxed) {
+            if !ctx.user_disconnected.load(Ordering::Relaxed)
+                && resume_poll.elapsed() >= Duration::from_secs(5)
+            {
+                resume_poll = Instant::now();
+                if bt::is_connected(mac) {
+                    log("run_receiver: Windows has the AirPods again — resuming the session");
+                    ctx.connect_requested.store(true, Ordering::Relaxed);
+                    continue;
+                }
+            }
             thread::sleep(Duration::from_millis(500));
             continue;
         }
         let driver = match driver::Driver::open() {
             Ok(d) => {
                 log("run_receiver: driver opened");
+                open_fails = 0;
                 d
             }
             Err(_) => {
@@ -896,6 +1204,19 @@ fn run_receiver(ctx: Ctx) {
                 ctx.state.lock().unwrap().connected = false;
                 *ctx.driver_cell.lock().unwrap() = None;
                 ctx.push_state();
+                // Tell the two failures apart. If Windows has NO classic link to
+                // the AirPods, the devnode is simply not published and failing to
+                // open it is correct — wait. But if the OS *does* have them and we
+                // still cannot open the driver, the devnode is wedged (Code 38:
+                // the previous instance never unloaded), and no amount of retrying
+                // clears that — the daemon.log shows 1587 such failures in a row.
+                // Ask the elevated task to restart it; it re-checks the devnode and
+                // no-ops if it turns out healthy. Rate-limited to once every 2 min.
+                open_fails += 1;
+                if open_fails >= 4 && bt::is_connected(mac) && devnode::request_recovery() {
+                    log("run_receiver: driver wedged while the OS still has the AirPods — requested an elevated devnode restart");
+                    ctx.overlay("Recovering the AirPods driver…");
+                }
                 give_up(&ctx, &mut reach_fails);
                 thread::sleep(Duration::from_millis(1500));
                 continue;
@@ -925,6 +1246,19 @@ fn run_receiver(ctx: Ctx) {
         pending_card = true;
         ctx.push_state();
         log("run_receiver: handshake done, connected=true");
+        // We are back after losing the buds to another device. The AAP session
+        // being up says nothing about the audio: Windows never tore the stream
+        // down, so it will never rebuild it. Do what the user would do by hand.
+        if ctx.audio_rebuild_pending.swap(false, Ordering::Relaxed) {
+            let mac2 = mac;
+            thread::spawn(move || {
+                // Let the reconnect settle before touching the services, or the
+                // disable lands mid-setup and the rebuild has to happen twice.
+                thread::sleep(Duration::from_millis(1_500));
+                log("audio: rebuilding the route after regaining the AirPods");
+                force_audio_rebuild(mac2);
+            });
+        }
         // EXPERIMENT (opt-in): one-shot GATT discovery — walk the buds' GATT server as
         // a CLIENT to find any heart-rate characteristic we never enumerated. It wakes
         // hearing-assist and blocks the AAP loop while it listens, so it must NOT run in
@@ -960,6 +1294,25 @@ fn run_receiver(ctx: Ctx) {
         let mut we_paused = false;
         let mut prev_ear = [false; 2]; // last [primary, secondary] in-ear state
         let mut last_status = Instant::now();
+        let mut heartbeat = Instant::now();
+        // ---- AAP keepalive: a probe with an expected answer, TCP-ACK style ----
+        //
+        // This is the detection that was missing. On 2026-08-31 the sound died for
+        // ten and a half minutes while `driver.status()` read Ok(2) every second,
+        // the Bluetooth device stayed connected and the endpoint stayed OK: there
+        // was no passive signal to watch, anywhere. But an AAP control command is
+        // acknowledged — the buds echo a status packet — so we can ASK instead of
+        // waiting. Silence in response to a question is itself the signal.
+        //
+        // The probe re-asserts the noise mode the buds are already in: a write they
+        // answer, that changes nothing audible. It runs only while this host is
+        // actually playing something (a dead link matters then, and only then), and
+        // two unanswered probes in a row trigger the same rebuild the user performs
+        // by hand.
+        let mut keepalive = Instant::now();
+        // (when the probe was sent, what `last_data` was at that moment)
+        let mut probe_pending: Option<(Instant, Instant)> = None;
+        let mut probe_misses = 0u32;
         let mut last_audio = Instant::now(); // last time hi-res mic SDUs arrived
         let mut status_fails = 0u32;
         let mut low_warned = false; // low-battery overlay fired (hysteresis)
@@ -1126,6 +1479,48 @@ fn run_receiver(ctx: Ctx) {
                     } else if decoder.is_some() {
                         decoder = None;
                         mic_announced = false; // mic released — next session re-announces
+                    }
+                    // Multipoint: the AirPods' own list of connected hosts. This is
+                    // the earliest warning we get — in the 2026-08-31 capture the
+                    // phone appeared here 3.2 s before Windows dropped us, and it is
+                    // the ONLY signal that moves when the buds hand the audio over
+                    // while every Windows-side indicator stays healthy.
+                    if let Some(devs) = aap::parse_connected_devices(data) {
+                        if devs != last_devices {
+                            let list: Vec<ipc::ConnectedDevice> = devs
+                                .iter()
+                                .map(|(a, flags)| describe_device(*a, *flags, &local_radios))
+                                .collect();
+                            log(&format!(
+                                "multipoint: {} device(s) on the AirPods: {}",
+                                list.len(),
+                                list.iter()
+                                    .zip(devs.iter())
+                                    .map(|(d, (_, f))| {
+                                        format!(
+                                            "{} [{}] {} flags={}",
+                                            d.address,
+                                            d.kind,
+                                            d.name,
+                                            aap::flags_hex(*f)
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ));
+                            ctx.state.lock().unwrap().multipoint = list;
+                            ctx.push_state();
+                            last_devices = devs;
+                        }
+                    }
+                    // Audio-route diagnostics — see aap::route_diag. Rare packets,
+                    // so logging them unconditionally costs nothing.
+                    if let Some((op, dump)) = aap::route_diag(data) {
+                        log(&format!(
+                            "route: 0x{op:02X} {} ({} bytes): {dump}",
+                            aap::route_opcode_name(op),
+                            data.len()
+                        ));
                     }
                     if let Some(b) = aap::parse_battery(data) {
                         ctx.cache_replay(0, data); // replay to a newly-attached app
@@ -1327,6 +1722,63 @@ fn run_receiver(ctx: Ctx) {
                     mic_announced = false;
                 }
             }
+            // Did the outstanding probe get its ACK? Any inbound AAP packet counts:
+            // we are asking whether the channel carries traffic at all, not which
+            // reply came back.
+            if let Some((sent_at, baseline)) = probe_pending {
+                if last_data > baseline {
+                    probe_pending = None;
+                    if probe_misses > 0 {
+                        log("keepalive: answered — channel alive again");
+                        probe_misses = 0;
+                    }
+                } else if sent_at.elapsed() >= Duration::from_secs(5) {
+                    probe_pending = None;
+                    probe_misses += 1;
+                    log(&format!("keepalive: NO answer in 5s (miss {probe_misses}/2)"));
+                    if probe_misses >= 2 {
+                        probe_misses = 0;
+                        // Two unanswered probes while audio should be playing: the
+                        // buds are not listening to us, however healthy Windows
+                        // claims everything is. Do what the user does by hand.
+                        log("keepalive: link is dead despite a healthy status — rebuilding the audio route");
+                        ctx.overlay("Restoring audio");
+                        let mac2 = mac;
+                        thread::spawn(move || force_audio_rebuild(mac2));
+                    }
+                }
+            }
+            // Send the next probe, but only while this host is actually playing.
+            if probe_pending.is_none() && keepalive.elapsed() >= Duration::from_secs(30) {
+                keepalive = Instant::now();
+                let mode = ctx.state.lock().unwrap().anc;
+                if mode != 0
+                    && (ctx.mic_on.load(Ordering::Relaxed) || volume::any_render_active())
+                {
+                    let baseline = last_data;
+                    if driver.send(&aap::anc_command(mode)).is_ok() {
+                        probe_pending = Some((Instant::now(), baseline));
+                    }
+                }
+            }
+            // Heartbeat, logged UNCONDITIONALLY every 60 s.
+            //
+            // On 2026-08-31 the audio died for ten and a half minutes and the log
+            // held not one line: `driver.status()` read Ok(2) every second, so the
+            // whole diagnostic path below — the status diag, the link_stale check,
+            // the release decision — sat inside the `else` branch and never ran.
+            // We were blind by construction. This says, once a minute, how long it
+            // has actually been since an AAP packet arrived, so the next time the
+            // sound stops we can tell a quiet channel from a healthy one.
+            if heartbeat.elapsed() >= Duration::from_secs(60) {
+                heartbeat = Instant::now();
+                log(&format!(
+                    "heartbeat: aap_data_age={}ms status={:?} mic={} tier_probe_ok=true",
+                    last_data.elapsed().as_millis(),
+                    driver.status(),
+                    ctx.mic_on.load(Ordering::Relaxed)
+                ));
+            }
             if last_status.elapsed() >= Duration::from_secs(1) {
                 last_status = Instant::now();
                 let st = driver.status();
@@ -1349,7 +1801,19 @@ fn run_receiver(ctx: Ctx) {
                     // State — trust Windows' own BT status: hold the session as long as
                     // the OS still sees the AirPods connected, and give up only once it
                     // has lost them for a few seconds (really cased / handed to the phone).
-                    let release = if bt::find_airpods().is_some() {
+                    //
+                    // This used to call `bt::find_airpods().is_some()`, which does NOT
+                    // answer that question: it enumerates with `fReturnRemembered` and
+                    // never reads `fConnected`, so it is `Some` for any *paired* device,
+                    // connected or not. The branch was therefore always taken and
+                    // `status_fails` was pinned at 0 forever — the session was never
+                    // released after the buds went to the phone, `connected` stayed true,
+                    // the BLE watcher (which only scans while disconnected) never re-armed,
+                    // and nothing ever asked for the audio back. That is the "loses the
+                    // audio and never recovers" bug; daemon.log shows its signature as
+                    // `fails=0` next to a data_age climbing past 42 s. `bt::is_connected`
+                    // asks the real question.
+                    let release = if bt::is_connected(mac) {
                         status_fails = 0; // still connected to Windows — keep the session
                         // Connected, but the AAP channel may have stalled (not just idle).
                         // If the hi-res mic is engaged and the channel has been silent for
@@ -1409,7 +1873,21 @@ fn run_receiver(ctx: Ctx) {
                         status_fails >= 3
                     };
                     if release {
-                        log("run_receiver: AirPods no longer connected (OS) — releasing");
+                        // Which tier did we hold when the link went? That decides
+                        // whether the loss was legitimate under Apple's order (see
+                        // `Tier`) or a tier-3 event on another device jumping the
+                        // queue — an iPhone notification chime being the case here.
+                        let tier = host_tier(&ctx);
+                        let cooling = ctx
+                            .last_reclaim
+                            .lock()
+                            .unwrap()
+                            .is_some_and(|t| t.elapsed() < RECLAIM_COOLDOWN);
+                        log(&format!(
+                            "run_receiver: AirPods no longer connected (OS) — releasing (host tier {}{})",
+                            tier.label(),
+                            if cooling { ", reclaim cooling down" } else { "" }
+                        ));
                         ctx.overlay("Disconnected");
                         {
                             let mut s = ctx.state.lock().unwrap();
@@ -1420,9 +1898,26 @@ fn run_receiver(ctx: Ctx) {
                         hr_decoder.reset(); // drop HR carry across the reconnect
                         last_anc = 0;
                         last_case_present = None;
-                        // Released: never reconnect on our own (that would steal them
-                        // back from the iPhone) — wait for a prompt.
-                        ctx.connect_requested.store(false, Ordering::Relaxed);
+                        // Arm the rebuild regardless of tier. The tier decides
+                        // whether it is worth CHASING the buds; it must not decide
+                        // whether the audio gets repaired once they are back. Most
+                        // of the user's losses happen at tier 3 (they picked up the
+                        // phone with nothing playing here), and those were exactly
+                        // the ones that never recovered.
+                        ctx.audio_rebuild_pending.store(true, Ordering::Relaxed);
+                        if tier.defends_audio() && !cooling {
+                            // We were playing or on a call: a notification on the
+                            // phone doesn't outrank that. Keep `connect_requested`
+                            // set so the AAP session re-opens as soon as the audio
+                            // link is back, and let the campaign clear it if the
+                            // phone turns out to be holding them for real.
+                            spawn_reclaim(&ctx, tier);
+                        } else {
+                            // Nothing of ours was playing — never reconnect on our
+                            // own (that would steal them back from the iPhone).
+                            // Wait for the BLE watcher / a prompt.
+                            ctx.connect_requested.store(false, Ordering::Relaxed);
+                        }
                         ctx.push_state();
                         break;
                     }
@@ -1517,6 +2012,11 @@ fn main() {
         conv_duck: Arc::new(Mutex::new(volume::ConvDuck::default())),
         pending_rename: Arc::new(Mutex::new(None)),
         anc_cmd: Arc::new(Mutex::new(None)),
+        reclaiming: Arc::new(AtomicBool::new(false)),
+        audio_rebuild_pending: Arc::new(AtomicBool::new(false)),
+        user_disconnected: Arc::new(AtomicBool::new(false)),
+        last_reclaim: Arc::new(Mutex::new(None)),
+        last_repair: Arc::new(Mutex::new(None)),
         dev_name: Arc::new(Mutex::new(dev_name.clone())),
         mac,
     };
@@ -1580,11 +2080,7 @@ fn main() {
                     // connect_requested; also nudge the OS audio up in case the
                     // classic link is down.
                     c.connect_requested.store(true, Ordering::Relaxed);
-                    let mac = c.mac;
-                    thread::spawn(move || {
-                        let ok = bt::set_audio_connected(mac, true);
-                        log(&format!("bt: auto-connect audio = {ok}"));
-                    });
+                    audio_request(c.mac, true, "auto");
                     log("ble: AirPods nearby → auto-connecting");
                 },
                 // Only scan while idle (disconnected) — no BLE radio during audio.
@@ -1610,8 +2106,36 @@ fn main() {
         let c = ctx.clone();
         thread::spawn(move || {
             volume::init();
+            // Wake the AirPods whenever playback STARTS on this host.
+            //
+            // The failure this prevents leaves no trace: on 2026-08-31 the sound
+            // died for ten and a half minutes with the AAP channel at Ok(2) every
+            // second, the Bluetooth device connected and the endpoint OK — nothing
+            // to detect, anywhere. What brought it back was poking the buds with an
+            // AAP command and restarting the video.
+            //
+            // So instead of detecting the fault we pre-empt it: on the transition
+            // from silence to playing, re-assert the noise mode the buds are
+            // already in. That is a write they acknowledge, it changes nothing
+            // audible, and it is exactly the poke that worked by hand. It fires
+            // only on the edge (not while audio keeps playing) and is rate-limited,
+            // so a normal listening session sends one packet, not a stream of them.
+            let mut was_playing = false;
+            let mut last_wake = Instant::now() - Duration::from_secs(60);
             loop {
                 c.sync_volume();
+                let playing = volume::any_render_active();
+                if playing && !was_playing && last_wake.elapsed() >= Duration::from_secs(3) {
+                    let mode = c.state.lock().unwrap().anc;
+                    if mode != 0 {
+                        if let Some(drv) = c.driver_cell.lock().unwrap().clone() {
+                            let _ = drv.send(&aap::anc_command(mode));
+                            last_wake = Instant::now();
+                            log("audio: playback started — waking the AirPods (re-assert noise mode)");
+                        }
+                    }
+                }
+                was_playing = playing;
                 // Flush a settled rename into a confirmation overlay.
                 let ready = {
                     let mut p = c.pending_rename.lock().unwrap();
