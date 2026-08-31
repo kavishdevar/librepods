@@ -192,6 +192,111 @@ pub fn request_all_descriptors(seq: u16, log_type: bool) -> Vec<u8> {
     f
 }
 
+/// Parse the `0x2E` **Connected Devices** packet: the list of hosts the AirPods
+/// are currently connected to. Returns each device's 48-bit address.
+///
+/// This is the multipoint ground truth, and the only party that has it is the
+/// buds themselves — measured 2026-08-31, during a Teams call the AirPods moved
+/// the audio to the phone while the Windows endpoint, the Bluetooth link and our
+/// AAP channel all still reported healthy. `0x2E` announced the phone **3.2
+/// seconds before** Windows noticed anything.
+///
+/// Layout, from two captures (one device, then two):
+///
+/// ```text
+/// 04 00 04 00 2e 00 | 01 00 01 | 20 bd 1d 72 90 9c 02 06
+/// 04 00 04 00 2e 00 | 01 22 02 | 68 44 65 83 8a 74 01 00 | 20 bd 1d 72 90 9c 02 06
+///                      |  |  `- count                        `- this PC's radio
+///                      |  `- flags
+///                      `- constant 0x01
+/// ```
+///
+/// Each entry is 8 bytes: a 6-byte address then 2 bytes of per-device flags
+/// (this host showed `02 06`, the phone `01 00`). The flags are NOT interpreted
+/// here — two samples is not enough to know what they mean, and the count plus
+/// the addresses already answer the question we care about.
+///
+/// The address is **big-endian**, i.e. it reads in the same order as a
+/// `BLUETOOTH_ADDRESS.ullLong`, so the two compare directly. (First written as
+/// little-endian, which produced this machine's radio byte-reversed —
+/// `9c90721dbd20` against the real `20bd1d72909c` — and so never matched.)
+pub fn parse_connected_devices(data: &[u8]) -> Option<Vec<(u64, [u8; 2])>> {
+    if data.len() < 9 || data[..4] != HEADER || data[4] != 0x2E {
+        return None;
+    }
+    let count = data[8] as usize;
+    let mut out = Vec::with_capacity(count);
+    for i in 0..count {
+        let base = 9 + i * 8;
+        if base + 8 > data.len() {
+            break;
+        }
+        let mut addr = 0u64;
+        for b in &data[base..base + 6] {
+            addr = (addr << 8) | *b as u64; // big-endian, matching BLUETOOTH_ADDRESS
+        }
+        out.push((addr, [data[base + 6], data[base + 7]]));
+    }
+    Some(out)
+}
+
+/// The two per-device flag bytes of an 0x2E entry are **not** a device class.
+///
+/// A first version of this guessed a device type from them, on one capture where
+/// this PC was `02 06` and a phone `01 00`. More data killed it: over 23 packets
+/// this same PC appeared as `02 06` (15x), `01 06` (4x) and `02 04` (4x). A value
+/// that changes for a fixed device cannot be its class — it looks like connection
+/// or stream state. Until we know what it means, no label is inferred from it: a
+/// wrong "Computer" next to the user's iPhone is worse than an honest "Unknown".
+///
+/// Kept as a formatter so the bytes still reach the log, where more samples can
+/// eventually settle what they are.
+pub fn flags_hex(flags: [u8; 2]) -> String {
+    format!("{:02x} {:02x}", flags[0], flags[1])
+}
+
+/// Audio-route diagnostics: the opcodes `AAP Definitions.md` names as carrying
+/// routing/stream state, which the daemon does not yet interpret.
+///
+/// Why they matter (measured 2026-08-31, a Teams call): the AirPods can move the
+/// audio to the phone while the AAP channel keeps flowing, the Bluetooth link
+/// stays connected and the Windows endpoint still reports OK — so *every* signal
+/// the daemon watches today reads healthy and it never notices. The buds are the
+/// only party that knows, and if they announce it at all it is on one of these:
+///
+///   0x2B Stream State Info · 0x44 Send Smart Routing 2.0 Info
+///   0x52 Source Context    · 0x2E Connected Devices (carries BT addresses)
+///
+/// Returns the opcode and a hex dump so a reproduction shows which one fires and
+/// what it says. Once that is known, this becomes the reclaim trigger.
+pub fn route_diag(data: &[u8]) -> Option<(u8, String)> {
+    if data.len() < 6 || data[..4] != HEADER {
+        return None;
+    }
+    let op = data[4];
+    if !matches!(op, 0x2B | 0x2E | 0x44 | 0x52) {
+        return None;
+    }
+    let dump = data
+        .iter()
+        .take(64)
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some((op, dump))
+}
+
+/// Human-readable name for the opcodes `route_diag` reports.
+pub fn route_opcode_name(op: u8) -> &'static str {
+    match op {
+        0x2B => "Stream State Info",
+        0x2E => "Connected Devices",
+        0x44 => "Smart Routing 2.0 Info",
+        0x52 => "Source Context",
+        _ => "?",
+    }
+}
+
 /// True if `data` is a 0x58 uplink audio packet (carries AAC-ELD frames).
 pub fn is_audio_packet(data: &[u8]) -> bool {
     data.len() >= 8
