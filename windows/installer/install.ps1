@@ -96,6 +96,29 @@ if (Test-Path (Join-Path $here 'winui')) {
     Copy-Item (Join-Path $here 'winui') $dest -Recurse -Force
 }
 
+# fix-driver.ps1 + its elevated on-demand task: lets the (unelevated) daemon
+# recover the AAP devnode from Code 38 without a UAC prompt and without a reboot.
+# The daemon fires it with `schtasks /run` after repeated driver-open failures
+# while Windows still has the AirPods connected (daemon/src/devnode.rs). The
+# script re-checks the devnode and no-ops when it is healthy, and self-elevates
+# through UAC when it is run by hand instead.
+$fixSrc = Join-Path $here 'fix-driver.ps1'
+if (Test-Path $fixSrc) {
+    Copy-Item $fixSrc $dest -Force
+    $fixDest = Join-Path $dest 'fix-driver.ps1'
+    Write-Host '==> Registering the elevated driver-recovery task...'
+    $fixAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
+        -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$fixDest`""
+    $fixPrincipal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+        -LogonType Interactive -RunLevel Highest
+    $fixSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -StartWhenAvailable
+    Register-ScheduledTask -TaskName 'LibrePods Fix Driver' -Action $fixAction `
+        -Principal $fixPrincipal -Settings $fixSettings `
+        -Description 'Recover the LibrePods AAP devnode from Code 38 (no reboot).' `
+        -Force | Out-Null
+}
+
 # ---- 6. auto-start at login -------------------------------------------------
 # The daemon is the always-on background process (per-user, in the session — NOT a
 # SYSTEM service, which couldn't touch the user's audio/mic). The WinUI app starts
