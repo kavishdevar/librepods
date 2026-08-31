@@ -78,6 +78,8 @@
                     <controls:NoiseControlCard x:Name="NoiseControlCard" />
                     <controls:FeaturesCard x:Name="FeaturesCard" />
                     <controls:MicCard x:Name="MicCard" />
+                    <!-- Hidden until the first AAP 0x2E arrives. -->
+                    <controls:MultipointCard x:Name="MultipointCard" Visibility="Collapsed" />
                 </StackPanel>
             </Grid>
         </Grid>

@@ -72,6 +72,7 @@ public sealed class DaemonClient : IDisposable
     public void Connect() => Send(new ConnectCmd());
     public void Disconnect() => Send(new DisconnectCmd());
     public void RepairConnection() => Send(new RepairConnectionCmd());
+    public void RebuildAudio() => Send(new RebuildAudioCmd());
     public void SetName(string name) => Send(new SetNameCmd { Name = name });
     public void Shutdown() => Send(new ShutdownCmd());
 

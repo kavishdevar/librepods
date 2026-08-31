@@ -82,6 +82,27 @@ pub struct Snapshot {
     pub firmware: String,
     #[serde(default)]
     pub serial: String,
+    /// Every host the AirPods report themselves connected to (AAP 0x2E) — this PC
+    /// plus whatever else is sharing them. Multipoint is invisible to Windows, so
+    /// this list is the only place the user can see that a phone is also holding
+    /// the buds. Empty until the first 0x2E arrives. (serde default: older snapshots.)
+    #[serde(default)]
+    pub multipoint: Vec<ConnectedDevice>,
+}
+
+/// One host connected to the AirPods, as reported by the buds themselves.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ConnectedDevice {
+    /// 48-bit Bluetooth address, formatted `aa:bb:cc:dd:ee:ff`.
+    pub address: String,
+    /// True when this entry is one of our own radios.
+    pub is_this_pc: bool,
+    /// Best-effort human label: the Windows name when the device happens to be
+    /// paired here, else a type guess, else "Unknown device".
+    pub name: String,
+    /// Device kind for the UI to pick an icon: "pc", "phone", "laptop", "watch",
+    /// "tablet", "audio" or "unknown".
+    pub kind: String,
 }
 
 /// A toggleable AAP control-command setting (the `id` byte of a 0x09 control
@@ -138,6 +159,15 @@ pub enum Command {
     },
     /// Start the AAP session (the user accepted the "connect?" prompt).
     Connect,
+    /// Rebuild the Windows audio route without touching the AAP session: toggle
+    /// the AirPods' audio services off and on, which is exactly what pressing
+    /// Disconnect then Connect does by hand.
+    ///
+    /// For the failure where the buds go silent while EVERYTHING reports healthy —
+    /// the AAP channel at Ok(2), the Bluetooth device connected, the endpoint OK,
+    /// the AirPods still selected — and so nothing can detect it automatically.
+    /// One click instead of changing noise mode and restarting the video.
+    RebuildAudio,
     /// Force a clean reconnect (the "Repair connection" button): re-assert the
     /// connect request AND drop the current driver so the daemon reopens a fresh
     /// AAP session + ATT channel — used to recover a wedged / desynced link where

@@ -57,6 +57,9 @@ public sealed partial class DeviceHeader : UserControl
         RenameBtn.Visibility = s.Connected ? Visibility.Visible : Visibility.Collapsed;
         DisconnectButton.Visibility = s.Connected ? Visibility.Visible : Visibility.Collapsed;
         RepairButton.Visibility = (!s.Connected || s.LinkStale) ? Visibility.Visible : Visibility.Collapsed;
+        // "Restore audio" is the opposite case to Repair: the session is fine, the
+        // sound is not. Only useful while connected.
+        RebuildAudioButton.Visibility = s.Connected ? Visibility.Visible : Visibility.Collapsed;
         if (!s.Connected) ExitEdit();
     }
 
@@ -66,6 +69,8 @@ public sealed partial class DeviceHeader : UserControl
     private void Connect_Click(object sender, RoutedEventArgs e) => Client?.Connect();
     private void Disconnect_Click(object sender, RoutedEventArgs e) => Client?.Disconnect();
     private void Repair_Click(object sender, RoutedEventArgs e) => Client?.RepairConnection();
+
+    private void RebuildAudio_Click(object sender, RoutedEventArgs e) => Client?.RebuildAudio();
 
     // ---- Rename ------------------------------------------------------------
 

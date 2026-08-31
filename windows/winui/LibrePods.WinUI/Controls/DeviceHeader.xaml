@@ -80,6 +80,17 @@
                         <TextBlock Text="{Binding [HeaderRepairBtn_Text], Source={StaticResource Loc}}" />
                     </StackPanel>
                 </Button>
+                <!-- Restore audio (shown only while connected) — toggles the audio
+                     services without touching the AAP session. -->
+                <Button x:Name="RebuildAudioButton"
+                        Click="RebuildAudio_Click"
+                        Visibility="Collapsed"
+                        ToolTipService.ToolTip="{Binding [HeaderRebuildAudioBtn_Tip], Source={StaticResource Loc}}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE767;" FontSize="14" />
+                        <TextBlock Text="{Binding [HeaderRebuildAudioBtn_Text], Source={StaticResource Loc}}" />
+                    </StackPanel>
+                </Button>
                 <!-- Disconnect (shown only while connected) -->
                 <Button x:Name="DisconnectButton"
                         Click="Disconnect_Click"

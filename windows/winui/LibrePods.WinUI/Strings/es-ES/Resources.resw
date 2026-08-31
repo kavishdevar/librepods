@@ -212,4 +212,15 @@
 
   <data name="Settings_DefaultUiChanged_Title" xml:space="preserve"><value>Interfaz predeterminada cambiada</value></data>
   <data name="Settings_DefaultUiChanged_Message" xml:space="preserve"><value>La app iced será la interfaz predeterminada la próxima vez que abras LibrePods.</value></data>
+
+  <!-- ===== MultipointCard ===== -->
+  <data name="MultipointTitle.Text" xml:space="preserve"><value>Compartidos con</value></data>
+  <data name="Multipoint_OnlyThisPc" xml:space="preserve"><value>Solo este PC está conectado</value></data>
+  <data name="Multipoint_Shared" xml:space="preserve"><value>Compartidos con {0} dispositivo(s) más</value></data>
+  <data name="Multipoint_ThisPc" xml:space="preserve"><value>Este PC</value></data>
+  <data name="Multipoint_Hint" xml:space="preserve"><value>Los AirPods admiten dos conexiones a la vez. Cuando otro dispositivo reproduce sonido, puede quitárselos a este PC.</value></data>
+
+  <!-- ===== Restore audio ===== -->
+  <data name="HeaderRebuildAudioBtn.Text" xml:space="preserve"><value>Restaurar audio</value></data>
+  <data name="HeaderRebuildAudioBtn.Tip" xml:space="preserve"><value>Desactiva y reactiva los servicios de audio de los AirPods — la versión de un clic de Desconectar y volver a conectar. Úsalo cuando el sonido se corta pero todo parece conectado.</value></data>
 </root>

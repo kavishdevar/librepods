@@ -52,6 +52,38 @@ public sealed class Snapshot
     [JsonPropertyName("model")] public string Model { get; set; } = "";
     [JsonPropertyName("firmware")] public string Firmware { get; set; } = "";
     [JsonPropertyName("serial")] public string Serial { get; set; } = "";
+
+    /// Every host the AirPods report themselves connected to (AAP 0x2E) -- this PC
+    /// plus whatever else is sharing them. Multipoint is invisible to Windows, so
+    /// this is the only place the user can see that a phone is also holding the buds.
+    [JsonPropertyName("multipoint")] public List<ConnectedDevice> Multipoint { get; set; } = new();
+}
+
+/// One host connected to the AirPods, as reported by the buds themselves.
+public sealed class ConnectedDevice
+{
+    [JsonPropertyName("address")] public string Address { get; set; } = "";
+    [JsonPropertyName("is_this_pc")] public bool IsThisPc { get; set; }
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+
+    /// "pc", "laptop", "phone", "watch", "tablet", "audio" or "unknown".
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "unknown";
+
+    /// Segoe Fluent Icons glyph for this kind.
+    public string Glyph => Kind switch
+    {
+        "pc" => "\uE977",      // Devices2 (desktop)
+        "laptop" => "\uE7F8",  // Laptop
+        "phone" => "\uE8EA",   // CellPhone
+        "tablet" => "\uE70A",  // Tablet
+        "watch" => "\uE916",   // Stopwatch-ish; closest stock glyph for a watch
+        "audio" => "\uE7F6",   // Headphone
+        _ => "\uE783",         // Error/unknown
+    };
+
+    /// "This PC" is shown plainly; anything else carries its address so an
+    /// unidentified device is still recognisable.
+    public string Detail => IsThisPc ? Address : Address;
 }
 
 /// AAP control-command feature ids (the `id` byte of a 0x09 control command).
@@ -156,6 +188,15 @@ public sealed class ConnectCmd
 public sealed class DisconnectCmd
 {
     [JsonPropertyName("cmd")] public string Cmd => "disconnect";
+}
+
+/// Toggle the AirPods' audio services off and on -- what Disconnect + Connect does
+/// by hand -- WITHOUT touching the AAP session. For the failure where the sound
+/// stops while the session, the Bluetooth device and the endpoint all stay healthy,
+/// which nothing can detect automatically.
+public sealed class RebuildAudioCmd
+{
+    [JsonPropertyName("cmd")] public string Cmd => "rebuild_audio";
 }
 
 public sealed class RepairConnectionCmd

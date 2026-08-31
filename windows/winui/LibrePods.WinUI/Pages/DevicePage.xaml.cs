@@ -66,6 +66,7 @@ public sealed partial class DevicePage : UserControl
         NoiseControlCard.Update(s);
         FeaturesCard.Update(s);
         MicCard.Update(s);
+        MultipointCard.Update(s);
         HeartRateCard.Update(s);
 
         // Disable every interactive control while there's no proper connection — a
