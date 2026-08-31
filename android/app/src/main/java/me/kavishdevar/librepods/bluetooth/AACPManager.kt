@@ -246,6 +246,7 @@ class AACPManager {
         fun onHeadphoneAccommodationReceived(eqData: FloatArray)
         fun onCustomEqReceived(customEq: CustomEq)
         fun onCapabilitiesReceived(capabilities: List<Capability>)
+        fun onAACPFrameReceived() {}
     }
 
     fun parseStemPressResponse(data: ByteArray): Pair<StemPressType, StemPressBudType> {
@@ -307,40 +308,28 @@ class AACPManager {
     }
 
     fun sendControlCommand(identifier: Byte, value: ByteArray): Boolean {
-        val controlPacket = createControlCommandPacket(identifier, value)
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false, value
-        )
-        return sendDataPacket(controlPacket)
+        if (ControlCommandIdentifiers.fromByte(identifier) == null) return false
+        return sendDataPacket(createControlCommandPacket(identifier, value))
     }
 
     @OptIn(ExperimentalStdlibApi::class)
     fun sendControlCommand(identifier: Byte, value: Byte): Boolean {
-        val controlPacket = createControlCommandPacket(identifier, byteArrayOf(value))
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false, byteArrayOf(value)
-        )
-        return sendDataPacket(controlPacket)
+        if (ControlCommandIdentifiers.fromByte(identifier) == null) return false
+        return sendDataPacket(createControlCommandPacket(identifier, byteArrayOf(value)))
     }
 
     fun sendControlCommand(identifier: Byte, value: Boolean): Boolean {
-        val controlPacket = createControlCommandPacket(
-            identifier, if (value) byteArrayOf(0x01) else byteArrayOf(0x02)
+        if (ControlCommandIdentifiers.fromByte(identifier) == null) return false
+        return sendDataPacket(
+            createControlCommandPacket(
+                identifier, if (value) byteArrayOf(0x01) else byteArrayOf(0x02)
+            )
         )
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false,
-            if (value) byteArrayOf(0x01) else byteArrayOf(0x02)
-        )
-        return sendDataPacket(controlPacket)
     }
 
     fun sendControlCommand(identifier: Byte, value: Int): Boolean {
-        val controlPacket = createControlCommandPacket(identifier, byteArrayOf(value.toByte()))
-        setControlCommandStatusValue(
-            ControlCommandIdentifiers.fromByte(identifier) ?: return false,
-            byteArrayOf(value.toByte())
-        )
-        return sendDataPacket(controlPacket)
+        if (ControlCommandIdentifiers.fromByte(identifier) == null) return false
+        return sendDataPacket(createControlCommandPacket(identifier, byteArrayOf(value.toByte())))
     }
 
     fun parseProximityKeysResponse(data: ByteArray): Map<ProximityKeyType, ByteArray> {
@@ -414,6 +403,7 @@ class AACPManager {
             )
             return
         }
+        callback?.onAACPFrameReceived()
 
         when (val opcode = packet[4]) {
             Opcodes.BATTERY_INFO -> {
@@ -1141,34 +1131,41 @@ class AACPManager {
         try {
             Log.d(TAG, "Sending packet: ${packet.joinToString(" ") { "%02X".format(it) }}")
 
-            if (packet[4] == Opcodes.CONTROL_COMMAND) {
-                val controlCommand = try {
+            val controlCommand = if (packet.size > 4 && packet[4] == Opcodes.CONTROL_COMMAND) {
+                try {
                     ControlCommand.fromByteArray(packet)
                 } catch (e: Exception) {
                     Log.w(TAG, "Invalid control command: ${e.message}")
                     callback?.onUnknownPacketReceived(packet)
                     return false
                 }
+            } else {
+                null
+            }
+
+            if (controlCommand != null) {
                 Log.d(
                     TAG, "Control command: ${controlCommand.identifier.toHexString()} - ${
                     controlCommand.value.joinToString(" ") { "%02X".format(it) }
                 }")
+            }
+
+            val socket = BluetoothConnectionManager.aacpSocket ?: return false
+            if (!socket.isConnected) {
+                Log.d(TAG, "Can't send packet: Socket not initialized or connected")
+                return false
+            }
+
+            socket.outputStream?.write(packet)
+            socket.outputStream?.flush()
+
+            if (controlCommand != null) {
                 setControlCommandStatusValue(
                     ControlCommandIdentifiers.fromByte(controlCommand.identifier) ?: return false,
                     controlCommand.value
                 )
             }
-
-            val socket = BluetoothConnectionManager.aacpSocket ?: return false
-
-            if (socket.isConnected) {
-                socket.outputStream?.write(packet)
-                socket.outputStream?.flush()
-                return true
-            } else {
-                Log.d(TAG, "Can't send packet: Socket not initialized or connected")
-                return false
-            }
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Error sending packet: ${e.message}")
             return false
@@ -1270,9 +1267,8 @@ class AACPManager {
     }
 
     fun disconnected() {
-        Log.d(TAG, "Disconnected, clearing state")
+        Log.d(TAG, "Disconnected, clearing session state")
         controlCommandStatusList.clear()
-        controlCommandListeners.clear()
         owns = false
         oldConnectedDevices = listOf()
         connectedDevices = listOf()
