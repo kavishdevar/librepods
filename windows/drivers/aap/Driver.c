@@ -56,6 +56,10 @@ LpEvtDeviceAdd(
     WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnpPower);
     pnpPower.EvtDevicePrepareHardware = LpEvtDevicePrepareHardware;
     pnpPower.EvtDeviceReleaseHardware = LpEvtDeviceReleaseHardware;
+    // The L2CAP/ATT teardown must run HERE, not in ReleaseHardware: WDF stops the
+    // default I/O target before ReleaseHardware, so BRBs submitted there never
+    // reach bthport. SelfManagedIoSuspend runs while the target is still started.
+    pnpPower.EvtDeviceSelfManagedIoSuspend = LpEvtDeviceSelfManagedIoSuspend;
     WdfDeviceInitSetPnpPowerEventCallbacks(DeviceInit, &pnpPower);
 
     // Track the user-mode handle lifetime so we can release the L2CAP channel

@@ -140,6 +140,10 @@ EVT_WDF_DRIVER_DEVICE_ADD         LpEvtDeviceAdd;
 
 EVT_WDF_DEVICE_PREPARE_HARDWARE   LpEvtDevicePrepareHardware;
 EVT_WDF_DEVICE_RELEASE_HARDWARE   LpEvtDeviceReleaseHardware;
+// Runs on the remove path while the default I/O target is still STARTED, which
+// is the only window where our teardown BRBs can actually reach bthport. See
+// the comment on the implementation in Device.c.
+EVT_WDF_DEVICE_SELF_MANAGED_IO_SUSPEND LpEvtDeviceSelfManagedIoSuspend;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP    LpEvtDeviceContextCleanup;
 
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL LpEvtIoDeviceControl;
