@@ -168,7 +168,7 @@ class AppleViewModel(
         attObserveJob = null
     }
 
-    fun startRecording() = device.startRecording()
+    fun startRecording() = device.startRecording(recordingRepository.createRecording())
     fun stopRecording() = device.stopRecording()
 
     fun toggleListeningMode(modeBit: Int) = device.toggleListeningMode(modeBit)

@@ -522,9 +522,9 @@ class AACPManager(private val device: AppleDevice) {
 
                 device.updateState {
                     it.copy(
-                        headphoneAccomodation = eqData,
-                        headphoneAccomodationEnabledForMedia = eqOnMedia,
-                        headphoneAccomodationEnabledForPhone = eqOnPhone,
+                        headphoneAccommodation = eqData,
+                        headphoneAccommodationEnabledForMedia = eqOnMedia,
+                        headphoneAccommodationEnabledForPhone = eqOnPhone,
                         aacpPackets = it.aacpPackets + packet
                     )
                 }
@@ -561,10 +561,8 @@ class AACPManager(private val device: AppleDevice) {
             MessageOpcode.MICROPHONE_STREAM -> {
                 try {
                     MicrophoneFrame.parsePacket(packet).forEach{ frame ->
-                        device.updateState {
-                            it.copy(
-                                microphoneFrames = it.microphoneFrames + frame
-                            )
+                        CoroutineScope(Dispatchers.IO).launch {
+                            device.emitMicrophoneFrame(frame)
                         }
                     }
                 } catch (e: Exception) {
@@ -1007,9 +1005,9 @@ class AACPManager(private val device: AppleDevice) {
 
         device.updateState {
             it.copy(
-                headphoneAccomodation = eq.copyOf(),
-                headphoneAccomodationEnabledForMedia = media == 0x01.toByte(),
-                headphoneAccomodationEnabledForPhone = phone == 0x01.toByte()
+                headphoneAccommodation = eq.copyOf(),
+                headphoneAccommodationEnabledForMedia = media == 0x01.toByte(),
+                headphoneAccommodationEnabledForPhone = phone == 0x01.toByte()
             )
         }
     }
@@ -1042,7 +1040,6 @@ class AACPManager(private val device: AppleDevice) {
             it.copy(
                 battery = emptySet(),
                 connectedDevices = emptyList(),
-                microphoneFrames = emptyList(),
                 controlStates = emptyMap(),
                 aacpPackets = emptyList(),
                 headTrackingState = BuddyState.INACTIVE,
@@ -1072,7 +1069,7 @@ class AACPManager(private val device: AppleDevice) {
     fun requestMicrophoneStream(): Boolean {
         val payload = byteArrayOf(
             0x00, 0x00,
-            0x09, 0x00,
+            0x09, 0x00, // length
             0x00, 0x01,
             0x82.toByte(), 0x00,
             0x00, 0x00,
@@ -1090,9 +1087,8 @@ class AACPManager(private val device: AppleDevice) {
 
     fun endMicrophoneStream(): Boolean {
         val payload = byteArrayOf(
-            MessageOpcode.MICROPHONE_STREAM.value, 0x00,
             0x00, 0x00,
-            0x02, 0x00,
+            0x02, 0x00, // length
             0x03, 0x01
         )
 

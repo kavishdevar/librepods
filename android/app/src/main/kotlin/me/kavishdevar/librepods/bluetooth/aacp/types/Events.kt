@@ -1,5 +1,7 @@
 package me.kavishdevar.librepods.bluetooth.aacp.types
 
+import me.kavishdevar.librepods.data.audio.MicrophoneFrame
+
 sealed interface AppleEvent {
     data class StemPress(
         val pressType: StemPressType,
@@ -15,7 +17,7 @@ sealed interface AppleEvent {
         val reverseTapped: Boolean
     ): AppleEvent
 
-    data class HeadGesturesResult(
-        val yes: Boolean,
+    data class MicrophoneFrameEvent(
+        val frame: MicrophoneFrame
     )
 }

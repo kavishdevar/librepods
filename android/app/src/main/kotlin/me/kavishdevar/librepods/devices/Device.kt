@@ -13,13 +13,21 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.ParcelUuid
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.bluetooth.createBluetoothSocket
+import kotlin.time.Duration.Companion.milliseconds
 
 sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
     private val TAG: String
         get() = "LibrePodsDevice<${macAddress.toRedactedString()}>"
+
+    // todo: somehow remove context from here. maybe get Profile from service?
+    val context: Context
 
     val macAddress: MacAddress
 
@@ -45,12 +53,12 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         psm = psm
     )
 
-    fun disableAudio(context: Context) {
-        disableA2dp(context)
-        disableHeadset(context)
+    fun disableAudio() {
+        disableA2dp()
+        disableHeadset()
     }
 
-    fun disableA2dp(context: Context) {
+    fun disableA2dp() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         if (context.checkSelfPermission("android.permission.BLUETOOTH_PRIVILEGED") == PackageManager.PERMISSION_GRANTED) {
@@ -80,7 +88,7 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         }
     }
 
-    fun disableHeadset(context: Context) {
+    fun disableHeadset() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         if (context.checkSelfPermission("android.permission.MODIFY_PHONE_STATE") == PackageManager.PERMISSION_GRANTED) {
@@ -105,12 +113,12 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         }
     }
 
-    fun enableAudio(context: Context) {
-        enableA2dp(context)
-        enableHeadset(context)
+    fun enableAudio() {
+        enableA2dp()
+        enableHeadset()
     }
 
-    fun enableA2dp(context: Context) {
+    fun enableA2dp() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         bluetoothAdapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
@@ -137,7 +145,7 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         }, BluetoothProfile.A2DP)
     }
 
-    fun enableHeadset(context: Context) {
+    fun enableHeadset() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         bluetoothAdapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
@@ -167,12 +175,12 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         }, BluetoothProfile.HEADSET)
     }
 
-    fun connectAudio(context: Context) {
-        connectA2dp(context)
-        connectHeadset(context)
+    fun connectAudio() {
+        connectA2dp()
+        connectHeadset()
     }
 
-    fun connectA2dp(context: Context) {
+    fun connectA2dp() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         bluetoothAdapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
@@ -193,7 +201,7 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         }, BluetoothProfile.A2DP)
     }
 
-    fun connectHeadset(context: Context) {
+    fun connectHeadset() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         bluetoothAdapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
@@ -214,12 +222,12 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         }, BluetoothProfile.HEADSET)
     }
 
-    fun disconnectAudio(context: Context) {
-        disconnectA2dp(context)
-        disconnectHeadset(context)
+    fun disconnectAudio() {
+        disconnectA2dp()
+        disconnectHeadset()
     }
 
-    fun disconnectA2dp(context: Context) {
+    fun disconnectA2dp() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         bluetoothAdapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
@@ -240,7 +248,7 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         }, BluetoothProfile.A2DP)
     }
 
-    fun disconnectHeadset(context: Context) {
+    fun disconnectHeadset() {
         val bluetoothAdapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         bluetoothAdapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
@@ -298,6 +306,46 @@ sealed interface Device<S: DeviceState, T: DeviceSettings, M: DeviceMetadata> {
         )
 
         return receiver
+    }
+
+    fun reconnectA2dp() {
+        bluetoothAdapter.getProfileProxy(
+            context,
+            object : BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(
+                    profile: Int,
+                    proxy: BluetoothProfile
+                ) {
+                    if (profile != BluetoothProfile.A2DP) return
+
+                    val a2dp = proxy as BluetoothA2dp
+
+                    try {
+                        val connectMethod = proxy.javaClass.getMethod("connect", BluetoothDevice::class.java)
+                        val disconnectMethod = proxy.javaClass.getMethod("disconnect", BluetoothDevice::class.java)
+
+                        disconnectMethod.invoke(proxy, bluetoothDevice)
+
+                        CoroutineScope(Dispatchers.IO).launch {
+                            delay(500.milliseconds)
+
+                            connectMethod.invoke(proxy, bluetoothDevice)
+
+                            bluetoothAdapter.closeProfileProxy(
+                                BluetoothProfile.A2DP,
+                                a2dp
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to reconnect A2DP", e)
+                    }
+                }
+
+                override fun onServiceDisconnected(profile: Int) {
+                }
+            },
+            BluetoothProfile.A2DP
+        )
     }
 }
 

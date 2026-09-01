@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -65,12 +67,6 @@ fun RecordingScreenRoute(
         startRecording = viewModel::startRecording,
         stopRecording = viewModel::stopRecording,
     )
-
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.stopRecording()
-        }
-    }
 }
 
 @Composable
@@ -140,18 +136,19 @@ fun RecordingScreen(
             ) { recording ->
                 if (recording) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surface,
-                                RoundedCornerShape(28.dp)
-                            )
-                            .padding(24.dp)
+                        modifier = Modifier.fillMaxSize()
                     ) {
                         // AI-generated
                         Canvas(
                             modifier = Modifier
+                                .fillMaxWidth()
                                 .fillMaxSize()
+                                .weight(1f)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    RoundedCornerShape(28.dp)
+                                )
+                                .padding(vertical = 24.dp)
                         ) {
                             if (history.isEmpty()) return@Canvas
 
@@ -196,24 +193,20 @@ fun RecordingScreen(
 
                         Spacer(Modifier.height(24.dp))
 
-                        Text(
-                            text = buildString {
-                                val total = state.microphoneState.durationMs
-
-                                append((total / 60000).toString().padStart(2, '0'))
-                                append(':')
-
-                                append(((total / 1000) % 60).toString().padStart(2, '0'))
-                                append('.')
-
-                                append(((total % 1000) / 10).toString().padStart(2, '0'))
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.displaySmall
-                        )
-
-                        Spacer(Modifier.height(12.dp))
+//                        todo: duration is wrong, don't do +30ms
+//                        Text(
+//                            text = buildString {
+//                                val total = state.microphoneState.durationMs
+//
+//                                append((total / 60000).toString().padStart(2, '0'))
+//                                append(':')
+//
+//                                append(((total / 1000) % 60).toString().padStart(2, '0'))
+//                            },
+//                            modifier = Modifier.fillMaxWidth(),
+//                            textAlign = TextAlign.Center,
+//                            style = MaterialTheme.typography.displaySmall
+//                        )
                     }
                 } else {
                     val scrollState = rememberScrollState()

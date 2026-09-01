@@ -10,7 +10,11 @@ class WavWriter(
     private val bitsPerSample: Int = 16
 ) : AutoCloseable {
 
-    private val raf = RandomAccessFile(file, "rw")
+    private val raf = try {
+        RandomAccessFile(file, "rw")
+    } catch (e: Exception) {
+        throw Exception("Failed to open file for writing", e)
+    }
     private var dataSize = 0L
 
     init {

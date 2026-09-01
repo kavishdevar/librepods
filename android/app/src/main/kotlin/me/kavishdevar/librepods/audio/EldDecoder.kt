@@ -6,7 +6,7 @@ import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import java.nio.ByteBuffer
 
-class EldDecoder {
+class EldDecoder: AutoCloseable{
 
     companion object {
         private val ASC = byteArrayOf(
@@ -98,7 +98,7 @@ class EldDecoder {
         }
     }
 
-    fun close() {
+    override fun close() {
         codec.stop()
         codec.release()
     }

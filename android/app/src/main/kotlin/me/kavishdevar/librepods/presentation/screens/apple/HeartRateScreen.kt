@@ -46,7 +46,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import kotlinx.coroutines.flow.debounce
@@ -60,7 +59,6 @@ import me.kavishdevar.librepods.presentation.components.primitives.StyledScaffol
 import me.kavishdevar.librepods.presentation.components.primitives.StyledSlider
 import me.kavishdevar.librepods.presentation.components.primitives.StyledToggle
 import me.kavishdevar.librepods.presentation.icons.LocalIcons
-import me.kavishdevar.librepods.presentation.icons.MaterialIcons
 import me.kavishdevar.librepods.presentation.theme.DesignSystem
 import me.kavishdevar.librepods.presentation.theme.LocalDesignSystem
 import me.kavishdevar.librepods.presentation.viewmodel.AppleUiState
@@ -88,7 +86,6 @@ fun HeartRateRoute(
     )
 }
 
-@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun HeartRateScreen(
     uiState: AppleUiState,
@@ -108,6 +105,11 @@ fun HeartRateScreen(
         navigateBack = navigateBack,
         actionButtons = listOf(
             { scaffoldBackdrop ->
+                val icon = when (state.hrmState) {
+                    BuddyState.INACTIVE -> LocalIcons.current.Play
+                    BuddyState.WAITING -> LocalIcons.current.Circle
+                    BuddyState.ACTIVE -> LocalIcons.current.Pause
+                }
                 if (LocalDesignSystem.current == DesignSystem.Material) {
                     FilledTonalIconToggleButton(
                         checked = state.hrmState == BuddyState.ACTIVE,
@@ -116,26 +118,32 @@ fun HeartRateScreen(
                             .minimumInteractiveComponentSize()
                             .size(IconButtonDefaults.mediumContainerSize(IconButtonDefaults.IconButtonWidthOption.Uniform)),
                         shape = IconButtonDefaults.mediumRoundShape,
-                        enabled = state.hrmState != BuddyState.WAITING
                     ) {
-                        Icon(
-                            imageVector = if (state.hrmState == BuddyState.ACTIVE) MaterialIcons.Pause else Icons.Default.PlayArrow,
-                            contentDescription = "Start/Stop",
-                            modifier = Modifier.size(IconButtonDefaults.mediumIconSize),
-                        )
+                        AnimatedContent(
+                            icon
+                        ) {
+                            Icon(
+                                imageVector = it,
+                                contentDescription = "Start/Stop",
+                                modifier = Modifier.size(IconButtonDefaults.mediumIconSize),
+                            )
+                        }
                     }
                 } else {
                     StyledIconButton(
                         onClick = { if (state.hrmState == BuddyState.INACTIVE) startHr() else stopHr() },
                         backdrop = scaffoldBackdrop,
-                        enabled = state.hrmState != BuddyState.WAITING
                     ) {
-                        Icon(
-                            imageVector = if (state.hrmState == BuddyState.ACTIVE) LocalIcons.current.Pause else LocalIcons.current.Play,
-                            contentDescription = "Start/Stop",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                        AnimatedContent(
+                            icon
+                        ) {
+                            Icon(
+                                imageVector = it,
+                                contentDescription = "Start/Stop",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
                     }
                 }
             }
@@ -296,6 +304,9 @@ fun HeartRateScreen(
                 onCheckedChange = { enabled ->
                     updateSettings {
                         it.copy(hrmAlertEnabled = enabled)
+                    }
+                    if (enabled && state.hrmState == BuddyState.INACTIVE) {
+                        startHr()
                     }
                 },
             )

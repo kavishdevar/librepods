@@ -48,11 +48,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.kavishdevar.librepods.LibrePodsApplication
 import me.kavishdevar.librepods.R
+import me.kavishdevar.librepods.audio.EldDecoder
+import me.kavishdevar.librepods.audio.WavWriter
 import me.kavishdevar.librepods.bluetooth.MacAddress
 import me.kavishdevar.librepods.bluetooth.aacp.types.ControlCommandIdentifier
 import me.kavishdevar.librepods.bluetooth.aacp.types.MagicKeyType
 import me.kavishdevar.librepods.bluetooth.verifyRPA
 import me.kavishdevar.librepods.data.heartrate.HeartRateSample
+import me.kavishdevar.librepods.data.recording.Recording
 import me.kavishdevar.librepods.database.app.AppSettingsEntity
 import me.kavishdevar.librepods.devices.AppleDevice
 import me.kavishdevar.librepods.devices.AppleSettings
@@ -68,6 +71,7 @@ import me.kavishdevar.librepods.presentation.overlays.IslandType
 import me.kavishdevar.librepods.presentation.overlays.IslandWindow
 import me.kavishdevar.librepods.presentation.widgets.BatteryWidget
 import me.kavishdevar.librepods.utils.MediaController
+import me.kavishdevar.librepods.utils.calculateLevel
 import me.kavishdevar.librepods.utils.redactMac
 import java.time.ZoneOffset
 import kotlin.time.Duration
@@ -96,6 +100,10 @@ class LibrePodsService: Service() {
 
     private var islandWindow: IslandWindow? = null
 
+    private val eldDecoder = EldDecoder()
+
+    private val wavWriters = mutableMapOf<Recording, WavWriter>()
+
     private val appleRepository by lazy {
         (application as LibrePodsApplication).appleRepository
     }
@@ -110,6 +118,10 @@ class LibrePodsService: Service() {
 
     private val heartRateRepository by lazy {
         (application as LibrePodsApplication).heartRateRepository
+    }
+
+    private val recordingRepository by lazy {
+        (application as LibrePodsApplication).recordingRepository
     }
 
     private val healthConnectClient by lazy {
@@ -301,6 +313,7 @@ class LibrePodsService: Service() {
                 deviceJobs[MacAddress(bluetoothDevice.address)]?.add(observeAppleState(device))
                 deviceJobs[MacAddress(bluetoothDevice.address)]?.add(observeAppleSettings(device))
                 deviceJobs[MacAddress(bluetoothDevice.address)]?.add(observeAppleMetadata(device))
+                deviceJobs[MacAddress(bluetoothDevice.address)]?.add(observeAppleMicrophoneFrames(device))
             }
         }
 
@@ -544,6 +557,7 @@ class LibrePodsService: Service() {
             bluetoothDevice.uuids?.contains(aacpUuid) == true -> {
                 Log.i(TAG, "Apple device detected: ${bluetoothDevice.address.redactMac()}")
                 AppleDevice(
+                    context = this,
                     bluetoothAdapter = bluetoothAdapter,
                     bluetoothDevice = bluetoothDevice,
                     currentState = if (isConnectedMethod.invoke(bluetoothDevice) as Boolean) ConnectionState.AVAILABLE else ConnectionState.DISCONNECTED
@@ -809,6 +823,30 @@ class LibrePodsService: Service() {
                         )
                     }
                 }
+
+                state.recordingState != previousState.recordingState -> {
+                    Log.i(
+                        TAG,
+                        "recording state changed for device ${device.macAddress.toRedactedString()}"
+                    )
+                    Log.d(TAG, "recording state: ${state.recordingState}")
+                    if (previousState.recordingState.isRecording && !state.recordingState.isRecording) {
+                        previousState.recordingState.recording?.let { recording ->
+                            wavWriters[recording]?.close()
+                        }
+                    } else if (!previousState.recordingState.isRecording && state.recordingState.isRecording) {
+                        state.recordingState.recording?.let { recording ->
+                            try {
+                                val wavWriter = WavWriter(recording.file)
+                                wavWriters[recording] = wavWriter
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to create WavWriter for recording: ${recording.file}", e)
+                            }
+                        }
+                    } else {
+                        Log.w(TAG, "Recording state changed but no action taken. previous: ${previousState.recordingState}, current: ${state.recordingState}")
+                    }
+                }
             }
             previousState = state
         }
@@ -847,6 +885,31 @@ class LibrePodsService: Service() {
                 notificationManager.createNotificationChannel(channel)
             }
             previousMetadata = metadata
+        }
+    }
+
+    fun observeAppleMicrophoneFrames(device: AppleDevice): Job = CoroutineScope(Dispatchers.IO).launch {
+        device.microphoneFrames.collect { frame ->
+            val state = device.state.value
+
+            if (state.recordingState.isRecording) {
+                eldDecoder.decode(
+                    accessUnit = frame.accessUnit
+                ) { pcm ->
+                    wavWriters[state.recordingState.recording]?.write(pcm)
+
+                    device.updateState {
+                        it.copy(
+                            microphoneState = state.microphoneState.copy(
+                                isActive = true,
+                                packetsReceived = it.microphoneState.packetsReceived + 1,
+                                durationMs = it.microphoneState.durationMs + 30,
+                                level = calculateLevel(pcm)
+                            )
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1169,8 +1232,8 @@ class LibrePodsService: Service() {
                     TAG,
                     "User put in at least one component, enabling audio for device ${device.macAddress.toRedactedString()}"
                 )
-                device.enableAudio(this)
-                device.connectA2dp(this)
+                device.enableAudio()
+                device.connectA2dp()
                 justEnabledA2dp = true
 
                 device.waitForA2dpConnection(this) {
@@ -1194,8 +1257,8 @@ class LibrePodsService: Service() {
                         TAG,
                         "Disconnecting audio for device ${device.macAddress.toRedactedString()} because user took out all components and disconnectWhenNotWearing is true"
                     )
-                    device.disableAudio(this)
-                    device.disconnectAudio(this)
+                    device.disableAudio()
+                    device.disconnectAudio()
                 }
             }
         }

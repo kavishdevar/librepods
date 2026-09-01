@@ -35,8 +35,6 @@ class RTBuddyManager(
             is SensorDataWxBuddyPayload -> {
                 val data = payload.data
                 observeSequence(data)
-
-//                handleSensorData(data)
             }
 
             else -> {
@@ -47,28 +45,6 @@ class RTBuddyManager(
             }
         }
     }
-
-//    private fun handleSensorData(data: SensorDataWX) {
-//        if (data.hasServiceSettings()) {
-//            when (data.serviceSettings.service) {
-//                SensorServiceType.ACTIVITY,
-//                SensorServiceType.DEVMOTION6 -> {
-//                    // Head tracking data/configuration
-//                }
-//
-//                SensorServiceType.HEARTRATE -> {
-//                    // Heart rate
-//                }
-//
-//                else -> {
-//                    Log.d(
-//                        TAG,
-//                        "Unhandled sensor service: ${data.serviceSettings.service}"
-//                    )
-//                }
-//            }
-//        }
-//    }
 
     fun sendSensorData(
         data: SensorDataWX,

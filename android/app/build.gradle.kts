@@ -55,7 +55,8 @@ kotlin {
             "kotlinx.coroutines.FlowPreview",
             "kotlinx.serialization.ExperimentalSerializationApi",
             "kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi"
+            "dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi",
+            "com.google.accompanist.permissions.ExperimentalPermissionsApi"
         )
     }
 }

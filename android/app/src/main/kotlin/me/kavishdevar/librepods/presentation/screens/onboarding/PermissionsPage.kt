@@ -55,7 +55,6 @@ import me.kavishdevar.librepods.presentation.components.primitives.StyledListIte
 import me.kavishdevar.librepods.presentation.components.primitives.StyledListItemOrientation
 import me.kavishdevar.librepods.presentation.icons.MaterialIcons
 
-@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun PermissionsPage(
     onBackward: () -> Unit,

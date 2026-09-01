@@ -3,8 +3,10 @@ package me.kavishdevar.librepods.devices
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.content.Context
 import android.os.Build
 import android.util.Log
+import com.google.protobuf.copy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,6 +27,10 @@ import me.kavishdevar.librepods.bluetooth.att.ATTHandle
 import me.kavishdevar.librepods.bluetooth.att.ATTManager
 import me.kavishdevar.librepods.data.StemAction
 import me.kavishdevar.librepods.data.apple.BuddyState
+import me.kavishdevar.librepods.data.audio.MicrophoneFrame
+import me.kavishdevar.librepods.data.audio.MicrophoneState
+import me.kavishdevar.librepods.data.recording.Recording
+import me.kavishdevar.librepods.data.recording.RecordingState
 import me.kavishdevar.librepods.utils.GestureDetector
 import me.kavishdevar.librepods.utils.HeadTracking
 import kotlin.time.Duration
@@ -35,6 +41,7 @@ private const val TAG = "AppleDevice"
 
 @SuppressLint("MissingPermission")
 class AppleDevice(
+    override val context: Context,
     override val bluetoothAdapter: BluetoothAdapter,
     override val bluetoothDevice: BluetoothDevice,
     currentState: ConnectionState
@@ -54,6 +61,11 @@ class AppleDevice(
 
     private val _events = MutableSharedFlow<AppleEvent>()
     val events = _events.asSharedFlow()
+
+    private val _microphoneFrames = MutableSharedFlow<MicrophoneFrame>(
+        extraBufferCapacity = 64
+    )
+    val microphoneFrames = _microphoneFrames.asSharedFlow()
 
     private val _connectionNumber = MutableStateFlow(0)
     override val connectionNumber = _connectionNumber.asStateFlow()
@@ -84,6 +96,10 @@ class AppleDevice(
 
     internal suspend fun emitEvent(event: AppleEvent) {
         _events.emit(event)
+    }
+
+    internal suspend fun emitMicrophoneFrame(frame: MicrophoneFrame) {
+        _microphoneFrames.emit(frame)
     }
 
     val aacp = AACPManager(this)
@@ -191,9 +207,35 @@ class AppleDevice(
 
     suspend fun readATTCharacteristic(handle: ATTHandle): ByteArray? = att.readCharacteristic(handle)
 
-    // TODO: handle recording session
-    fun startRecording() = aacp.requestMicrophoneStream()
-    fun stopRecording() = aacp.endMicrophoneStream()
+    fun requestMicrophoneStream() = aacp.requestMicrophoneStream()
+    fun endMicrophoneStream() {
+        aacp.endMicrophoneStream()
+        reconnectA2dp()
+    }
+
+    fun startRecording(recording: Recording) {
+        requestMicrophoneStream()
+        updateState {
+            it.copy(
+                recordingState = RecordingState(
+                    isRecording = true,
+                    recording = recording
+                )
+            )
+        }
+    }
+    fun stopRecording() {
+        endMicrophoneStream()
+        updateState {
+            it.copy(
+                recordingState = RecordingState(
+                    isRecording = false,
+                    recording = null
+                ),
+                microphoneState = MicrophoneState(),
+            )
+        }
+    }
 
     fun toggleListeningMode(modeBit: Int) {
         val currentByte = state.value.controlStates[ControlCommandIdentifier.LISTENING_MODE_CONFIGS]?.get(0)?.toInt() ?: 0

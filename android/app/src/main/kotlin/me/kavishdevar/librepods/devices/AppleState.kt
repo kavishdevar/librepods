@@ -41,7 +41,6 @@ data class AppleState(
 
     val customEq: CustomEq = CustomEq(1, 50, 50, 50),
 
-    val microphoneFrames: List<MicrophoneFrame> = emptyList(),
     val microphoneState: MicrophoneState = MicrophoneState(),
     val recordingState: RecordingState = RecordingState(),
 
@@ -50,9 +49,9 @@ data class AppleState(
 
     val leftIsPrimary: Boolean = true,
 
-    val headphoneAccomodation: FloatArray = FloatArray(8),
-    val headphoneAccomodationEnabledForMedia: Boolean = false,
-    val headphoneAccomodationEnabledForPhone: Boolean = false,
+    val headphoneAccommodation: FloatArray = FloatArray(8),
+    val headphoneAccommodationEnabledForMedia: Boolean = false,
+    val headphoneAccommodationEnabledForPhone: Boolean = false,
 
     val currentHeartRate: HeartRateSample? = null,
     val hrmState: BuddyState = BuddyState.INACTIVE,
