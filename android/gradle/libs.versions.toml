@@ -1,34 +1,34 @@
 [versions]
 accompanistPermissions = "0.37.3"
-agp = "9.2.1"
-kotlin = "2.4.0"
+agp = "9.3.2"
+kotlin = "2.4.10"
 coreKtx = "1.19.0"
 lifecycleRuntimeKtx = "2.11.0"
 activityCompose = "1.13.0"
-composeBom = "2026.06.01"
+composeBom = "2026.08.00"
 annotations = "26.1.0"
-navigationCompose = "2.9.8"
-constraintlayout = "2.2.1"
-haze = "1.7.2"
-hazeMaterials = "1.7.2"
+navigationCompose = "2.10.0"
+constraintlayout = "2.2.2"
+haze = "1.7.3"
 dynamicanimation = "1.1.0"
-aboutLibraries = "15.0.3"
+aboutLibraries = "15.2.0"
 materialIconsCore = "1.7.8"
-backdrop = "2.0.0"
+backdrop = "2.0.1"
 billing = "9.1.0"
 hilt = "2.60.1"
+#noinspection NewerVersionAvailable
 xposed = "101.0.0"
 lifecycleProcess = "2.11.0"
 play = "2.0.2"
-nav3Core = "1.1.4"
+nav3Core = "1.1.7"
 lifecycleViewmodelNav3 = "2.11.0"
 navevent = "1.1.2"
-m3 = "1.5.0-alpha23"
+m3 = "1.5.0-alpha27"
 ksp = "2.3.10"
-room = "3.0.0"
+room = "3.0.2"
 protobufPlugin = "0.10.0"
-protobuf = "4.35.1"
-healthConnect = "1.2.0-alpha05"
+protobuf = "4.36.0"
+healthConnect = "1.2.0-alpha06"
 foundationLayout = "1.12.0"
 
 [libraries]
@@ -45,11 +45,10 @@ annotations = { group = "org.jetbrains", name = "annotations", version.ref = "an
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
 androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
 haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
-haze-materials = { group = "dev.chrisbanes.haze", name = "haze-materials", version.ref = "hazeMaterials" }
+haze-materials = { group = "dev.chrisbanes.haze", name = "haze-materials", version.ref = "haze" }
 androidx-dynamicanimation = { group = "androidx.dynamicanimation", name = "dynamicanimation", version.ref = "dynamicanimation" }
 androidx-compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout"}
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
-androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 aboutlibraries-compose = { group = "com.mikepenz", name = "aboutlibraries-compose", version.ref = "aboutLibraries" }
 aboutlibraries-compose-m3 = { group = "com.mikepenz", name = "aboutlibraries-compose-m3", version.ref = "aboutLibraries" }
 androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core", version.ref = "materialIconsCore" }
