@@ -491,11 +491,23 @@ fun AirPodsSettingsScreen(
 
             item(key = "spacer_connection") { Spacer(modifier = Modifier.height(16.dp)) }
             item(key = "connection") {
+                val model = state.instance?.model ?: AirPodsPro3()
+                val caseSoundsCapability = model.capabilities.contains(Capability.CASE_SOUNDS)
+                val caseSoundsChecked = state.controlStates[AACPManager.Companion.ControlCommandIdentifiers.IN_CASE_TONE_CONFIG]?.getOrNull(0) != 0x02.toByte()
+
                 ConnectionSettings(
                     automaticEarDetectionEnabled = state.automaticEarDetectionEnabled,
                     onAutomaticEarDetectionChanged = onAutomaticEarDetectionChanged,
                     automaticConnectionEnabled = state.automaticConnectionEnabled,
-                    onAutomaticConnectionChanged = onAutomaticConnectionChanged
+                    onAutomaticConnectionChanged = onAutomaticConnectionChanged,
+                    caseSoundsCapability = caseSoundsCapability,
+                    caseSoundsEnabled = caseSoundsChecked,
+                    onCaseSoundsChanged = { checked ->
+                        setControlCommandBoolean(
+                            AACPManager.Companion.ControlCommandIdentifiers.IN_CASE_TONE_CONFIG,
+                            checked
+                        )
+                    }
                 )
             }
 

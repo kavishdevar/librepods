@@ -31,6 +31,9 @@ fun ConnectionSettings(
     onAutomaticEarDetectionChanged: (Boolean) -> Unit,
     automaticConnectionEnabled: Boolean,
     onAutomaticConnectionChanged: (Boolean) -> Unit,
+    caseSoundsCapability: Boolean = false,
+    caseSoundsEnabled: Boolean = false,
+    onCaseSoundsChanged: ((Boolean) -> Unit)? = null,
 ) {
     StyledList {
         StyledToggle(
@@ -45,5 +48,14 @@ fun ConnectionSettings(
             checked = automaticConnectionEnabled,
             onCheckedChange = onAutomaticConnectionChanged
         )
+
+        if (caseSoundsCapability && onCaseSoundsChanged != null) {
+            StyledToggle(
+                label = stringResource(R.string.case_sounds),
+                description = stringResource(R.string.case_sounds_description),
+                checked = caseSoundsEnabled,
+                onCheckedChange = onCaseSoundsChanged
+            )
+        }
     }
 }
