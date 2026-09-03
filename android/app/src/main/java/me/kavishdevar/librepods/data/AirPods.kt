@@ -44,7 +44,8 @@ enum class Capability {
     ADAPTIVE_AUDIO,
     ADAPTIVE_VOLUME,
     SWIPE_FOR_VOLUME,
-    HRM
+    HRM,
+    CASE_SOUNDS
 }
 
 class AirPods: AirPodsBase(
@@ -137,7 +138,8 @@ class AirPods4ANC: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.SLEEP_DETECTION,
         Capability.ADAPTIVE_VOLUME,
-        Capability.STEM_CONFIG
+        Capability.STEM_CONFIG,
+        Capability.CASE_SOUNDS
     )
 )
 
@@ -184,7 +186,8 @@ class AirPodsPro2Lightning: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.ADAPTIVE_VOLUME,
         Capability.SWIPE_FOR_VOLUME,
-        Capability.HEAD_GESTURES
+        Capability.HEAD_GESTURES,
+        Capability.CASE_SOUNDS
     )
 )
 
@@ -212,7 +215,8 @@ class AirPodsPro2USBC: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.ADAPTIVE_VOLUME,
         Capability.SWIPE_FOR_VOLUME,
-        Capability.HEAD_GESTURES
+        Capability.HEAD_GESTURES,
+        Capability.CASE_SOUNDS
     )
 )
 
@@ -242,7 +246,8 @@ class AirPodsPro3: AirPodsBase(
         Capability.ADAPTIVE_AUDIO,
         Capability.ADAPTIVE_VOLUME,
         Capability.SWIPE_FOR_VOLUME,
-        Capability.HRM
+        Capability.HRM,
+        Capability.CASE_SOUNDS
     )
 )
 

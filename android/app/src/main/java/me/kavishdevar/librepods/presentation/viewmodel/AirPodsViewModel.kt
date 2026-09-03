@@ -182,6 +182,7 @@ val demoState = AirPodsUiState(
         ControlCommandIdentifiers.PPE_TOGGLE_CONFIG to byteArrayOf(0x01),
         ControlCommandIdentifiers.PPE_CAP_LEVEL_CONFIG to byteArrayOf(0x52),
         ControlCommandIdentifiers.DYNAMIC_END_OF_CHARGE to byteArrayOf(0x01),
+        ControlCommandIdentifiers.IN_CASE_TONE_CONFIG to byteArrayOf(0x01),
         ControlCommandIdentifiers.LISTENING_MODE to byteArrayOf(0x04)
     )
 )
@@ -448,7 +449,8 @@ class AirPodsViewModel(
             ControlCommandIdentifiers.AUTOMATIC_CONNECTION_CONFIG,
             ControlCommandIdentifiers.OWNS_CONNECTION,
             ControlCommandIdentifiers.PPE_TOGGLE_CONFIG,
-            ControlCommandIdentifiers.DYNAMIC_END_OF_CHARGE
+            ControlCommandIdentifiers.DYNAMIC_END_OF_CHARGE,
+            ControlCommandIdentifiers.IN_CASE_TONE_CONFIG
         )
         for (identifier in identifiersList) {
             observeControl(identifier)
