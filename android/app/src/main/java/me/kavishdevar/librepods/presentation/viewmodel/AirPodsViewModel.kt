@@ -747,6 +747,10 @@ class AirPodsViewModel(
             ControlCommandIdentifiers.IN_CASE_TONE_VOLUME,
             if (enabled) 0x50.toByte() else 0x00.toByte()
         )
+        setControlCommandValue(
+            ControlCommandIdentifiers.CHIME_VOLUME,
+            if (enabled) byteArrayOf(0x64, 0x50) else byteArrayOf(0x00, 0x00)
+        )
         _uiState.update {
             it.copy(
                 caseSoundsEnabled = enabled

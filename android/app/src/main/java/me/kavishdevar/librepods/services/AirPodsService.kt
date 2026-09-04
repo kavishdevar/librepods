@@ -2793,6 +2793,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             AACPManager.Companion.ControlCommandIdentifiers.IN_CASE_TONE_VOLUME.value,
                             if (caseSoundsEnabled) 0x50.toByte() else 0x00.toByte()
                         )
+                        aacpManager.sendControlCommand(
+                            AACPManager.Companion.ControlCommandIdentifiers.CHIME_VOLUME.value,
+                            if (caseSoundsEnabled) byteArrayOf(0x64, 0x50) else byteArrayOf(0x00, 0x00)
+                        )
                     }
 
                     while (socket.isConnected) {
