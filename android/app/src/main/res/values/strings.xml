@@ -291,6 +291,4 @@
     <string name="privacy_policy">Privacy Policy</string>
     <string name="i_agree">I agree</string>
     <string name="compatibility_check_bypassed">Compatibility check bypassed. Are you sure your device is compatible?</string>
-    <string name="case_sounds">Enable Charging Case Sounds</string>
-    <string name="case_sounds_description">Play sound effects from the case when opening, charging, or pairing.</string>
 </resources>

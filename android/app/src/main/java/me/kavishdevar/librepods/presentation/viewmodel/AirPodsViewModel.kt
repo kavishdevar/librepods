@@ -97,7 +97,6 @@ data class AirPodsUiState(
     val vendorIdHook: Boolean = false,
 
     val dynamicEndOfCharge: Boolean = false,
-    val caseSoundsEnabled: Boolean = true,
 
     val connectionSuccessful: Boolean = false,
     val timeUntilFOSSPremiumExpiry: Long = 0L,
@@ -132,7 +131,6 @@ val demoState = AirPodsUiState(
 
     ancMode = 3,
     offListeningMode = false,
-    caseSoundsEnabled = true,
 
     modelName = demoInstance.model.displayName,
     actualModel = demoInstance.actualModelNumber,
@@ -412,13 +410,6 @@ class AirPodsViewModel(
                         dynamicEndOfCharge = value[0] == 0x01.toByte(),
                         controlStates = state.controlStates + (identifier to value)
                     )
-                } else if (identifier == ControlCommandIdentifiers.IN_CASE_TONE_CONFIG) {
-                    val isEnabled = value.getOrNull(0) != 0x02.toByte()
-                    sharedPreferences.edit { putBoolean("case_sounds", isEnabled) }
-                    state.copy(
-                        caseSoundsEnabled = isEnabled,
-                        controlStates = state.controlStates + (identifier to value)
-                    )
                 } else {
                     state.copy(
                         controlStates = state.controlStates + (identifier to value)
@@ -504,8 +495,6 @@ class AirPodsViewModel(
         )
         val vendorIdHook = xposedRemotePref.getBoolean("vendor_id_hook", false)
         val dynamicEndOfCharge = sharedPreferences.getBoolean("dynamic_end_of_charge", false)
-        val caseSoundsEnabled = sharedPreferences.getBoolean("case_sounds", true)
-
         val connectionSuccessful = sharedPreferences.getBoolean("connection_successful", false)
 
         _uiState.update {
@@ -518,7 +507,6 @@ class AirPodsViewModel(
                 rightAction = rightAction,
                 vendorIdHook = vendorIdHook,
                 dynamicEndOfCharge = dynamicEndOfCharge,
-                caseSoundsEnabled = caseSoundsEnabled,
                 connectionSuccessful = connectionSuccessful,
             )
         }
@@ -736,24 +724,6 @@ class AirPodsViewModel(
         _uiState.update {
             it.copy(
                 automaticConnectionEnabled = enabled
-            )
-        }
-    }
-
-    fun setCaseSoundsEnabled(enabled: Boolean) {
-        sharedPreferences.edit { putBoolean("case_sounds", enabled) }
-        setControlCommandBoolean(ControlCommandIdentifiers.IN_CASE_TONE_CONFIG, enabled)
-        setControlCommandByte(
-            ControlCommandIdentifiers.IN_CASE_TONE_VOLUME,
-            if (enabled) 0x50.toByte() else 0x00.toByte()
-        )
-        setControlCommandValue(
-            ControlCommandIdentifiers.CHIME_VOLUME,
-            if (enabled) byteArrayOf(0x64, 0x50) else byteArrayOf(0x00, 0x00)
-        )
-        _uiState.update {
-            it.copy(
-                caseSoundsEnabled = enabled
             )
         }
     }
