@@ -154,9 +154,10 @@ async fn async_main(
     adapter.set_powered(true).await?;
 
     let le_tray_clone = tray_handle.clone();
+    let le_ui_tx = ui_tx.clone();
     tokio::spawn(async move {
         info!("Starting LE monitor...");
-        if let Err(e) = start_le_monitor(le_tray_clone).await {
+        if let Err(e) = start_le_monitor(le_tray_clone, le_ui_tx).await {
             log::error!("LE monitor error: {}", e);
         }
     });
