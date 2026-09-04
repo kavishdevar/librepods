@@ -112,7 +112,8 @@ class AACPManager {
                 0x37
             ),
             PPE_CAP_LEVEL_CONFIG(0x38),
-            DYNAMIC_END_OF_CHARGE(0x3B);
+            DYNAMIC_END_OF_CHARGE(0x3B),
+            IN_CASE_TONE_VOLUME(0x40);
 
             companion object {
                 fun fromByte(byte: Byte): ControlCommandIdentifiers? =
@@ -214,10 +215,7 @@ class AACPManager {
     private fun setControlCommandStatusValue(
         identifier: ControlCommandIdentifiers, value: ByteArray
     ) {
-        val existingStatus = getControlCommandStatus(identifier)
-        if (existingStatus?.value.contentEquals(value)) {
-            controlCommandStatusList.remove(existingStatus)
-        }
+        controlCommandStatusList.removeAll { it.identifier == identifier }
         controlCommandListeners[identifier]?.forEach { listener ->
             listener.onControlCommandReceived(ControlCommand(identifier.value, value))
         }

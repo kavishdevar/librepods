@@ -2781,6 +2781,13 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                             })
 
                     setupStemActions()
+                    if (sharedPreferences.contains("case_sounds")) {
+                        val caseSoundsEnabled = sharedPreferences.getBoolean("case_sounds", true)
+                        aacpManager.sendControlCommand(
+                            AACPManager.Companion.ControlCommandIdentifiers.IN_CASE_TONE_CONFIG.value,
+                            if (caseSoundsEnabled) 0x01.toByte() else 0x02.toByte()
+                        )
+                    }
 
                     while (socket.isConnected) {
                         try {
