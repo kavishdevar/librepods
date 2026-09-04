@@ -623,7 +623,7 @@ impl MediaController {
             return cached_profile;
         }
 
-        for profile in ["a2dp-sink-sbc_xq", "a2dp-sink-sbc", "a2dp-sink"] {
+        for profile in crate::utils::load_preferred_codec().profile_order() {
             if self.is_profile_available(index, profile).await {
                 info!("Selected best available A2DP profile: {}", profile);
                 self.state.lock().await.cached_a2dp_profile = profile.to_string();
