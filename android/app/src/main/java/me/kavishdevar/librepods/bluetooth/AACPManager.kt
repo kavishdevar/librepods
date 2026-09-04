@@ -635,6 +635,16 @@ class AACPManager {
         return opcode + data
     }
 
+    fun sendInitExtPacket(): Boolean {
+        return sendDataPacket(createInitExtPacket())
+    }
+
+    fun createInitExtPacket(): ByteArray {
+        val opcode = byteArrayOf(Opcodes.SET_FEATURE_FLAGS, 0x00)
+        val data = byteArrayOf(0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00)
+        return opcode + data
+    }
+
     fun createHandshakePacket(): ByteArray {
         return byteArrayOf(
             0x00,

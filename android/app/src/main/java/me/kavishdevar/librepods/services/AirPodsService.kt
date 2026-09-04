@@ -2751,14 +2751,15 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
             BluetoothConnectionManager.aacpSocket?.let {
                 aacpManager.sendPacket(aacpManager.createHandshakePacket())
                 aacpManager.sendSetFeatureFlagsPacket()
+                aacpManager.sendInitExtPacket()
                 aacpManager.sendNotificationRequest()
                 Log.d(TAG, "Requesting proximity keys")
                 aacpManager.sendRequestProximityKeys((AACPManager.Companion.ProximityKeyType.IRK.value + AACPManager.Companion.ProximityKeyType.ENC_KEY.value).toByte())
                 CoroutineScope(Dispatchers.IO).launch {
                     delay(200)
                     aacpManager.sendPacket(aacpManager.createHandshakePacket())
-                    delay(200)
                     aacpManager.sendSetFeatureFlagsPacket()
+                    aacpManager.sendInitExtPacket()
                     delay(200)
                     aacpManager.sendNotificationRequest()
                     delay(200)
@@ -2769,6 +2770,7 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                     Handler(Looper.getMainLooper()).postDelayed({
                         aacpManager.sendPacket(aacpManager.createHandshakePacket())
                         aacpManager.sendSetFeatureFlagsPacket()
+                        aacpManager.sendInitExtPacket()
                         aacpManager.sendNotificationRequest()
                         aacpManager.sendRequestProximityKeys(AACPManager.Companion.ProximityKeyType.IRK.value)
                         if (!handleIncomingCallOnceConnected) stopHeadTracking()
@@ -2786,6 +2788,10 @@ class AirPodsService : Service(), SharedPreferences.OnSharedPreferenceChangeList
                         aacpManager.sendControlCommand(
                             AACPManager.Companion.ControlCommandIdentifiers.IN_CASE_TONE_CONFIG.value,
                             if (caseSoundsEnabled) 0x01.toByte() else 0x02.toByte()
+                        )
+                        aacpManager.sendControlCommand(
+                            AACPManager.Companion.ControlCommandIdentifiers.IN_CASE_TONE_VOLUME.value,
+                            if (caseSoundsEnabled) 0x50.toByte() else 0x00.toByte()
                         )
                     }
 

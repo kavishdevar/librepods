@@ -743,6 +743,10 @@ class AirPodsViewModel(
     fun setCaseSoundsEnabled(enabled: Boolean) {
         sharedPreferences.edit { putBoolean("case_sounds", enabled) }
         setControlCommandBoolean(ControlCommandIdentifiers.IN_CASE_TONE_CONFIG, enabled)
+        setControlCommandByte(
+            ControlCommandIdentifiers.IN_CASE_TONE_VOLUME,
+            if (enabled) 0x50.toByte() else 0x00.toByte()
+        )
         _uiState.update {
             it.copy(
                 caseSoundsEnabled = enabled
