@@ -60,6 +60,7 @@ fun NavigationRoot(
         Screen.Equalizer -> stringResource(R.string.equalizer)
         Screen.HeadTracking -> stringResource(R.string.head_tracking)
         Screen.HeartRateTest -> "Heart rate"
+        Screen.HealthConnectSettings -> "Health Connect"
         Screen.Workout -> "Workout"
         Screen.WorkoutHistory -> "Workout history"
         is Screen.WorkoutDetail -> "Workout details"

@@ -24,6 +24,7 @@ import me.kavishdevar.librepods.presentation.screens.AppSettingsScreen
 import me.kavishdevar.librepods.presentation.screens.CallControlScreen
 import me.kavishdevar.librepods.presentation.screens.EqualizerRoute
 import me.kavishdevar.librepods.presentation.screens.HeadTrackingScreen
+import me.kavishdevar.librepods.presentation.screens.HealthConnectSettingsScreen
 import me.kavishdevar.librepods.presentation.screens.HeartRateTestScreen
 import me.kavishdevar.librepods.presentation.screens.HearingAidAdjustmentsScreen
 import me.kavishdevar.librepods.presentation.screens.HearingAidScreen
@@ -157,7 +158,16 @@ fun AppNavGraph(
                             HeartRateTestScreen(
                                 viewModel = airPodsViewModel,
                                 navigateToWorkout = { navigate(Screen.Workout) },
+                                navigateToHealthConnectSettings = {
+                                    navigate(Screen.HealthConnectSettings)
+                                },
                             )
+                        }
+
+                    Screen.HealthConnectSettings ->
+                        NavEntry(screen) {
+                            if (!airPodsViewModel.isReady) LoadingScreen()
+                            HealthConnectSettingsScreen(airPodsViewModel)
                         }
 
                     Screen.Workout ->

@@ -32,6 +32,9 @@ sealed interface Screen: NavKey {
     data object HeartRateTest: Screen
 
     @Serializable
+    data object HealthConnectSettings: Screen
+
+    @Serializable
     data object Workout: Screen
 
     @Serializable

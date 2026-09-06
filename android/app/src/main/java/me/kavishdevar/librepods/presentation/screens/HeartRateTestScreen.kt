@@ -69,6 +69,8 @@ import me.kavishdevar.librepods.health.HealthConnectExportState
 import me.kavishdevar.librepods.health.HealthConnectExportStatus
 import me.kavishdevar.librepods.health.HealthConnectHeartRateExporter
 import me.kavishdevar.librepods.presentation.components.HeartRateStatusChip
+import me.kavishdevar.librepods.presentation.components.StyledList
+import me.kavishdevar.librepods.presentation.components.StyledListItem
 import me.kavishdevar.librepods.presentation.components.StyledSwitch
 import me.kavishdevar.librepods.presentation.components.StyledToggle
 import me.kavishdevar.librepods.presentation.components.rememberHeartRateSampleIsDisplayable
@@ -84,7 +86,11 @@ import kotlin.math.floor
 import kotlinx.coroutines.delay
 
 @Composable
-fun HeartRateTestScreen(viewModel: AirPodsViewModel, navigateToWorkout: () -> Unit) {
+fun HeartRateTestScreen(
+    viewModel: AirPodsViewModel,
+    navigateToWorkout: () -> Unit,
+    navigateToHealthConnectSettings: () -> Unit
+) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var graphNowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -188,7 +194,7 @@ fun HeartRateTestScreen(viewModel: AirPodsViewModel, navigateToWorkout: () -> Un
                         )
                 }
             },
-            onDetailedSamplesChanged = viewModel::setHealthConnectDetailedSamples
+            onOpenSettings = navigateToHealthConnectSettings
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -338,33 +344,26 @@ private fun HeartRateSummaryCard(
 private fun HealthConnectControls(
     state: HealthConnectExportState,
     onExportChanged: (Boolean) -> Unit,
-    onDetailedSamplesChanged: (Boolean) -> Unit
+    onOpenSettings: () -> Unit
 ) {
     val available = state.status.isAvailable
 
-    StyledToggle(
-        title = "Health Connect",
-        label = "Save heart-rate samples",
-        description = healthConnectDescription(state.status, state.detailedSamples),
-        checked = state.enabled,
-        enabled = available,
-        onCheckedChange = onExportChanged
-    )
+    StyledList(title = "Health Connect") {
+        StyledToggle(
+            label = "Save heart-rate data",
+            description = healthConnectDescription(state.status),
+            checked = state.enabled,
+            enabled = available,
+            onCheckedChange = onExportChanged
+        )
 
-    Spacer(modifier = Modifier.height(8.dp))
-
-    StyledToggle(
-        title = null,
-        label = "Detailed samples",
-        description = if (state.detailedSamples) {
-            "Save one BPM record every second."
-        } else {
-            "Save one average BPM record every minute."
-        },
-        checked = state.detailedSamples,
-        enabled = available,
-        onCheckedChange = onDetailedSamplesChanged
-    )
+        StyledListItem(
+            name = "Storage mode",
+            description = healthConnectExportSummary(state),
+            enabled = available && state.enabled,
+            onClick = onOpenSettings
+        )
+    }
 }
 
 @Composable
@@ -426,10 +425,7 @@ private val HealthConnectExportStatus.requiresPermissionRequest: Boolean
         this == HealthConnectExportStatus.PERMISSION_DENIED ||
         this == HealthConnectExportStatus.ERROR
 
-private fun healthConnectDescription(
-    status: HealthConnectExportStatus,
-    detailedSamples: Boolean
-): String = when (status) {
+private fun healthConnectDescription(status: HealthConnectExportStatus): String = when (status) {
     HealthConnectExportStatus.UNAVAILABLE ->
         "Health Connect is not available on this device."
 
@@ -437,22 +433,17 @@ private fun healthConnectDescription(
         "Install or update Health Connect to save heart-rate samples."
 
     HealthConnectExportStatus.PERMISSION_REQUIRED ->
-        "Write permission is required before samples can be saved."
+        "Allow Health Connect access to save heart-rate data."
 
     HealthConnectExportStatus.PERMISSION_DENIED ->
-        "Permission was denied. Turn this on to request it again."
+        "Health Connect access was denied. Turn this on to try again."
 
-    HealthConnectExportStatus.READY ->
-        "Available. Enable this to save validated samples on this device."
-
-    HealthConnectExportStatus.ENABLED -> if (detailedSamples) {
-        "Validated heart-rate data is saved every second."
-    } else {
-        "Validated samples are averaged into one Health Connect record per minute."
-    }
+    HealthConnectExportStatus.READY,
+    HealthConnectExportStatus.ENABLED ->
+        "Save validated heart-rate readings to Health Connect."
 
     HealthConnectExportStatus.ERROR ->
-        "A write failed. Buffered samples will be retried without creating duplicates."
+        "Health Connect could not be accessed. Buffered data will be retried."
 }
 
 @Composable
